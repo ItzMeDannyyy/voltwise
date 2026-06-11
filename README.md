@@ -1,4 +1,4 @@
-# VoltWise: An IoT smart power monitoring and 
+# VoltWise: An IoT Non-Intrusive Load Monitoring (NILM) System for Smart Home Energy Monitoring and Automated Protection 
 
 > A smart power management and optimization platform designed to monitor, analyze, and reduce power consumption in real-time.
 
