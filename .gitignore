@@ -1,0 +1,22 @@
+# Claude / AI agent artifacts
+.claude/
+.agents/
+AGENTS.md
+
+# Node / Expo
+node_modules/
+.expo/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+CLAUDE.md
