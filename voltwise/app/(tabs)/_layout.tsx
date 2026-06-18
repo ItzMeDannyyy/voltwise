@@ -1,9 +1,18 @@
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Platform, View, Text, StyleSheet } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  Platform,
+  View,
+  Text,
+  StyleSheet,
+  DeviceEventEmitter,
+} from "react-native";
 import * as Haptics from "expo-haptics";
 import { PlatformPressable } from "@react-navigation/elements";
 import type { BottomTabBarButtonProps } from "@react-navigation/bottom-tabs";
+import DemoFab from "../../components/DemoFab";
+import { api, ApiAlert, ALERTS_CHANGED_EVENT } from "../../lib/api";
 
 const COLORS = {
   background: "#1a1f2e",
@@ -28,17 +37,34 @@ function HapticTab(props: BottomTabBarButtonProps) {
 }
 
 function AlertsBadge() {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    const load = () => {
+      api
+        .get<ApiAlert[]>("/alerts")
+        .then((data) => setCount(data.filter((a) => !a.read).length))
+        .catch(() => {});
+    };
+    load();
+    const sub = DeviceEventEmitter.addListener(ALERTS_CHANGED_EVENT, load);
+    return () => sub.remove();
+  }, []);
+
+  if (count <= 0) return null;
+
   return (
     <View style={styles.badge}>
-      <Text style={styles.badgeText}>3</Text>
+      <Text style={styles.badgeText}>{count > 99 ? "99+" : count}</Text>
     </View>
   );
 }
 
 export default function TabLayout() {
   return (
-    <Tabs
-      screenOptions={{
+    <View style={styles.root}>
+      <Tabs
+        screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: COLORS.accent,
         tabBarInactiveTintColor: COLORS.inactive,
@@ -97,11 +123,16 @@ export default function TabLayout() {
           ),
         }}
       />
-    </Tabs>
+      </Tabs>
+      <DemoFab />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   badge: {
     position: "absolute",
     top: -4,
