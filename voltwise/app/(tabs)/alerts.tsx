@@ -1,13 +1,16 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { api, ApiAlert, ALERTS_CHANGED_EVENT, emitAlertsChanged } from "../../lib/api";
 
 const C = {
   bg: "#1a1f2e",
@@ -110,6 +113,31 @@ export default function AlertsScreen() {
   const [alerts, setAlerts] = useState<AlertItem[]>(INITIAL_ALERTS);
   const [activeTab, setActiveTab] = useState<FilterTab>("All");
 
+  // Load the alert feed from the backend.
+  const loadAlerts = useCallback(() => {
+    api
+      .get<ApiAlert[]>("/alerts")
+      .then((data) => {
+        if (data?.length) setAlerts(data);
+      })
+      .catch(() => {
+        // Offline-first: keep the seeded INITIAL_ALERTS fallback.
+      });
+  }, []);
+
+  // Refetch every time the Alerts tab gains focus.
+  useFocusEffect(
+    useCallback(() => {
+      loadAlerts();
+    }, [loadAlerts])
+  );
+
+  // Refresh in place when a demo alert is triggered while already on this tab.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(ALERTS_CHANGED_EVENT, loadAlerts);
+    return () => sub.remove();
+  }, [loadAlerts]);
+
   const filteredAlerts = alerts.filter((a) => {
     if (activeTab === "Unread") return !a.read;
     if (activeTab === "Critical") return a.type === "critical";
@@ -119,14 +147,29 @@ export default function AlertsScreen() {
   const todayAlerts = filteredAlerts.filter((a) => a.section === "TODAY");
   const yesterdayAlerts = filteredAlerts.filter((a) => a.section === "YESTERDAY");
 
+  // Unread counters used for the filter-tab badges.
+  const unreadCount = alerts.filter((a) => !a.read).length;
+  const unreadCriticalCount = alerts.filter(
+    (a) => !a.read && a.type === "critical"
+  ).length;
+
+  function tabBadgeCount(tab: FilterTab): number {
+    if (tab === "Critical") return unreadCriticalCount;
+    return unreadCount;
+  }
+
   function markAllRead() {
     setAlerts((prev) => prev.map((a) => ({ ...a, read: true })));
+    api.post("/alerts/read-all").catch(() => {});
+    emitAlertsChanged();
   }
 
   function markRead(id: string) {
     setAlerts((prev) =>
       prev.map((a) => (a.id === id ? { ...a, read: true } : a))
     );
+    api.patch(`/alerts/${id}/read`).catch(() => {});
+    emitAlertsChanged();
   }
 
   return (
@@ -140,23 +183,38 @@ export default function AlertsScreen() {
         </View>
 
         <View style={styles.tabRow}>
-          {(["All", "Unread", "Critical"] as FilterTab[]).map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              style={styles.tab}
-              onPress={() => setActiveTab(tab)}
-            >
-              <Text
-                style={[
-                  styles.tabLabel,
-                  activeTab === tab && styles.tabLabelActive,
-                ]}
+          {(["All", "Unread", "Critical"] as FilterTab[]).map((tab) => {
+            const count = tabBadgeCount(tab);
+            return (
+              <TouchableOpacity
+                key={tab}
+                style={styles.tab}
+                onPress={() => setActiveTab(tab)}
               >
-                {tab}
-              </Text>
-              {activeTab === tab && <View style={styles.tabIndicator} />}
-            </TouchableOpacity>
-          ))}
+                <View style={styles.tabLabelRow}>
+                  <Text
+                    style={[
+                      styles.tabLabel,
+                      activeTab === tab && styles.tabLabelActive,
+                    ]}
+                  >
+                    {tab}
+                  </Text>
+                  {count > 0 && (
+                    <View
+                      style={[
+                        styles.tabCountBadge,
+                        tab === "Critical" && styles.tabCountBadgeCritical,
+                      ]}
+                    >
+                      <Text style={styles.tabCountText}>{count}</Text>
+                    </View>
+                  )}
+                </View>
+                {activeTab === tab && <View style={styles.tabIndicator} />}
+              </TouchableOpacity>
+            );
+          })}
         </View>
         <View style={styles.tabSeparator} />
 
@@ -284,6 +342,11 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     position: "relative",
   },
+  tabLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   tabLabel: {
     color: C.sub,
     fontSize: 15,
@@ -292,6 +355,23 @@ const styles = StyleSheet.create({
   tabLabelActive: {
     color: C.text,
     fontWeight: "600",
+  },
+  tabCountBadge: {
+    backgroundColor: C.sub,
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 5,
+  },
+  tabCountBadgeCritical: {
+    backgroundColor: C.red,
+  },
+  tabCountText: {
+    color: C.bg,
+    fontSize: 11,
+    fontWeight: "700",
   },
   tabIndicator: {
     position: "absolute",
@@ -390,9 +470,9 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 10,
     right: 10,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: C.text,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.red,
   },
 });

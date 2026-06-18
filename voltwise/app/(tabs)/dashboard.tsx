@@ -7,10 +7,12 @@ import {
   StyleSheet,
   Dimensions,
   FlatList,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LineChart } from "react-native-chart-kit";
+import { api, DashboardData, DashboardDevice } from "../../lib/api";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -25,12 +27,27 @@ const C = {
   red: "#ef4444",
 };
 
-const DAY_DATA = [2.1, 2.4, 3.5, 3.8, 3.2, 2.0, 2.1, 2.3, 3.1, 3.6, 3.8, 3.4, 3.9];
+const DAY_DATA = [
+  2.1, 2.4, 3.5, 3.8, 3.2, 2.0, 2.1, 2.3, 3.1, 3.6, 3.8, 3.4, 3.9,
+];
 const WEEK_DATA = [18.7, 22.1, 19.4, 25.3, 21.8, 17.2, 23.5];
 const MONTH_DATA = [580, 610, 595, 640, 620, 575, 655, 630, 600, 670, 645, 610];
 const DAY_LABELS = ["6a", "9a", "12p", "3p", "6p", "9p", "12a"];
 const WEEK_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 const DEVICES = [
   { id: "1", name: "AC", watts: 1200, active: true },
@@ -63,8 +80,28 @@ function getChartConfig(period: Period) {
 export default function DashboardScreen() {
   const [currentKw, setCurrentKw] = useState(3.24);
   const [period, setPeriod] = useState<Period>("Day");
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Fetch live dashboard data from the backend whenever the period changes.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<DashboardData>(`/dashboard?period=${period}`)
+      .then((data) => {
+        if (cancelled) return;
+        setDashboard(data);
+        setCurrentKw(data.currentKw);
+      })
+      .catch(() => {
+        // Offline-first: keep showing fallback/last-known values.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [period]);
+
+  // Subtle live fluctuation around the backend-reported current usage.
   useEffect(() => {
     intervalRef.current = setInterval(() => {
       setCurrentKw((prev) => {
@@ -77,19 +114,14 @@ export default function DashboardScreen() {
     };
   }, []);
 
-  const { data: chartData, labels: chartLabels } = getChartConfig(period);
-  // react-native-chart-kit needs an even number of labels for Day view — use every other
-  const visibleLabels =
-    period === "Day"
-      ? chartLabels
-      : period === "Month"
-      ? chartLabels.filter((_, i) => i % 2 === 0).concat(chartLabels[chartLabels.length - 1])
-      : chartLabels;
-
-  const chartDisplayData =
-    period === "Month"
-      ? chartData.filter((_, i) => i % 2 === 0).concat(chartData[chartData.length - 1])
-      : chartData;
+  // Backend supplies matched labels/data per period; fall back to local mock.
+  const fallback = getChartConfig(period);
+  const visibleLabels = dashboard?.history.labels ?? fallback.labels;
+  const chartDisplayData = dashboard?.history.data ?? fallback.data;
+  const devices: DashboardData["devices"] = dashboard?.devices ?? DEVICES;
+  const topConsumers: DashboardData["topConsumers"] =
+    dashboard?.topConsumers ?? TOP_CONSUMERS;
+  const totalToday = dashboard?.totalTodayKwh ?? 18.7;
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
@@ -99,7 +131,11 @@ export default function DashboardScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.appTitle}>VoltWise</Text>
+          <Image
+            source={require("../../assets/images/voltwise-logo.png")}
+            style={styles.logo}
+            resizeMode="contain"
+          />
           <View style={styles.headerIcons}>
             <TouchableOpacity style={styles.iconBtn}>
               <Ionicons name="notifications-outline" size={22} color={C.text} />
@@ -123,17 +159,19 @@ export default function DashboardScreen() {
             <Text style={styles.kwValue}>{currentKw.toFixed(2)}</Text>
             <Text style={styles.kwUnit}>kW</Text>
           </View>
-          <Text style={styles.totalToday}>Total today: 18.7 kWh</Text>
+          <Text style={styles.totalToday}>
+            Total today: {totalToday.toFixed(1)} kWh
+          </Text>
         </View>
 
         {/* Device Cards */}
         <FlatList
-          data={DEVICES}
+          data={devices}
           horizontal
           showsHorizontalScrollIndicator={false}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.deviceList}
-          renderItem={({ item }) => (
+          renderItem={({ item }: { item: DashboardDevice }) => (
             <View style={styles.deviceCard}>
               <View style={styles.deviceStatusRow}>
                 <View
@@ -164,11 +202,17 @@ export default function DashboardScreen() {
               {(["Day", "Week", "Month"] as Period[]).map((p) => (
                 <TouchableOpacity
                   key={p}
-                  style={[styles.periodBtn, period === p && styles.periodBtnActive]}
+                  style={[
+                    styles.periodBtn,
+                    period === p && styles.periodBtnActive,
+                  ]}
                   onPress={() => setPeriod(p)}
                 >
                   <Text
-                    style={[styles.periodLabel, period === p && styles.periodLabelActive]}
+                    style={[
+                      styles.periodLabel,
+                      period === p && styles.periodLabelActive,
+                    ]}
                   >
                     {p}
                   </Text>
@@ -216,9 +260,11 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Top Consumers</Text>
           <View style={styles.consumersCard}>
-            {TOP_CONSUMERS.map((item) => (
+            {topConsumers.map((item) => (
               <View key={item.id} style={styles.consumerRow}>
-                <View style={[styles.consumerDot, { backgroundColor: item.color }]} />
+                <View
+                  style={[styles.consumerDot, { backgroundColor: item.color }]}
+                />
                 <Text style={styles.consumerName}>{item.name}</Text>
                 <View style={styles.consumerBarBg}>
                   <View
@@ -255,10 +301,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 20,
   },
-  appTitle: {
-    color: C.text,
-    fontSize: 24,
-    fontWeight: "700",
+  logo: {
+    width: 240,
+    height: 72,
+    marginLeft: -20,
   },
   headerIcons: {
     flexDirection: "row",
