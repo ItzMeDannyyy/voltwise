@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Circle } from "react-native-svg";
+import { api, AnalyticsData } from "../../lib/api";
 
 const C = {
   bg: "#1a1f2e",
@@ -47,11 +48,45 @@ const TOP_CONSUMERS = [
 
 type Period = "Day" | "Week" | "Month";
 
+const PERIODS: Period[] = ["Day", "Week", "Month"];
+
 export default function AnalyticsScreen() {
   const [period, setPeriod] = useState<Period>("Day");
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+
+  // Fetch analytics whenever the selected period changes.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<AnalyticsData>(`/analytics?period=${period}`)
+      .then((data) => {
+        if (!cancelled) setAnalytics(data);
+      })
+      .catch(() => {
+        // Offline-first: fall back to local mock values.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [period]);
+
+  function cyclePeriod() {
+    setPeriod((p) => PERIODS[(PERIODS.indexOf(p) + 1) % PERIODS.length]);
+  }
+
+  const breakdown = analytics?.breakdown ?? DONUT_SEGMENTS;
+  const topConsumers = analytics?.topConsumers ?? TOP_CONSUMERS;
+  const totalKwh = analytics?.totalKwh ?? 87.4;
+  const bill = analytics?.billPredictor ?? {
+    tariff: 10.5,
+    currency: "₱",
+    accumulatedKwh: 87.4,
+    estimatedBill: 917.7,
+    cycleStart: "Jun 1, 2026",
+  };
 
   let cumulative = 0;
-  const segments = DONUT_SEGMENTS.map((seg) => {
+  const segments = breakdown.map((seg) => {
     const dash = (seg.pct / 100) * CIRCUMFERENCE;
     const offset = -cumulative;
     cumulative += dash;
@@ -81,25 +116,29 @@ export default function AnalyticsScreen() {
           <View style={styles.billRow}>
             <Text style={styles.billRowLabel}>Tariff</Text>
             <Text style={[styles.billRowValue, styles.dashedValue]}>
-              ₱ 10.50 /kWh
+              {bill.currency} {bill.tariff.toFixed(2)} /kWh
             </Text>
           </View>
 
           <View style={[styles.billRow, { marginTop: 10 }]}>
             <Text style={styles.billRowLabel}>Rate Accumulated</Text>
-            <Text style={styles.billRowValue}>87.4 kWh</Text>
+            <Text style={styles.billRowValue}>
+              {bill.accumulatedKwh.toFixed(1)} kWh
+            </Text>
           </View>
 
           <View style={[styles.billEstRow, { marginTop: 16 }]}>
             <Text style={styles.billEstLabel}>{"Est.\nBill"}</Text>
             <View style={styles.billAmountRow}>
-              <Text style={styles.billCurrency}>₱</Text>
-              <Text style={styles.billAmount}>917.70</Text>
+              <Text style={styles.billCurrency}>{bill.currency}</Text>
+              <Text style={styles.billAmount}>
+                {bill.estimatedBill.toFixed(2)}
+              </Text>
             </View>
           </View>
 
           <Text style={styles.billFooter}>
-            {"Based on accumulated kWh since billing period.\nBilling cycle started: Jun 1, 2026"}
+            {`Based on accumulated kWh since billing period.\nBilling cycle started: ${bill.cycleStart}`}
           </Text>
         </View>
 
@@ -141,14 +180,14 @@ export default function AnalyticsScreen() {
               ))}
             </Svg>
             <View style={styles.donutCenter} pointerEvents="none">
-              <Text style={styles.donutValue}>87.4</Text>
+              <Text style={styles.donutValue}>{totalKwh.toFixed(1)}</Text>
               <Text style={styles.donutUnit}>kWh</Text>
               <Text style={styles.donutTotal}>Total</Text>
             </View>
           </View>
 
           <View style={styles.legendGrid}>
-            {DONUT_SEGMENTS.map((seg) => (
+            {breakdown.map((seg) => (
               <View key={seg.label} style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: seg.color }]} />
                 <Text style={styles.legendText}>
@@ -161,14 +200,14 @@ export default function AnalyticsScreen() {
 
         <View style={[styles.consumersHeader, { marginTop: 24, marginBottom: 12 }]}>
           <Text style={styles.sectionTitle}>Top Consumers</Text>
-          <TouchableOpacity style={styles.periodPill}>
+          <TouchableOpacity style={styles.periodPill} onPress={cyclePeriod}>
             <Text style={styles.periodPillText}>{period}</Text>
             <Ionicons name="chevron-down" size={12} color={C.text} />
           </TouchableOpacity>
         </View>
 
         <View style={[styles.card, styles.consumersCard]}>
-          {TOP_CONSUMERS.map((item) => (
+          {topConsumers.map((item) => (
             <View key={item.id} style={styles.consumerRow}>
               <Text style={styles.consumerName}>{item.name}</Text>
               <View style={styles.consumerBarBg}>
