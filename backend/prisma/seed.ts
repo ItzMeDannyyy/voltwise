@@ -223,6 +223,9 @@ async function seed(): Promise<void> {
     watts: number;
     kwh: number;
     voltage: number;
+    current: number;
+    frequency: number;
+    powerFactor: number;
   }[] = [];
 
   // Generate readings for every hour over the past 30 days.
@@ -259,13 +262,24 @@ async function seed(): Promise<void> {
           (device.ratedWatts * usageMultiplier).toFixed(1)
         );
 
+        // Derive current from power and voltage with a small jitter to simulate
+        // real sensor noise. Clamp the result to a sane household appliance range.
+        const deviceVoltage = randomBetween(218, 224);
+        const deviceCurrentBase = adjustedWatts / deviceVoltage;
+        const deviceCurrent = parseFloat(
+          (deviceCurrentBase + randomBetween(-0.05, 0.05)).toFixed(3)
+        );
+
         allReadings.push({
           deviceId: device.id,
           userId: demoUser.id,
           timestamp,
           watts: adjustedWatts,
           kwh: adjustedKwh,
-          voltage: randomBetween(218, 224),
+          voltage: deviceVoltage,
+          current: Math.max(0, deviceCurrent),
+          frequency: randomBetween(59.8, 60.2),
+          powerFactor: randomBetween(0.85, 0.99),
         });
 
         hourlyTotalKwh += adjustedKwh;
@@ -273,13 +287,26 @@ async function seed(): Promise<void> {
       }
 
       // Whole-home aggregate reading (deviceId = null).
+      // Voltage and current reflect the whole-home load on the incoming line.
+      // Power factor uses a slightly lower band for the aggregate since mixed loads
+      // (motors + resistive) tend to pull the combined PF down a bit.
+      const aggregateVoltage = randomBetween(218, 224);
+      const aggregateTotalWatts = parseFloat(hourlyTotalWatts.toFixed(1));
+      const aggregateCurrentBase = aggregateTotalWatts / aggregateVoltage;
+      const aggregateCurrent = parseFloat(
+        (aggregateCurrentBase + randomBetween(-0.1, 0.1)).toFixed(3)
+      );
+
       allReadings.push({
         deviceId: null,
         userId: demoUser.id,
         timestamp,
-        watts: parseFloat(hourlyTotalWatts.toFixed(1)),
+        watts: aggregateTotalWatts,
         kwh: parseFloat(hourlyTotalKwh.toFixed(4)),
-        voltage: randomBetween(218, 224),
+        voltage: aggregateVoltage,
+        current: Math.max(0, aggregateCurrent),
+        frequency: randomBetween(59.8, 60.2),
+        powerFactor: randomBetween(0.80, 0.95),
       });
     }
   }
@@ -291,8 +318,27 @@ async function seed(): Promise<void> {
     await prisma.energyReading.createMany({ data: chunk });
   }
 
+  // Insert one reading timestamped right now so the IoT liveness check (5-minute
+  // window) passes immediately after seeding. In production the sensor pushes
+  // readings every few seconds; this reading simulates that "latest" push.
+  const liveWatts = activeDevices.reduce((sum, d) => sum + d.ratedWatts, 0);
+  const liveVoltage = randomBetween(218, 224);
+  await prisma.energyReading.create({
+    data: {
+      userId: demoUser.id,
+      deviceId: null,
+      timestamp: new Date(),
+      watts: liveWatts,
+      kwh: parseFloat((liveWatts / 1000).toFixed(4)),
+      voltage: liveVoltage,
+      current: parseFloat((liveWatts / liveVoltage).toFixed(3)),
+      frequency: randomBetween(59.8, 60.2),
+      powerFactor: randomBetween(0.80, 0.95),
+    },
+  });
+
   console.log(
-    `  Generated ${allReadings.length} energy readings (${DAYS_OF_HISTORY} days x ${HOURS_PER_DAY}h + per-device).`
+    `  Generated ${allReadings.length} energy readings (${DAYS_OF_HISTORY} days x ${HOURS_PER_DAY}h + per-device) + 1 live reading.`
   );
 
   // ── 8. Alerts ────────────────────────────────────────────────────────────────
