@@ -95,9 +95,12 @@ model EnergyReading {
   deviceId  Int?
   userId    Int
   timestamp DateTime
-  watts     Float
-  kwh       Float
-  voltage   Float?
+  watts       Float
+  kwh         Float
+  voltage     Float?
+  current     Float?   // Amperage (A)
+  frequency   Float?   // Hz
+  powerFactor Float?   // PF, 0-1
 
   device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)

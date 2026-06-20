@@ -27,10 +27,22 @@ export interface TopConsumerDto {
   color: string;
 }
 
+// Statistical summary for a single PZEM-004T metric over the selected period.
+export interface MetricStatDto {
+  key: "voltage" | "current" | "activePower" | "energy" | "frequency" | "powerFactor";
+  label: string;
+  unit: string;
+  avg: number;
+  min: number;
+  max: number;
+  info: string;
+}
+
 // The full analytics response shape.
 export interface AnalyticsResponseDto {
   billPredictor: BillPredictorDto;
   totalKwh: number;
   breakdown: BreakdownEntryDto[];
   topConsumers: TopConsumerDto[];
+  metrics: MetricStatDto[];
 }

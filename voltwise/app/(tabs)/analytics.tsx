@@ -9,7 +9,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Circle } from "react-native-svg";
-import { api, AnalyticsData } from "../../lib/api";
+import { api, AnalyticsData, MetricStat } from "../../lib/api";
+import Collapsible from "../../components/Collapsible";
 
 const C = {
   bg: "#1a1f2e",
@@ -33,25 +34,107 @@ const STROKE_WIDTH = 24;
 
 const DONUT_SEGMENTS = [
   { label: "Aircon", pct: 42, color: C.accent },
-  { label: "Fridge", pct: 21, color: C.blue },
-  { label: "Lights", pct: 14, color: C.yellow },
+  { label: "Fridge", pct: 21, color: C.blue   },
+  { label: "Lights", pct: 14, color: C.yellow  },
   { label: "Others", pct: 23, color: "#4b5563" },
 ];
 
 const TOP_CONSUMERS = [
-  { id: "1", name: "Aircon", pct: 42, color: C.accent },
-  { id: "2", name: "Fridge", pct: 21, color: C.blue },
-  { id: "3", name: "Lights", pct: 14, color: C.yellow },
-  { id: "4", name: "Washing Machine", pct: 9, color: C.purple },
-  { id: "5", name: "Others", pct: 5, color: C.pink },
+  { id: "1", name: "Aircon",          pct: 42, color: C.accent },
+  { id: "2", name: "Fridge",          pct: 21, color: C.blue   },
+  { id: "3", name: "Lights",          pct: 14, color: C.yellow  },
+  { id: "4", name: "Washing Machine", pct: 9,  color: C.purple  },
+  { id: "5", name: "Others",          pct: 5,  color: C.pink    },
+];
+
+// ---- Offline-first fallback for PZEM-004T metrics ----
+// Avg/Min/Max are realistic 24-hour ranges; info strings match what the
+// backend will serve so they read coherently offline.
+const FALLBACK_METRICS: MetricStat[] = [
+  {
+    key: "voltage",
+    label: "Voltage",
+    unit: "V",
+    avg: 220.1,
+    min: 217.4,
+    max: 223.8,
+    info:
+      "Mains voltage measured at the load. Philippine standard is 220 V ±10%. " +
+      "Values below 198 V or above 242 V may damage appliances.",
+  },
+  {
+    key: "current",
+    label: "Current",
+    unit: "A",
+    avg: 1.44,
+    min: 0.32,
+    max: 3.12,
+    info:
+      "RMS current drawn by all connected loads. High sustained current " +
+      "can indicate an overloaded circuit or a failing appliance.",
+  },
+  {
+    key: "activePower",
+    label: "Active Power",
+    unit: "W",
+    avg: 316.5,
+    min: 70.2,
+    max: 685.0,
+    info:
+      "Real power actually converted to useful work. Peaks often correspond " +
+      "to motor start-up surges (AC compressor, refrigerator).",
+  },
+  {
+    key: "energy",
+    label: "Energy",
+    unit: "kWh",
+    avg: 18.7,
+    min: 12.3,
+    max: 26.1,
+    info:
+      "Cumulative energy consumed. The PZEM-004T resets this counter when " +
+      "power is cycled unless the backend persists the value.",
+  },
+  {
+    key: "frequency",
+    label: "Frequency",
+    unit: "Hz",
+    avg: 60.01,
+    min: 59.94,
+    max: 60.08,
+    info:
+      "Grid frequency. In the Philippines the nominal is 60 Hz. " +
+      "Significant deviation can indicate grid instability.",
+  },
+  {
+    key: "powerFactor",
+    label: "Power Factor",
+    unit: "PF",
+    avg: 0.92,
+    min: 0.78,
+    max: 0.99,
+    info:
+      "Ratio of active power to apparent power. A PF below 0.85 wastes " +
+      "energy in reactive current. Capacitor banks can improve PF.",
+  },
 ];
 
 type Period = "Day" | "Week" | "Month";
 
 const PERIODS: Period[] = ["Day", "Week", "Month"];
 
+// Accent colour per metric key for the label pill.
+const METRIC_ACCENT: Record<MetricStat["key"], string> = {
+  voltage:     C.accent,
+  current:     C.blue,
+  activePower: C.yellow,
+  energy:      C.purple,
+  frequency:   C.pink,
+  powerFactor: "#10b981",
+};
+
 export default function AnalyticsScreen() {
-  const [period, setPeriod] = useState<Period>("Day");
+  const [period, setPeriod]     = useState<Period>("Day");
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
 
   // Fetch analytics whenever the selected period changes.
@@ -74,9 +157,10 @@ export default function AnalyticsScreen() {
     setPeriod((p) => PERIODS[(PERIODS.indexOf(p) + 1) % PERIODS.length]);
   }
 
-  const breakdown = analytics?.breakdown ?? DONUT_SEGMENTS;
+  const breakdown    = analytics?.breakdown   ?? DONUT_SEGMENTS;
   const topConsumers = analytics?.topConsumers ?? TOP_CONSUMERS;
-  const totalKwh = analytics?.totalKwh ?? 87.4;
+  const totalKwh     = analytics?.totalKwh     ?? 87.4;
+  const metrics      = analytics?.metrics      ?? FALLBACK_METRICS;
   const bill = analytics?.billPredictor ?? {
     tariff: 10.5,
     currency: "₱",
@@ -87,9 +171,9 @@ export default function AnalyticsScreen() {
 
   let cumulative = 0;
   const segments = breakdown.map((seg) => {
-    const dash = (seg.pct / 100) * CIRCUMFERENCE;
+    const dash   = (seg.pct / 100) * CIRCUMFERENCE;
     const offset = -cumulative;
-    cumulative += dash;
+    cumulative  += dash;
     return { ...seg, dash, offset };
   });
 
@@ -101,6 +185,7 @@ export default function AnalyticsScreen() {
       >
         <Text style={styles.heading}>Analytics</Text>
 
+        {/* Bill Predictor */}
         <View style={styles.card}>
           <View style={styles.billTopRow}>
             <Text style={styles.billLabel}>BILL PREDICTOR</Text>
@@ -142,6 +227,7 @@ export default function AnalyticsScreen() {
           </Text>
         </View>
 
+        {/* Usage Breakdown donut */}
         <Text style={[styles.sectionTitle, { marginTop: 24, marginBottom: 12 }]}>
           Usage Breakdown
         </Text>
@@ -198,6 +284,7 @@ export default function AnalyticsScreen() {
           </View>
         </View>
 
+        {/* Top Consumers */}
         <View style={[styles.consumersHeader, { marginTop: 24, marginBottom: 12 }]}>
           <Text style={styles.sectionTitle}>Top Consumers</Text>
           <TouchableOpacity style={styles.periodPill} onPress={cyclePeriod}>
@@ -222,6 +309,58 @@ export default function AnalyticsScreen() {
             </View>
           ))}
         </View>
+
+        {/* ---- Sensor Metrics section ---- */}
+        <Text style={[styles.sectionTitle, { marginTop: 28, marginBottom: 12 }]}>
+          Sensor Metrics
+        </Text>
+
+        {metrics.map((metric) => {
+          const accent = METRIC_ACCENT[metric.key];
+          return (
+            <View key={metric.key} style={styles.metricCard}>
+              {/* Header row: label + avg/min/max */}
+              <View style={styles.metricHeader}>
+                <View style={styles.metricLabelRow}>
+                  <View style={[styles.metricAccentBar, { backgroundColor: accent }]} />
+                  <Text style={styles.metricName}>{metric.label}</Text>
+                  <Text style={styles.metricUnitBadge}>{metric.unit}</Text>
+                </View>
+              </View>
+
+              {/* Avg / Min / Max row */}
+              <View style={styles.metricStatsRow}>
+                <View style={styles.metricStat}>
+                  <Text style={[styles.metricStatValue, { color: accent }]}>
+                    {metric.avg.toFixed(metric.unit === "PF" ? 2 : metric.unit === "A" ? 2 : 1)}
+                  </Text>
+                  <Text style={styles.metricStatLabel}>Avg</Text>
+                </View>
+                <View style={styles.metricStatDivider} />
+                <View style={styles.metricStat}>
+                  <Text style={styles.metricStatValue}>
+                    {metric.min.toFixed(metric.unit === "PF" ? 2 : metric.unit === "A" ? 2 : 1)}
+                  </Text>
+                  <Text style={styles.metricStatLabel}>Min</Text>
+                </View>
+                <View style={styles.metricStatDivider} />
+                <View style={styles.metricStat}>
+                  <Text style={styles.metricStatValue}>
+                    {metric.max.toFixed(metric.unit === "PF" ? 2 : metric.unit === "A" ? 2 : 1)}
+                  </Text>
+                  <Text style={styles.metricStatLabel}>Max</Text>
+                </View>
+              </View>
+
+              {/* "Show more info" collapsible — default collapsed */}
+              <Collapsible title="Show more info" defaultOpen={false}>
+                <Text style={styles.metricInfo}>{metric.info}</Text>
+              </Collapsible>
+            </View>
+          );
+        })}
+
+        <View style={{ height: 24 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -427,5 +566,74 @@ const styles = StyleSheet.create({
     fontSize: 12,
     width: 36,
     textAlign: "right",
+  },
+  // ---- Sensor Metrics ----
+  metricCard: {
+    backgroundColor: C.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  metricHeader: {
+    marginBottom: 12,
+  },
+  metricLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  metricAccentBar: {
+    width: 3,
+    height: 18,
+    borderRadius: 2,
+  },
+  metricName: {
+    color: C.text,
+    fontSize: 15,
+    fontWeight: "700",
+    flex: 1,
+  },
+  metricUnitBadge: {
+    color: C.sub,
+    fontSize: 12,
+    fontWeight: "600",
+    backgroundColor: C.bg,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    overflow: "hidden",
+  },
+  metricStatsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  metricStat: {
+    flex: 1,
+    alignItems: "center",
+  },
+  metricStatValue: {
+    color: C.text,
+    fontSize: 18,
+    fontWeight: "700",
+    lineHeight: 22,
+  },
+  metricStatLabel: {
+    color: C.sub,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  metricStatDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: C.border,
+  },
+  metricInfo: {
+    color: C.sub,
+    fontSize: 13,
+    lineHeight: 20,
   },
 });

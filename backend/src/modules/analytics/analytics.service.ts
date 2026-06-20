@@ -9,6 +9,7 @@ import type {
   BillPredictorDto,
   BreakdownEntryDto,
   TopConsumerDto,
+  MetricStatDto,
 } from "./analytics.dto.ts";
 
 // The demo user ID for MVP scope.
@@ -199,6 +200,125 @@ const buildBreakdownAndTopConsumers = async (
   return { breakdown, topConsumers };
 };
 
+// Nominal coalesce values for PZEM-004T columns that may be NULL in older DB rows.
+// Mirrors the same defaults used by the dashboard service for consistency.
+const NOMINAL_VOLTAGE = 220;
+const NOMINAL_FREQUENCY = 60;
+const NOMINAL_POWER_FACTOR = 0.9;
+
+// Single source-of-truth descriptor for each of the six PZEM-004T metrics.
+// The info text is authored for the facility-manager audience of the VoltWise app.
+const METRIC_INFO: Record<
+  MetricStatDto["key"],
+  { label: string; unit: string; info: string }
+> = {
+  voltage: {
+    label: "Voltage",
+    unit: "V",
+    info: "Confirms the line is receiving stable power and helps detect under/over-voltage conditions that could indicate electrical faults or utility supply issues.",
+  },
+  current: {
+    label: "Current",
+    unit: "A",
+    info: "Shows how much electrical current a load is drawing, which is the primary signal your Isolation Forest model uses to detect and distinguish appliance behavior.",
+  },
+  activePower: {
+    label: "Active Power",
+    unit: "W",
+    info: "Tells the facility manager the actual real-time electricity consumption, which is the core number used for cost calculation and load monitoring.",
+  },
+  energy: {
+    label: "Energy",
+    unit: "kWh",
+    info: "Tracks cumulative consumption over time, letting facility managers see daily/weekly/monthly usage trends and estimate electricity costs in pesos.",
+  },
+  frequency: {
+    label: "Frequency",
+    unit: "Hz",
+    info: "Verifies the AC supply is operating at a stable 60Hz (Philippine standard), with deviations potentially signaling generator instability or grid issues.",
+  },
+  powerFactor: {
+    label: "Power Factor",
+    unit: "PF",
+    info: "Indicates how efficiently a load uses electricity, helping identify inefficient appliances or equipment that may be costing more than their rated power suggests.",
+  },
+};
+
+// Documentation only: Fetches all whole-home EnergyReading rows for the given date
+// window (deviceId = null, scoped to DEMO_USER_ID) and computes avg / min / max for
+// each of the six PZEM-004T metrics using an in-memory reduce over the result set.
+// NULL values in current, frequency, and powerFactor columns (from pre-migration rows)
+// are coalesced to their nominal defaults before aggregation.
+// activePower is sourced from the watts column; energy from the kwh column.
+// All results are rounded to 2 decimal places.
+// Accepts { start, end } — the period window already computed by getDateRangeForPeriod.
+// Returns a Promise resolving to an array of six MetricStatDto objects.
+const buildMetricStats = async (
+  start: Date,
+  end: Date
+): Promise<MetricStatDto[]> => {
+  const wholeHomeReadings = await prisma.energyReading.findMany({
+    where: {
+      userId: DEMO_USER_ID,
+      deviceId: null,
+      timestamp: { gte: start, lte: end },
+    },
+    select: {
+      watts: true,
+      kwh: true,
+      voltage: true,
+      current: true,
+      frequency: true,
+      powerFactor: true,
+    },
+  });
+
+  // When there are no readings for the period, return zero-valued stats
+  // so the mobile app still receives a well-formed 6-element array.
+  if (wholeHomeReadings.length === 0) {
+    return (Object.keys(METRIC_INFO) as MetricStatDto["key"][]).map((key) => ({
+      key,
+      ...METRIC_INFO[key],
+      avg: 0,
+      min: 0,
+      max: 0,
+    }));
+  }
+
+  // Resolve nullable columns to nominal defaults before aggregating.
+  // This keeps the math clean regardless of how old the rows are.
+  const normalizedReadings = wholeHomeReadings.map((row) => ({
+    voltage: row.voltage ?? NOMINAL_VOLTAGE,
+    current: row.current ?? parseFloat(((row.watts) / (row.voltage ?? NOMINAL_VOLTAGE)).toFixed(3)),
+    activePower: row.watts,
+    energy: row.kwh,
+    frequency: row.frequency ?? NOMINAL_FREQUENCY,
+    powerFactor: row.powerFactor ?? NOMINAL_POWER_FACTOR,
+  }));
+
+  // Compute avg/min/max for every metric in a single reduce pass per metric key.
+  const metricKeys = Object.keys(METRIC_INFO) as MetricStatDto["key"][];
+
+  return metricKeys.map((key) => {
+    const values = normalizedReadings.map((r) => r[key]);
+
+    const sum = values.reduce((acc, v) => acc + v, 0);
+    const avg = parseFloat((sum / values.length).toFixed(2));
+    const min = parseFloat(Math.min(...values).toFixed(2));
+    const max = parseFloat(Math.max(...values).toFixed(2));
+
+    return {
+      key,
+      label: METRIC_INFO[key].label,
+      unit: METRIC_INFO[key].unit,
+      avg,
+      min,
+      max,
+      info: METRIC_INFO[key].info,
+    };
+  });
+};
+
 // Documentation only: Computes the complete analytics payload for the given period.
 // Retrieves the current tariff, billing period, per-period kWh total,
 // and device breakdown + top consumer data.
@@ -244,15 +364,16 @@ export const getAnalyticsData = async (
     cycleStart: formatCycleStartDate(billingPeriod.startDate),
   };
 
-  const { breakdown, topConsumers } = await buildBreakdownAndTopConsumers(
-    start,
-    end
-  );
+  const [{ breakdown, topConsumers }, metrics] = await Promise.all([
+    buildBreakdownAndTopConsumers(start, end),
+    buildMetricStats(start, end),
+  ]);
 
   return {
     billPredictor,
     totalKwh,
     breakdown,
     topConsumers,
+    metrics,
   };
 };
