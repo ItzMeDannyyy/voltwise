@@ -11,6 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, ApiAlert, ALERTS_CHANGED_EVENT, emitAlertsChanged } from "../../lib/api";
+import { AnomalyModal } from "../../components/AnomalyModal";
 
 const C = {
   bg: "#1a1f2e",
@@ -112,6 +113,9 @@ function severityIcon(type: AlertType): keyof typeof Ionicons.glyphMap {
 export default function AlertsScreen() {
   const [alerts, setAlerts] = useState<AlertItem[]>(INITIAL_ALERTS);
   const [activeTab, setActiveTab] = useState<FilterTab>("All");
+  const [modalAlert, setModalAlert] = useState<AlertItem | null>(null);
+  const [countdown, setCountdown] = useState(3);
+  const [powerOff, setPowerOff] = useState(false);
 
   // Load the alert feed from the backend.
   const loadAlerts = useCallback(() => {
@@ -137,6 +141,17 @@ export default function AlertsScreen() {
     const sub = DeviceEventEmitter.addListener(ALERTS_CHANGED_EVENT, loadAlerts);
     return () => sub.remove();
   }, [loadAlerts]);
+
+  // Countdown timer for critical/warning modal.
+  useEffect(() => {
+    if (!modalAlert || modalAlert.type === "info" || powerOff) return;
+    if (countdown <= 0) {
+      setPowerOff(true);
+      return;
+    }
+    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [modalAlert, countdown, powerOff]);
 
   const filteredAlerts = alerts.filter((a) => {
     if (activeTab === "Unread") return !a.read;
@@ -170,6 +185,22 @@ export default function AlertsScreen() {
     );
     api.patch(`/alerts/${id}/read`).catch(() => {});
     emitAlertsChanged();
+  }
+
+  function openModal(alert: AlertItem) {
+    setModalAlert(alert);
+    setCountdown(3);
+    setPowerOff(false);
+  }
+
+  function closeModal(doMarkRead = true) {
+    if (doMarkRead && modalAlert) markRead(modalAlert.id);
+    setModalAlert(null);
+  }
+
+  function handlePowerOff() {
+    setPowerOff(true);
+    setTimeout(() => closeModal(true), 1500);
   }
 
   return (
@@ -229,7 +260,7 @@ export default function AlertsScreen() {
                 <AlertCard
                   key={alert.id}
                   alert={alert}
-                  onPress={() => markRead(alert.id)}
+                  onPress={() => openModal(alert)}
                 />
               ))}
             </View>
@@ -242,7 +273,7 @@ export default function AlertsScreen() {
                 <AlertCard
                   key={alert.id}
                   alert={alert}
-                  onPress={() => markRead(alert.id)}
+                  onPress={() => openModal(alert)}
                 />
               ))}
             </View>
@@ -251,6 +282,14 @@ export default function AlertsScreen() {
           <View style={{ height: 16 }} />
         </ScrollView>
       </View>
+
+      <AnomalyModal
+        alert={modalAlert}
+        countdown={countdown}
+        powerOff={powerOff}
+        onPowerOff={handlePowerOff}
+        onSkip={() => closeModal(true)}
+      />
     </SafeAreaView>
   );
 }
@@ -303,6 +342,7 @@ function AlertCard({
     </TouchableOpacity>
   );
 }
+
 
 const styles = StyleSheet.create({
   root: {
@@ -475,4 +515,5 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: C.red,
   },
+
 });

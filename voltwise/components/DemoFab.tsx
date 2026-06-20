@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { api, ApiAlert, emitAlertsChanged } from "../lib/api";
+import { AnomalyModal } from "./AnomalyModal";
 
 const C = {
   bg: "#1a1f2e",
@@ -128,9 +129,17 @@ const PRESETS: Preset[] = [
 export default function DemoFab() {
   const [open, setOpen] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [demoModal, setDemoModal] = useState<AlertPayload | null>(null);
+  const [countdown, setCountdown] = useState(3);
+  const [powerOff, setPowerOff] = useState(false);
   const anim = useRef(new Animated.Value(0)).current;
-  const toastAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!demoModal || demoModal.type === "info" || powerOff) return;
+    if (countdown <= 0) { setPowerOff(true); return; }
+    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [demoModal, countdown, powerOff]);
 
   function setOpenAnimated(next: boolean) {
     setOpen(next);
@@ -142,65 +151,42 @@ export default function DemoFab() {
     }).start();
   }
 
-  function showToast(message: string) {
-    setToast(message);
-    toastAnim.setValue(0);
-    Animated.timing(toastAnim, {
-      toValue: 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-    setTimeout(() => {
-      Animated.timing(toastAnim, {
-        toValue: 0,
-        duration: 250,
-        useNativeDriver: true,
-      }).start(() => setToast(null));
-    }, 2400);
-  }
-
   async function trigger(preset: Preset) {
+    setOpenAnimated(false);
+    setDemoModal(preset.payload);
+    setCountdown(3);
+    setPowerOff(false);
     setBusyKey(preset.key);
     try {
       await api.post<ApiAlert>("/alerts", preset.payload);
       emitAlertsChanged();
-      showToast(`Alert triggered · ${preset.label}`);
     } catch {
-      showToast("Couldn't reach the alert service");
+      // modal already visible; silently ignore API failure
     } finally {
       setBusyKey(null);
-      setOpenAnimated(false);
     }
+  }
+
+  function closeDemoModal() {
+    setDemoModal(null);
+  }
+
+  function handleDemoPowerOff() {
+    setPowerOff(true);
+    setTimeout(() => setDemoModal(null), 1500);
   }
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      {open && <Pressable style={styles.backdrop} onPress={() => setOpenAnimated(false)} />}
+      <AnomalyModal
+        alert={demoModal}
+        countdown={countdown}
+        powerOff={powerOff}
+        onPowerOff={handleDemoPowerOff}
+        onSkip={closeDemoModal}
+      />
 
-      {toast && (
-        <Animated.View
-          style={[
-            styles.toast,
-            {
-              opacity: toastAnim,
-              transform: [
-                {
-                  translateY: toastAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [-10, 0],
-                  }),
-                },
-              ],
-            },
-          ]}
-          pointerEvents="none"
-        >
-          <Ionicons name="notifications" size={16} color={C.accent} />
-          <Text style={styles.toastText} numberOfLines={1}>
-            {toast}
-          </Text>
-        </Animated.View>
-      )}
+      {open && <Pressable style={styles.backdrop} onPress={() => setOpenAnimated(false)} />}
 
       <View style={styles.wrap} pointerEvents="box-none">
         {open && (
@@ -313,31 +299,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 5,
     elevation: 5,
-  },
-  toast: {
-    position: "absolute",
-    top: Platform.OS === "ios" ? 60 : 40,
-    alignSelf: "center",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    maxWidth: "88%",
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  toastText: {
-    color: C.text,
-    fontSize: 13,
-    fontWeight: "600",
-    flexShrink: 1,
   },
 });
