@@ -10,10 +10,14 @@ import type {
   DashboardPeriod,
   DashboardHistoryDto,
   TopConsumerDto,
+  ReadingDto,
 } from "./dashboard.dto.ts";
 
 // The demo user ID for MVP scope.
 const DEMO_USER_ID = 1;
+
+// A reading is considered "live" if it arrived within this window.
+const IOT_LIVENESS_WINDOW_MS = 5 * 60 * 1000;
 
 // A fixed color palette for top consumer chart segments.
 const CONSUMER_COLORS = [
@@ -228,6 +232,56 @@ const buildTopConsumers = async (): Promise<TopConsumerDto[]> => {
   }));
 };
 
+// Nominal sensor defaults used when a reading row has NULL for a PZEM-004T column.
+// These are the safe midpoints for a healthy 220V/60Hz Philippine grid circuit.
+const NOMINAL_VOLTAGE = 220;
+const NOMINAL_FREQUENCY = 60;
+const NOMINAL_POWER_FACTOR = 0.9;
+
+// Documentation only: Fetches the single most-recent whole-home EnergyReading
+// (deviceId = null) for the demo user and maps it into a ReadingDto.
+// If any nullable PZEM-004T column (current, frequency, powerFactor) is NULL
+// — which may happen with pre-migration rows — it falls back to the nominal defaults
+// defined above. activePower is sourced from watts; energy is sourced from kwh.
+// Accepts no parameters.
+// Returns a Promise resolving to a ReadingDto.
+const fetchLatestWholeHomeReading = async (): Promise<ReadingDto> => {
+  const latestReading = await prisma.energyReading.findFirst({
+    where: { userId: DEMO_USER_ID, deviceId: null },
+    orderBy: { timestamp: "desc" },
+    take: 1,
+  });
+
+  if (!latestReading) {
+    // No readings exist yet — return a fully nominal placeholder.
+    return {
+      voltage: NOMINAL_VOLTAGE,
+      current: 0,
+      activePower: 0,
+      energy: 0,
+      frequency: NOMINAL_FREQUENCY,
+      powerFactor: NOMINAL_POWER_FACTOR,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  const activePower = latestReading.watts;
+  const voltage = latestReading.voltage ?? NOMINAL_VOLTAGE;
+  // Derive current from power ÷ voltage when the column is NULL.
+  const current =
+    latestReading.current ?? parseFloat((activePower / voltage).toFixed(3));
+
+  return {
+    voltage,
+    current,
+    activePower,
+    energy: latestReading.kwh,
+    frequency: latestReading.frequency ?? NOMINAL_FREQUENCY,
+    powerFactor: latestReading.powerFactor ?? NOMINAL_POWER_FACTOR,
+    timestamp: latestReading.timestamp.toISOString(),
+  };
+};
+
 // Documentation only: Computes the complete dashboard payload for the given period.
 // Fetches active devices for current power (currentKw), sums today's whole-home kWh,
 // builds the history buckets, and computes top consumers by share.
@@ -274,10 +328,20 @@ export const getDashboardData = async (
     active: device.status === DeviceStatus.ACTIVE,
   }));
 
-  const [history, topConsumers] = await Promise.all([
+  const [history, topConsumers, reading, recentCount] = await Promise.all([
     buildHistoryForPeriod(period),
     buildTopConsumers(),
+    fetchLatestWholeHomeReading(),
+    prisma.energyReading.count({
+      where: {
+        userId: DEMO_USER_ID,
+        deviceId: null,
+        timestamp: { gte: new Date(Date.now() - IOT_LIVENESS_WINDOW_MS) },
+      },
+    }),
   ]);
+
+  const iotOnline = recentCount > 0;
 
   return {
     currentKw,
@@ -285,5 +349,7 @@ export const getDashboardData = async (
     devices: deviceSummaries,
     history,
     topConsumers,
+    reading,
+    iotOnline,
   };
 };

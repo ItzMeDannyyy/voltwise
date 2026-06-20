@@ -22,7 +22,7 @@ function resolveBaseUrl(): string {
 
   const hostUri =
     Constants.expoConfig?.hostUri ??
-    // @ts-expect-error legacy manifest field, present in some Expo runtimes
+    // @ts-ignore legacy manifest field, present in some Expo runtimes
     Constants.manifest?.debuggerHost;
 
   if (hostUri) {
@@ -60,6 +60,22 @@ export const api = {
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 
+/** Pings /api/health with a 3-second timeout. Returns true if server responds ok. Never throws. */
+export async function checkHealth(): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(`${API_BASE_URL}/health`, { signal: controller.signal });
+    if (!res.ok) return false;
+    const json = await res.json();
+    return json?.status === "ok";
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ---- Response types (mirror the backend contracts) ----
 
 export type DashboardPeriod = "Day" | "Week" | "Month";
@@ -78,12 +94,34 @@ export interface ConsumerSlice {
   color: string;
 }
 
+export interface Reading {
+  voltage: number;
+  current: number;
+  activePower: number;
+  energy: number;
+  frequency: number;
+  powerFactor: number;
+  timestamp: string;
+}
+
+export interface MetricStat {
+  key: "voltage" | "current" | "activePower" | "energy" | "frequency" | "powerFactor";
+  label: string;
+  unit: string;
+  avg: number;
+  min: number;
+  max: number;
+  info: string;
+}
+
 export interface DashboardData {
   currentKw: number;
   totalTodayKwh: number;
   devices: DashboardDevice[];
   history: { labels: string[]; data: number[] };
   topConsumers: ConsumerSlice[];
+  reading: Reading;
+  iotOnline: boolean;
 }
 
 export interface ApiDevice {
@@ -118,4 +156,5 @@ export interface AnalyticsData {
   totalKwh: number;
   breakdown: { label: string; pct: number; color: string }[];
   topConsumers: ConsumerSlice[];
+  metrics: MetricStat[];
 }

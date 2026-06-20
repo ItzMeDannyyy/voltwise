@@ -25,6 +25,17 @@ export interface TopConsumerDto {
   color: string;
 }
 
+// The six PZEM-004T sensor metrics for the latest whole-home reading.
+export interface ReadingDto {
+  voltage: number;
+  current: number;
+  activePower: number;
+  energy: number;
+  frequency: number;
+  powerFactor: number;
+  timestamp: string;
+}
+
 // The full dashboard response shape as consumed by the mobile app.
 export interface DashboardResponseDto {
   currentKw: number;
@@ -32,4 +43,6 @@ export interface DashboardResponseDto {
   devices: DashboardDeviceSummaryDto[];
   history: DashboardHistoryDto;
   topConsumers: TopConsumerDto[];
+  reading: ReadingDto;
+  iotOnline: boolean;
 }
