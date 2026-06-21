@@ -1,4 +1,4 @@
-import { Tabs } from "expo-router";
+import { Tabs, Redirect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import {
@@ -13,6 +13,7 @@ import { PlatformPressable } from "@react-navigation/elements";
 import type { BottomTabBarButtonProps } from "@react-navigation/bottom-tabs";
 import DemoFab from "../../components/DemoFab";
 import { api, ApiAlert, ALERTS_CHANGED_EVENT } from "../../lib/api";
+import { useAuth } from "../../context/AuthContext";
 
 const COLORS = {
   background: "#1a1f2e",
@@ -61,6 +62,14 @@ function AlertsBadge() {
 }
 
 export default function TabLayout() {
+  const { isAuthenticated, isBootstrapping } = useAuth();
+
+  // Auth gate for the protected group: kick back to login on sign-out / 401
+  // without requiring an app reload.
+  if (!isBootstrapping && !isAuthenticated) {
+    return <Redirect href="/(auth)/login" />;
+  }
+
   return (
     <View style={styles.root}>
       <Tabs

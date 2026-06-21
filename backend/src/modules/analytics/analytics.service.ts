@@ -1,6 +1,8 @@
 // Documentation only: Service layer for the analytics module.
 // Computes bill prediction, total kWh consumed, category breakdown percentages,
-// and top consumers for the given period. No HTTP-specific code lives here.
+// and top consumers for the given period. All functions accept a userId parameter
+// so they operate on the authenticated user's data rather than a hardcoded demo user.
+// No HTTP-specific code lives here.
 
 import { prisma } from "../../lib/prisma.ts";
 import type {
@@ -11,9 +13,6 @@ import type {
   TopConsumerDto,
   MetricStatDto,
 } from "./analytics.dto.ts";
-
-// The demo user ID for MVP scope.
-const DEMO_USER_ID = 1;
 
 // A fixed color palette applied in order to breakdown and topConsumer segments.
 const SEGMENT_COLORS = [
@@ -64,15 +63,15 @@ const getDateRangeForPeriod = (
   return { start, end: now };
 };
 
-// Documentation only: Retrieves the most recently effective tariff for the demo user.
+// Documentation only: Retrieves the most recently effective tariff for the given user.
 // If no tariff exists, returns a default rate of 10.5 ₱/kWh.
+// Accepts userId (number).
 // Returns a Promise resolving to { ratePerKwh: number, currency: string }.
-const getLatestTariff = async (): Promise<{
-  ratePerKwh: number;
-  currency: string;
-}> => {
+const getLatestTariff = async (
+  userId: number
+): Promise<{ ratePerKwh: number; currency: string }> => {
   const latestTariff = await prisma.tariff.findFirst({
-    where: { userId: DEMO_USER_ID },
+    where: { userId },
     orderBy: { effectiveFrom: "desc" },
   });
 
@@ -82,13 +81,14 @@ const getLatestTariff = async (): Promise<{
   };
 };
 
-// Documentation only: Retrieves the most recent open BillingPeriod for the demo user
+// Documentation only: Retrieves the most recent open BillingPeriod for the given user
 // (a period where endDate is null, meaning the cycle is still active).
 // If none exists, returns sensible defaults.
+// Accepts userId (number).
 // Returns a Promise resolving to the BillingPeriod object or a default object.
-const getCurrentBillingPeriod = async () => {
+const getCurrentBillingPeriod = async (userId: number) => {
   const openBillingPeriod = await prisma.billingPeriod.findFirst({
-    where: { userId: DEMO_USER_ID, endDate: null },
+    where: { userId, endDate: null },
     orderBy: { startDate: "desc" },
   });
 
@@ -111,9 +111,10 @@ const getCurrentBillingPeriod = async () => {
 // Documentation only: Computes per-device kWh totals over the period window,
 // then groups them into top devices + an "Others" bucket for the breakdown chart.
 // Uses the SEGMENT_COLORS palette and caps individual entries at 5 before collapsing.
-// Accepts { start, end } and the total kWh for the period (used to compute "Others").
+// Accepts userId (number) and { start, end } — the period window.
 // Returns a Promise resolving to { breakdown: BreakdownEntryDto[], topConsumers: TopConsumerDto[] }.
 const buildBreakdownAndTopConsumers = async (
+  userId: number,
   start: Date,
   end: Date
 ): Promise<{
@@ -124,7 +125,7 @@ const buildBreakdownAndTopConsumers = async (
   const deviceKwhGroups = await prisma.energyReading.groupBy({
     by: ["deviceId"],
     where: {
-      userId: DEMO_USER_ID,
+      userId,
       deviceId: { not: null },
       timestamp: { gte: start, lte: end },
     },
@@ -245,21 +246,22 @@ const METRIC_INFO: Record<
 };
 
 // Documentation only: Fetches all whole-home EnergyReading rows for the given date
-// window (deviceId = null, scoped to DEMO_USER_ID) and computes avg / min / max for
+// window (deviceId = null, scoped to userId) and computes avg / min / max for
 // each of the six PZEM-004T metrics using an in-memory reduce over the result set.
 // NULL values in current, frequency, and powerFactor columns (from pre-migration rows)
 // are coalesced to their nominal defaults before aggregation.
 // activePower is sourced from the watts column; energy from the kwh column.
 // All results are rounded to 2 decimal places.
-// Accepts { start, end } — the period window already computed by getDateRangeForPeriod.
+// Accepts userId (number) and { start, end } — the period window already computed by getDateRangeForPeriod.
 // Returns a Promise resolving to an array of six MetricStatDto objects.
 const buildMetricStats = async (
+  userId: number,
   start: Date,
   end: Date
 ): Promise<MetricStatDto[]> => {
   const wholeHomeReadings = await prisma.energyReading.findMany({
     where: {
-      userId: DEMO_USER_ID,
+      userId,
       deviceId: null,
       timestamp: { gte: start, lte: end },
     },
@@ -322,22 +324,23 @@ const buildMetricStats = async (
 // Documentation only: Computes the complete analytics payload for the given period.
 // Retrieves the current tariff, billing period, per-period kWh total,
 // and device breakdown + top consumer data.
-// Accepts the AnalyticsPeriod ("Day" | "Week" | "Month").
+// Accepts userId (number) and the AnalyticsPeriod ("Day" | "Week" | "Month").
 // Returns a Promise resolving to an AnalyticsResponseDto.
 export const getAnalyticsData = async (
+  userId: number,
   period: AnalyticsPeriod
 ): Promise<AnalyticsResponseDto> => {
   const { start, end } = getDateRangeForPeriod(period);
 
   const [tariff, billingPeriod] = await Promise.all([
-    getLatestTariff(),
-    getCurrentBillingPeriod(),
+    getLatestTariff(userId),
+    getCurrentBillingPeriod(userId),
   ]);
 
   // Sum whole-home kWh over the selected period window.
   const periodKwhAggregate = await prisma.energyReading.aggregate({
     where: {
-      userId: DEMO_USER_ID,
+      userId,
       deviceId: null,
       timestamp: { gte: start, lte: end },
     },
@@ -365,8 +368,8 @@ export const getAnalyticsData = async (
   };
 
   const [{ breakdown, topConsumers }, metrics] = await Promise.all([
-    buildBreakdownAndTopConsumers(start, end),
-    buildMetricStats(start, end),
+    buildBreakdownAndTopConsumers(userId, start, end),
+    buildMetricStats(userId, start, end),
   ]);
 
   return {
