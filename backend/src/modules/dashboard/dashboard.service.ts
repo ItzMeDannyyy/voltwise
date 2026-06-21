@@ -1,7 +1,8 @@
 // Documentation only: Service layer for the dashboard module.
 // Computes the live dashboard summary: current power draw, daily total kWh,
 // device list, historical kWh buckets, and top consumers by kWh share.
-// No HTTP-specific code lives here.
+// All functions accept a userId parameter so they operate on the authenticated
+// user's data rather than a hardcoded demo user. No HTTP-specific code lives here.
 
 import { prisma } from "../../lib/prisma.ts";
 import { DeviceStatus } from "../../generated/prisma/index.js";
@@ -12,9 +13,6 @@ import type {
   TopConsumerDto,
   ReadingDto,
 } from "./dashboard.dto.ts";
-
-// The demo user ID for MVP scope.
-const DEMO_USER_ID = 1;
 
 // A reading is considered "live" if it arrived within this window.
 const IOT_LIVENESS_WINDOW_MS = 5 * 60 * 1000;
@@ -74,10 +72,11 @@ const formatBucketLabel = (date: Date, period: DashboardPeriod): string => {
 // Day = ~9 hourly buckets across the current day.
 // Week = 7 day buckets (past 7 days).
 // Month = 12 monthly buckets (past 12 months, or current year months).
-// Fetches EnergyReading rows for the demo user in the relevant window and sums kWh per bucket.
-// Accepts the period string.
+// Fetches EnergyReading rows for the given user in the relevant window and sums kWh per bucket.
+// Accepts userId (number) and the period string.
 // Returns a Promise resolving to a DashboardHistoryDto.
 const buildHistoryForPeriod = async (
+  userId: number,
   period: DashboardPeriod
 ): Promise<DashboardHistoryDto> => {
   const now = new Date();
@@ -92,7 +91,7 @@ const buildHistoryForPeriod = async (
 
     const readings = await prisma.energyReading.findMany({
       where: {
-        userId: DEMO_USER_ID,
+        userId,
         deviceId: null, // whole-home aggregate readings
         timestamp: { gte: todayStart, lte: todayEnd },
       },
@@ -131,7 +130,7 @@ const buildHistoryForPeriod = async (
 
       const aggregateResult = await prisma.energyReading.aggregate({
         where: {
-          userId: DEMO_USER_ID,
+          userId,
           deviceId: null,
           timestamp: { gte: dayStart, lte: dayEnd },
         },
@@ -157,7 +156,7 @@ const buildHistoryForPeriod = async (
 
     const aggregateResult = await prisma.energyReading.aggregate({
       where: {
-        userId: DEMO_USER_ID,
+        userId,
         deviceId: null,
         timestamp: { gte: monthStart, lte: monthEnd },
       },
@@ -176,9 +175,9 @@ const buildHistoryForPeriod = async (
 // Documentation only: Computes top consumers for the current day (regardless of period)
 // by summing each ACTIVE device's per-device EnergyReading kWh for today,
 // expressing each as an integer percentage of the total.
-// Accepts no parameters beyond the implicit DEMO_USER_ID scope.
+// Accepts userId (number) — scopes all queries to the authenticated user.
 // Returns a Promise resolving to an array of up to 5 TopConsumerDto items.
-const buildTopConsumers = async (): Promise<TopConsumerDto[]> => {
+const buildTopConsumers = async (userId: number): Promise<TopConsumerDto[]> => {
   const now = new Date();
   const todayStart = startOfDay(now);
   const todayEnd = endOfDay(now);
@@ -187,7 +186,7 @@ const buildTopConsumers = async (): Promise<TopConsumerDto[]> => {
   const deviceReadings = await prisma.energyReading.groupBy({
     by: ["deviceId"],
     where: {
-      userId: DEMO_USER_ID,
+      userId,
       deviceId: { not: null },
       timestamp: { gte: todayStart, lte: todayEnd },
     },
@@ -239,15 +238,15 @@ const NOMINAL_FREQUENCY = 60;
 const NOMINAL_POWER_FACTOR = 0.9;
 
 // Documentation only: Fetches the single most-recent whole-home EnergyReading
-// (deviceId = null) for the demo user and maps it into a ReadingDto.
+// (deviceId = null) for the given user and maps it into a ReadingDto.
 // If any nullable PZEM-004T column (current, frequency, powerFactor) is NULL
 // — which may happen with pre-migration rows — it falls back to the nominal defaults
 // defined above. activePower is sourced from watts; energy is sourced from kwh.
-// Accepts no parameters.
+// Accepts userId (number).
 // Returns a Promise resolving to a ReadingDto.
-const fetchLatestWholeHomeReading = async (): Promise<ReadingDto> => {
+const fetchLatestWholeHomeReading = async (userId: number): Promise<ReadingDto> => {
   const latestReading = await prisma.energyReading.findFirst({
-    where: { userId: DEMO_USER_ID, deviceId: null },
+    where: { userId, deviceId: null },
     orderBy: { timestamp: "desc" },
     take: 1,
   });
@@ -285,9 +284,10 @@ const fetchLatestWholeHomeReading = async (): Promise<ReadingDto> => {
 // Documentation only: Computes the complete dashboard payload for the given period.
 // Fetches active devices for current power (currentKw), sums today's whole-home kWh,
 // builds the history buckets, and computes top consumers by share.
-// Accepts the DashboardPeriod ("Day" | "Week" | "Month").
+// Accepts userId (number) and the DashboardPeriod ("Day" | "Week" | "Month").
 // Returns a Promise resolving to a DashboardResponseDto.
 export const getDashboardData = async (
+  userId: number,
   period: DashboardPeriod
 ): Promise<DashboardResponseDto> => {
   const now = new Date();
@@ -296,7 +296,7 @@ export const getDashboardData = async (
 
   // Fetch all devices for the live device list panel.
   const allDevices = await prisma.device.findMany({
-    where: { userId: DEMO_USER_ID },
+    where: { userId },
   });
 
   // Current total watts = sum of ratedWatts for ACTIVE devices only.
@@ -309,7 +309,7 @@ export const getDashboardData = async (
   // Total kWh consumed today from whole-home aggregate readings.
   const todayKwhAggregate = await prisma.energyReading.aggregate({
     where: {
-      userId: DEMO_USER_ID,
+      userId,
       deviceId: null,
       timestamp: { gte: todayStart, lte: todayEnd },
     },
@@ -329,12 +329,12 @@ export const getDashboardData = async (
   }));
 
   const [history, topConsumers, reading, recentCount] = await Promise.all([
-    buildHistoryForPeriod(period),
-    buildTopConsumers(),
-    fetchLatestWholeHomeReading(),
+    buildHistoryForPeriod(userId, period),
+    buildTopConsumers(userId),
+    fetchLatestWholeHomeReading(userId),
     prisma.energyReading.count({
       where: {
-        userId: DEMO_USER_ID,
+        userId,
         deviceId: null,
         timestamp: { gte: new Date(Date.now() - IOT_LIVENESS_WINDOW_MS) },
       },

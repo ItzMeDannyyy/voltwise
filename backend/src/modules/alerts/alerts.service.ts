@@ -1,13 +1,11 @@
 // Documentation only: Service layer for the alerts module.
-// Handles retrieving, formatting, and marking-read alerts for the demo user.
-// No HTTP-specific code lives here.
+// Handles retrieving, formatting, creating, and marking-read alerts for a given user.
+// All functions accept a userId parameter so they operate on the authenticated
+// user's data rather than a hardcoded demo user. No HTTP-specific code lives here.
 
 import { prisma } from "../../lib/prisma.ts";
 import { AlertType } from "../../generated/prisma/index.js";
 import type { AlertResponseDto, CreateAlertDto } from "./alerts.dto.ts";
-
-// The demo user ID for MVP scope.
-const DEMO_USER_ID = 1;
 
 // Documentation only: Maps the lowercase string the mobile app sends
 // ("critical" | "warning" | "info") to the Prisma AlertType enum value.
@@ -85,11 +83,12 @@ const formatAlertForResponse = (alert: {
   };
 };
 
-// Documentation only: Retrieves all alerts for the demo user, ordered newest-first.
+// Documentation only: Retrieves all alerts for the given user, ordered newest-first.
+// Accepts userId (number) — the authenticated user's database id.
 // Returns a Promise resolving to an array of AlertResponseDto.
-export const getAllAlerts = async (): Promise<AlertResponseDto[]> => {
+export const getAllAlerts = async (userId: number): Promise<AlertResponseDto[]> => {
   const alerts = await prisma.alert.findMany({
-    where: { userId: DEMO_USER_ID },
+    where: { userId },
     orderBy: { createdAt: "desc" },
   });
 
@@ -97,17 +96,18 @@ export const getAllAlerts = async (): Promise<AlertResponseDto[]> => {
 };
 
 // Documentation only: Marks a single alert as read by its ID.
-// Throws an error if the alert does not exist or does not belong to the demo user.
-// Accepts the alert id (number).
+// Throws an error if the alert does not exist or does not belong to the given user.
+// Accepts userId (number) and the alert id (number).
 // Returns a Promise resolving to the updated AlertResponseDto.
 export const markAlertRead = async (
+  userId: number,
   alertId: number
 ): Promise<AlertResponseDto> => {
   const existingAlert = await prisma.alert.findUnique({
     where: { id: alertId },
   });
 
-  if (!existingAlert || existingAlert.userId !== DEMO_USER_ID) {
+  if (!existingAlert || existingAlert.userId !== userId) {
     throw new Error("Alert not found");
   }
 
@@ -119,27 +119,29 @@ export const markAlertRead = async (
   return formatAlertForResponse(updatedAlert);
 };
 
-// Documentation only: Marks all alerts for the demo user as read in a single batch update.
+// Documentation only: Marks all alerts for the given user as read in a single batch update.
+// Accepts userId (number).
 // Returns a Promise resolving to true when the batch update completes.
-export const markAllAlertsRead = async (): Promise<boolean> => {
+export const markAllAlertsRead = async (userId: number): Promise<boolean> => {
   await prisma.alert.updateMany({
-    where: { userId: DEMO_USER_ID, read: false },
+    where: { userId, read: false },
     data: { read: true },
   });
 
   return true;
 };
 
-// Documentation only: Creates a new (unread) alert for the demo user.
+// Documentation only: Creates a new (unread) alert for the given user.
 // Used by the in-app demo control to simulate alert-system events.
-// Accepts a CreateAlertDto; createdAt defaults to now() so it lands in "TODAY".
+// Accepts userId (number) and a CreateAlertDto; createdAt defaults to now().
 // Returns a Promise resolving to the created AlertResponseDto.
 export const createAlert = async (
+  userId: number,
   input: CreateAlertDto
 ): Promise<AlertResponseDto> => {
   const created = await prisma.alert.create({
     data: {
-      userId: DEMO_USER_ID,
+      userId,
       type: mapStringToAlertType(input.type),
       title: input.title,
       description: input.description,

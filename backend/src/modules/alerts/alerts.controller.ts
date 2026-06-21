@@ -1,5 +1,6 @@
 // Documentation only: Controller layer for the alerts module.
 // Handles the HTTP request/response cycle for all alert endpoints.
+// Reads the authenticated user's id from req.user (set by requireAuth middleware).
 // No business logic lives here — all logic is delegated to alerts.service.ts.
 
 import type { Request, Response, NextFunction } from "express";
@@ -10,6 +11,7 @@ const VALID_ALERT_TYPES = ["critical", "warning", "info"] as const;
 
 // Documentation only: Handles POST /api/alerts.
 // Creates a new alert (used by the in-app demo control to simulate events).
+// Reads the authenticated user's id from req.user.
 // Validates that type/title/description are present and well-formed.
 // Returns 201 with { success: true, data: AlertResponseDto } on success.
 // Passes any errors to the Express error handler via next().
@@ -19,6 +21,7 @@ export const createAlert = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const userId = req.user!.id;
     const body = req.body as Partial<CreateAlertDto>;
 
     if (
@@ -37,7 +40,7 @@ export const createAlert = async (
       return;
     }
 
-    const created = await alertsService.createAlert({
+    const created = await alertsService.createAlert(userId, {
       type: body.type,
       title: body.title.trim(),
       description: body.description.trim(),
@@ -54,7 +57,8 @@ export const createAlert = async (
 };
 
 // Documentation only: Handles GET /api/alerts.
-// Fetches all alerts for the demo user, ordered newest-first.
+// Reads the authenticated user's id from req.user.
+// Fetches all alerts for that user, ordered newest-first.
 // Returns 200 with { success: true, data: AlertResponseDto[] } on success.
 // Passes any errors to the Express error handler via next().
 export const getAllAlerts = async (
@@ -63,7 +67,8 @@ export const getAllAlerts = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const alertList = await alertsService.getAllAlerts();
+    const userId = req.user!.id;
+    const alertList = await alertsService.getAllAlerts(userId);
     res.status(200).json({ success: true, data: alertList });
   } catch (error) {
     next(error);
@@ -71,9 +76,10 @@ export const getAllAlerts = async (
 };
 
 // Documentation only: Handles PATCH /api/alerts/:id/read.
+// Reads the authenticated user's id from req.user.
 // Reads the alert ID from the route params and marks that alert as read.
 // Returns 200 with { success: true, data: AlertResponseDto } on success.
-// Returns 404 if the alert does not exist.
+// Returns 404 if the alert does not exist or belongs to a different user.
 // Passes any errors to the Express error handler via next().
 export const markAlertRead = async (
   req: Request,
@@ -81,6 +87,7 @@ export const markAlertRead = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const userId = req.user!.id;
     const alertId = Number(req.params.id);
 
     if (isNaN(alertId)) {
@@ -90,7 +97,7 @@ export const markAlertRead = async (
       return;
     }
 
-    const updatedAlert = await alertsService.markAlertRead(alertId);
+    const updatedAlert = await alertsService.markAlertRead(userId, alertId);
     res.status(200).json({ success: true, data: updatedAlert });
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "Alert not found") {
@@ -102,7 +109,8 @@ export const markAlertRead = async (
 };
 
 // Documentation only: Handles POST /api/alerts/read-all.
-// Marks all unread alerts for the demo user as read in a single batch operation.
+// Reads the authenticated user's id from req.user.
+// Marks all unread alerts for that user as read in a single batch operation.
 // Returns 200 with { success: true } on success.
 // Passes any errors to the Express error handler via next().
 export const markAllAlertsRead = async (
@@ -111,7 +119,8 @@ export const markAllAlertsRead = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    await alertsService.markAllAlertsRead();
+    const userId = req.user!.id;
+    await alertsService.markAllAlertsRead(userId);
     res.status(200).json({ success: true });
   } catch (error) {
     next(error);
