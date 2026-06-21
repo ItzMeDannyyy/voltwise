@@ -1,4 +1,3 @@
-import Constants from "expo-constants";
 import { DeviceEventEmitter } from "react-native";
 
 /** Fired whenever alerts change (created or marked read) so views can refresh. */
@@ -9,41 +8,82 @@ export function emitAlertsChanged() {
 }
 
 /**
- * Resolves the VoltWise backend base URL.
- *
- * In Expo dev, the app may run on a physical device or simulator where
- * "localhost" points at the device itself, not the dev machine. We derive the
- * dev machine's LAN IP from Expo's `hostUri` (e.g. "192.168.1.5:8081") and
- * target the backend port (3000). Override with EXPO_PUBLIC_API_URL if needed.
+ * Fired when the server returns 401 (missing / expired token).
+ * AuthContext subscribes to this event to trigger automatic sign-out.
  */
-function resolveBaseUrl(): string {
-  const override = process.env.EXPO_PUBLIC_API_URL;
-  if (override) return override.replace(/\/$/, "");
+export const AUTH_UNAUTHORIZED_EVENT = "voltwise:authUnauthorized";
 
-  const hostUri =
-    Constants.expoConfig?.hostUri ??
-    // @ts-ignore legacy manifest field, present in some Expo runtimes
-    Constants.manifest?.debuggerHost;
+// ---- In-memory auth token ----
+// Populated by AuthContext on boot/sign-in; cleared on sign-out.
+let _authToken: string | null = null;
 
-  if (hostUri) {
-    const host = hostUri.split(":")[0];
-    return `http://${host}:3000/api`;
-  }
-
-  return "http://localhost:3000/api";
+export function setAuthToken(token: string | null) {
+  _authToken = token;
 }
 
-export const API_BASE_URL = resolveBaseUrl();
+// ---- Auth response types ----
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string | null;
+  currency: string;
+  createdAt?: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: AuthUser;
+}
+
+/**
+ * Backend API base URL. Set EXPO_PUBLIC_BASE_URL in .env to your full backend
+ * URL including the /api path, e.g. "http://192.168.1.10:3000/api".
+ */
+export const API_BASE_URL =
+  process.env.EXPO_PUBLIC_BASE_URL ?? "http://localhost:3000/api";
+
+// Logged once at startup so you can confirm which URL the app is actually using
+// (catches a stale .env that needs `npx expo start --clear`).
+console.log("[VoltWise] API_BASE_URL =", API_BASE_URL);
 
 /** Backend wraps every payload as { success, data } — this unwraps it. */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+  // Merge auth header when a token is available.
+  const authHeaders: Record<string, string> = _authToken
+    ? { Authorization: `Bearer ${_authToken}` }
+    : {};
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders,
+        // Allow callers to override headers (e.g. for multipart uploads in the future).
+        ...(init?.headers as Record<string, string> | undefined),
+      },
+    });
+  } catch {
+    // fetch() rejects only on a transport failure — wrong IP, server down, not on
+    // the same network, or HTTP blocked. Make that distinct from an HTTP error.
+    throw new Error(
+      `Cannot reach the server at ${API_BASE_URL}. Check EXPO_PUBLIC_BASE_URL and that the backend is running on the same network.`
+    );
+  }
+
+  if (res.status === 401) {
+    DeviceEventEmitter.emit(AUTH_UNAUTHORIZED_EVENT);
+  }
 
   if (!res.ok) {
-    throw new Error(`Request failed (${res.status}) for ${path}`);
+    // Surface the backend's own message (e.g. "Invalid credentials") when present.
+    const serverMessage = await res
+      .json()
+      .then((body) => (body && typeof body === "object" ? body.message : null))
+      .catch(() => null);
+    throw new Error(serverMessage ?? `Request failed (${res.status}) for ${path}`);
   }
 
   const json = await res.json();

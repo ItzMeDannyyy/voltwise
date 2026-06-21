@@ -1,6 +1,7 @@
 // Documentation only: Controller layer for the analytics module.
 // Handles the HTTP request/response cycle for the analytics endpoint.
-// Parses the period query parameter, validates it, and delegates to the service.
+// Reads the authenticated user's id from req.user (set by requireAuth middleware),
+// parses the period query parameter, validates it, and delegates to the service.
 // No business logic lives here.
 
 import type { Request, Response, NextFunction } from "express";
@@ -11,6 +12,7 @@ import type { AnalyticsPeriod } from "./analytics.dto.ts";
 const VALID_PERIODS: AnalyticsPeriod[] = ["Day", "Week", "Month"];
 
 // Documentation only: Handles GET /api/analytics?period=Day|Week|Month.
+// Reads the authenticated user's id from req.user (set by requireAuth middleware).
 // Reads the period query parameter (defaults to "Month" if absent, since analytics
 // is most meaningful over a billing cycle).
 // Validates the period, then delegates to the analytics service.
@@ -22,6 +24,7 @@ export const getAnalytics = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const userId = req.user!.id;
     const rawPeriod = (req.query.period as string) ?? "Month";
     const period = rawPeriod as AnalyticsPeriod;
 
@@ -33,7 +36,7 @@ export const getAnalytics = async (
       return;
     }
 
-    const analyticsData = await analyticsService.getAnalyticsData(period);
+    const analyticsData = await analyticsService.getAnalyticsData(userId, period);
     res.status(200).json({ success: true, data: analyticsData });
   } catch (error) {
     next(error);
