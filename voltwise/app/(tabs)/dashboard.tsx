@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Dimensions,
   FlatList,
-  Image,
   Animated,
   Easing,
   LayoutAnimation,
@@ -18,6 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LineChart } from "react-native-chart-kit";
 import { api, checkHealth, DashboardData, DashboardDevice, Reading } from "../../lib/api";
+import AppHeader from "../../components/AppHeader";
 
 // Enable LayoutAnimation on Android.
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -209,7 +209,13 @@ export default function DashboardScreen() {
   // Each value random-walks from its previous value (matching the original
   // currentKw logic), so the latest API-seeded reading is preserved and
   // drifts gently rather than snapping back to the fallback base.
+  //
+  // Live monitoring only runs while the IoT layer is online — when it's
+  // offline (or status is still unknown) the readings freeze, mirroring how
+  // analytics shows static values rather than a fake live feed.
   useEffect(() => {
+    if (iotOnline !== true) return;
+
     intervalRef.current = setInterval(() => {
       // kW fluctuation (unchanged from original logic).
       setCurrentKw((prev) => {
@@ -231,7 +237,7 @@ export default function DashboardScreen() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, []);
+  }, [iotOnline]);
 
   function toggleExpanded() {
     const next = !expanded;
@@ -270,22 +276,8 @@ export default function DashboardScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Image
-            source={require("../../assets/images/voltwise-logo.png")}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <View style={styles.headerIcons}>
-            <TouchableOpacity style={styles.iconBtn}>
-              <Ionicons name="notifications-outline" size={22} color={C.text} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.avatar}>
-              <Ionicons name="person-outline" size={18} color={C.text} />
-            </TouchableOpacity>
-          </View>
-        </View>
+        {/* Brand header — logo + interactive bell/profile */}
+        <AppHeader />
 
         {/* Status Row */}
         <View style={styles.statusRow}>
@@ -305,10 +297,17 @@ export default function DashboardScreen() {
           <View style={styles.usageCardTop}>
             <Text style={styles.usageLabel}>Current{"\n"}Usage</Text>
             <View style={styles.usageTopRight}>
-              <View style={styles.livePill}>
-                <View style={styles.liveDot} />
-                <Text style={styles.liveText}>LIVE</Text>
-              </View>
+              {iotOnline ? (
+                <View style={styles.livePill}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveText}>LIVE</Text>
+                </View>
+              ) : (
+                <View style={styles.offlinePill}>
+                  <View style={styles.offlineDot} />
+                  <Text style={styles.offlineText}>OFFLINE</Text>
+                </View>
+              )}
               {/* Collapse toggle chevron */}
               <TouchableOpacity
                 onPress={toggleExpanded}
@@ -499,38 +498,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 20,
-  },
   statusRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     marginBottom: 12,
-  },
-  logo: {
-    width: 240,
-    height: 72,
-    marginLeft: -20,
-  },
-  headerIcons: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  iconBtn: {
-    padding: 4,
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: C.card,
-    alignItems: "center",
-    justifyContent: "center",
   },
   usageCard: {
     backgroundColor: C.card,
@@ -571,6 +543,27 @@ const styles = StyleSheet.create({
   },
   liveText: {
     color: C.accent,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  offlinePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#33384a",
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    gap: 5,
+  },
+  offlineDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: C.sub,
+  },
+  offlineText: {
+    color: C.sub,
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 0.5,

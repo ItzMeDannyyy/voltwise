@@ -4,10 +4,15 @@
 // This script is idempotent — running it multiple times produces the same state.
 
 import "dotenv/config";
+import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/index.js";
 import { DATABASE_URL } from "../src/configs/database.ts";
 import { DeviceStatus, AlertType } from "../src/generated/prisma/index.js";
+
+// The plaintext password for the seeded demo account.
+// Logged at the end of the seed so developers know what to use on first login.
+const DEMO_USER_PASSWORD = "password123";
 
 // ─── Prisma Client Setup ───────────────────────────────────────────────────────
 
@@ -58,16 +63,36 @@ async function seed(): Promise<void> {
   await prisma.billingPeriod.deleteMany();
   await prisma.tariff.deleteMany();
   await prisma.user.deleteMany();
-  console.log("Existing data wiped.");
+
+  // Reset all auto-increment sequences back to 1 so that the demo user gets id=1
+  // and subsequent new user registrations start from id=2.
+  // Without this, PostgreSQL keeps the sequence at the highest previously-used value,
+  // which causes a unique constraint violation on the first register after a re-seed.
+  await prisma.$executeRawUnsafe(`ALTER SEQUENCE "User_id_seq" RESTART WITH 1`);
+  await prisma.$executeRawUnsafe(`ALTER SEQUENCE "Room_id_seq" RESTART WITH 1`);
+  await prisma.$executeRawUnsafe(`ALTER SEQUENCE "Device_id_seq" RESTART WITH 1`);
+  await prisma.$executeRawUnsafe(`ALTER SEQUENCE "Tariff_id_seq" RESTART WITH 1`);
+  await prisma.$executeRawUnsafe(`ALTER SEQUENCE "BillingPeriod_id_seq" RESTART WITH 1`);
+  await prisma.$executeRawUnsafe(`ALTER SEQUENCE "EnergyReading_id_seq" RESTART WITH 1`);
+  await prisma.$executeRawUnsafe(`ALTER SEQUENCE "Alert_id_seq" RESTART WITH 1`);
+
+  console.log("Existing data wiped and sequences reset.");
 
   // ── 2. Demo User ────────────────────────────────────────────────────────────
   console.log("Creating demo user...");
+
+  // Hash the demo password so the seeded account is immediately loginable
+  // via POST /api/auth/login with { email: "demo@voltwise.app", password: "password123" }.
+  const demoPasswordHash = await bcrypt.hash(DEMO_USER_PASSWORD, 10);
+
   const demoUser = await prisma.user.create({
     data: {
-      id: 1,
+      // No explicit id: let the (just-reset) sequence assign id=1 and advance to 2,
+      // so the first real registration gets id=2 instead of colliding on id=1.
       email: "demo@voltwise.app",
       name: "Demo User",
       currency: "₱",
+      passwordHash: demoPasswordHash,
     },
   });
   console.log(`  Created user: ${demoUser.email} (id=${demoUser.id})`);
@@ -442,6 +467,9 @@ async function seed(): Promise<void> {
   console.log(`  Alerts: 5`);
   console.log(`  Tariffs: 1`);
   console.log(`  Billing periods: 1`);
+  console.log("\nDemo credentials:");
+  console.log(`  Email:    demo@voltwise.app`);
+  console.log(`  Password: ${DEMO_USER_PASSWORD}`);
 }
 
 seed()

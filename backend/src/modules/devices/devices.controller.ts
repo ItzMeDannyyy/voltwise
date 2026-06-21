@@ -1,14 +1,16 @@
 // Documentation only: Controller layer for the devices module.
 // Handles the HTTP request/response cycle for all device endpoints.
-// Extracts and type-checks input, delegates to the service, and returns
-// standardized JSON responses. No business logic lives here.
+// Extracts and type-checks input, reads the authenticated user's id from req.user,
+// delegates to the service, and returns standardized JSON responses.
+// No business logic lives here.
 
 import type { Request, Response, NextFunction } from "express";
 import * as devicesService from "./devices.service.ts";
 import type { CreateDeviceDto, UpdateDeviceDto } from "./devices.dto.ts";
 
 // Documentation only: Handles GET /api/devices.
-// Fetches all devices for the demo user and returns them as a JSON array.
+// Reads the authenticated user's id from req.user (set by requireAuth middleware).
+// Fetches all devices for that user and returns them as a JSON array.
 // Returns 200 with { success: true, data: DeviceResponseDto[] } on success.
 // Passes any errors to the Express error handler via next().
 export const getAllDevices = async (
@@ -17,7 +19,8 @@ export const getAllDevices = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const deviceList = await devicesService.getAllDevices();
+    const userId = req.user!.id;
+    const deviceList = await devicesService.getAllDevices(userId);
     res.status(200).json({ success: true, data: deviceList });
   } catch (error) {
     next(error);
@@ -35,6 +38,7 @@ export const createDevice = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const userId = req.user!.id;
     const { icon, name, room, watts, enabled } = req.body as CreateDeviceDto;
 
     if (!icon || !name || !room || watts === undefined || enabled === undefined) {
@@ -54,7 +58,7 @@ export const createDevice = async (
       enabled: Boolean(enabled),
     };
 
-    const createdDevice = await devicesService.createDevice(createDeviceDto);
+    const createdDevice = await devicesService.createDevice(userId, createDeviceDto);
     res.status(201).json({ success: true, data: createdDevice });
   } catch (error) {
     next(error);
@@ -72,6 +76,7 @@ export const updateDevice = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const userId = req.user!.id;
     const deviceId = Number(req.params.id);
 
     if (isNaN(deviceId)) {
@@ -92,6 +97,7 @@ export const updateDevice = async (
       updateDeviceDto.enabled = Boolean(req.body.enabled);
 
     const updatedDevice = await devicesService.updateDevice(
+      userId,
       deviceId,
       updateDeviceDto
     );
@@ -117,6 +123,7 @@ export const deleteDevice = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const userId = req.user!.id;
     const deviceId = Number(req.params.id);
 
     if (isNaN(deviceId)) {
@@ -126,7 +133,7 @@ export const deleteDevice = async (
       return;
     }
 
-    await devicesService.deleteDevice(deviceId);
+    await devicesService.deleteDevice(userId, deviceId);
     res.status(200).json({ success: true });
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "Device not found") {

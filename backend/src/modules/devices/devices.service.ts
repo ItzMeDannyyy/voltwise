@@ -1,6 +1,8 @@
 // Documentation only: Service layer for the devices module.
 // Contains all business logic and Prisma database calls for device management.
 // No HTTP-specific code (req, res) lives here — this layer is fully reusable.
+// All functions accept a userId parameter so they operate on the authenticated
+// user's data rather than a hardcoded demo user.
 
 import { prisma } from "../../lib/prisma.ts";
 import { DeviceStatus } from "../../generated/prisma/index.js";
@@ -9,9 +11,6 @@ import type {
   CreateDeviceDto,
   UpdateDeviceDto,
 } from "./devices.dto.ts";
-
-// The demo user ID that all MVP operations are scoped to.
-const DEMO_USER_ID = 1;
 
 // Documentation only: Formats a raw Prisma Device record (with its Room relation)
 // into the DeviceResponseDto shape the mobile app expects.
@@ -71,12 +70,13 @@ const findOrCreateRoomByName = async (
   return newRoom.id;
 };
 
-// Documentation only: Retrieves all devices belonging to the demo user,
+// Documentation only: Retrieves all devices belonging to the given user,
 // including their associated room names, formatted as DeviceResponseDto objects.
+// Accepts userId (number) — the authenticated user's database id.
 // Returns a Promise resolving to an array of DeviceResponseDto.
-export const getAllDevices = async (): Promise<DeviceResponseDto[]> => {
+export const getAllDevices = async (userId: number): Promise<DeviceResponseDto[]> => {
   const devices = await prisma.device.findMany({
-    where: { userId: DEMO_USER_ID },
+    where: { userId },
     include: { room: true },
     orderBy: { createdAt: "asc" },
   });
@@ -84,21 +84,22 @@ export const getAllDevices = async (): Promise<DeviceResponseDto[]> => {
   return devices.map(formatDeviceForResponse);
 };
 
-// Documentation only: Creates a new device for the demo user.
+// Documentation only: Creates a new device for the given user.
 // If the given room name does not yet exist for this user, it is created automatically.
 // The device status is derived from the enabled flag and watt value.
-// Accepts a CreateDeviceDto.
+// Accepts userId (number) and a CreateDeviceDto.
 // Returns a Promise resolving to the newly created DeviceResponseDto.
 export const createDevice = async (
+  userId: number,
   dto: CreateDeviceDto
 ): Promise<DeviceResponseDto> => {
-  const roomId = await findOrCreateRoomByName(DEMO_USER_ID, dto.room);
+  const roomId = await findOrCreateRoomByName(userId, dto.room);
   const effectiveWatts = dto.enabled ? dto.watts : 0;
   const status = deriveDeviceStatus(dto.enabled, effectiveWatts);
 
   const newDevice = await prisma.device.create({
     data: {
-      userId: DEMO_USER_ID,
+      userId,
       roomId,
       name: dto.name,
       icon: dto.icon,
@@ -115,11 +116,12 @@ export const createDevice = async (
 // Documentation only: Updates an existing device by its ID.
 // Toggling enabled to false forces status to OFF and clears current watts to 0.
 // Toggling enabled to true restores ratedWatts and recomputes ACTIVE or IDLE status.
-// Changing the room name will find-or-create the Room record.
-// Accepts the device id (number) and a partial UpdateDeviceDto.
+// Changing the room name will find-or-create the Room record for the given user.
+// Accepts userId (number), the device id (number), and a partial UpdateDeviceDto.
 // Returns a Promise resolving to the updated DeviceResponseDto.
 // Throws an error if the device does not exist.
 export const updateDevice = async (
+  userId: number,
   deviceId: number,
   dto: UpdateDeviceDto
 ): Promise<DeviceResponseDto> => {
@@ -133,7 +135,7 @@ export const updateDevice = async (
 
   const updatedRoomId =
     dto.room !== undefined
-      ? await findOrCreateRoomByName(DEMO_USER_ID, dto.room)
+      ? await findOrCreateRoomByName(userId, dto.room)
       : undefined;
 
   // Determine the new enabled state, falling back to the current stored value.
@@ -163,10 +165,14 @@ export const updateDevice = async (
 };
 
 // Documentation only: Deletes a device by its ID.
-// Accepts the device id (number).
+// Accepts userId (number) — reserved for future ownership verification — and
+// the device id (number).
 // Returns a Promise resolving to true if deletion succeeded.
 // Throws an error if the device does not exist.
-export const deleteDevice = async (deviceId: number): Promise<boolean> => {
+export const deleteDevice = async (
+  _userId: number,
+  deviceId: number
+): Promise<boolean> => {
   const existingDevice = await prisma.device.findUnique({
     where: { id: deviceId },
   });
