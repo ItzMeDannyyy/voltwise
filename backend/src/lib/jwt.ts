@@ -54,3 +54,60 @@ export const verifyToken = (token: string): JwtPayload => {
 
   return { id: decoded.id, email: decoded.email };
 };
+
+// ─── Password-reset token helpers ─────────────────────────────────────────────
+
+// The payload shape embedded inside a password-reset token.
+// The "type" discriminator prevents a regular access token from being accepted
+// by the reset-password endpoint even if a user tries to swap them.
+interface ResetTokenPayload {
+  id: number;
+  email: string;
+  // A fixed literal that distinguishes reset tokens from ordinary access tokens.
+  type: "password_reset";
+}
+
+// How long a password-reset token remains valid.
+// Short-lived by design — a reset link should expire quickly to limit the window
+// in which a stolen token could be misused.
+const RESET_TOKEN_EXPIRY = "15m";
+
+// Documentation only: Creates a short-lived (15 minutes) signed JWT for the
+// password-reset flow. The payload includes a "type: password_reset" discriminator
+// so that verifyResetToken can reject ordinary access tokens if someone attempts
+// to misuse them in the reset endpoint.
+// Accepts a payload object with id (number) and email (string).
+// Returns the signed reset-token string.
+export const signResetToken = (payload: { id: number; email: string }): string => {
+  const secret = getJwtSecret();
+
+  const resetPayload: ResetTokenPayload = {
+    id: payload.id,
+    email: payload.email,
+    type: "password_reset",
+  };
+
+  return jwt.sign(resetPayload, secret, { expiresIn: RESET_TOKEN_EXPIRY });
+};
+
+// Documentation only: Verifies a password-reset token string and extracts its payload.
+// In addition to standard signature and expiry checks, this function asserts that
+// the "type" claim equals "password_reset" — rejecting regular access tokens even
+// if they are otherwise valid.
+// Throws an Error (message: "invalid reset token") if the token is malformed,
+// expired, or carries the wrong type claim. The service layer converts this into
+// an AppError 401 with a human-readable message.
+// Accepts the raw reset-token string.
+// Returns the decoded { id, email } (type claim is stripped before returning).
+export const verifyResetToken = (token: string): { id: number; email: string } => {
+  const secret = getJwtSecret();
+
+  const decoded = jwt.verify(token, secret) as ResetTokenPayload;
+
+  // Reject regular access tokens that happen to be valid signatures.
+  if (decoded.type !== "password_reset") {
+    throw new Error("invalid reset token");
+  }
+
+  return { id: decoded.id, email: decoded.email };
+};
