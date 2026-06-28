@@ -15,6 +15,15 @@ authRouter.post("/register", authController.register);
 // POST /api/auth/login — verifies credentials and returns a JWT.
 authRouter.post("/login", authController.login);
 
+// POST /api/auth/forgot-password — issues a short-lived password-reset token for the given email.
+// Public route — no auth token required.
+// MVP: returns the reset token directly in the response (no email service in scope).
+authRouter.post("/forgot-password", authController.forgotPassword);
+
+// POST /api/auth/reset-password — verifies the reset token and replaces the user's password.
+// Public route — no auth token required.
+authRouter.post("/reset-password", authController.resetPassword);
+
 // GET /api/auth/me — returns the authenticated user's profile.
 // Requires Authorization: Bearer <token>.
 authRouter.get("/me", requireAuth, authController.me);

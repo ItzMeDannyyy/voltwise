@@ -6,7 +6,7 @@
 
 import bcrypt from "bcryptjs";
 import { prisma } from "../../lib/prisma.ts";
-import { signToken } from "../../lib/jwt.ts";
+import { signToken, signResetToken, verifyResetToken } from "../../lib/jwt.ts";
 import { AppError } from "../../lib/AppError.ts";
 import type {
   RegisterDto,
@@ -14,21 +14,44 @@ import type {
   UpdateProfileDto,
   AuthUserResponseDto,
   AuthResponseDto,
+  ForgotPasswordResponseDto,
+  ResetPasswordResponseDto,
 } from "./auth.dto.ts";
 
 // The bcrypt cost factor. 10 is the widely-accepted balance between security
 // and hash speed for a low-traffic app; increase to 12 for production.
 const BCRYPT_SALT_ROUNDS = 10;
 
+// Documentation only: Validates that a password satisfies the strong-password policy.
+// Policy requires: length >= 12, at least one letter, one digit, and one special character.
+// Accepts the raw plaintext password string.
+// Returns null when the password is valid, or a human-readable error message string when it fails.
+// Exported so that other modules (e.g. reset-password flows) can reuse the same rule without
+// duplicating the regex definitions.
+export const validatePasswordStrength = (password: string): string | null => {
+  const meetsMinimumLength = password.length >= 12;
+  const hasLetter = /[A-Za-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSpecialCharacter = /[^A-Za-z0-9]/.test(password);
+
+  if (!meetsMinimumLength || !hasLetter || !hasNumber || !hasSpecialCharacter) {
+    return "Password must be at least 12 characters and include a letter, a number, and a special character.";
+  }
+
+  return null;
+};
+
 // Documentation only: Converts a Prisma User record into the AuthUserResponseDto
 // shape the mobile app expects. Critically, this function NEVER includes
 // passwordHash in its output, preventing credential leakage via the API.
-// Accepts the Prisma user object (with required fields subset).
+// Accepts the Prisma user object (with required fields subset, now including firstName and lastName).
 // Returns an AuthUserResponseDto.
 const formatUserForResponse = (user: {
   id: number;
   email: string;
   name: string | null;
+  firstName: string | null;
+  lastName: string | null;
   currency: string;
   createdAt: Date;
 }): AuthUserResponseDto => {
@@ -36,6 +59,8 @@ const formatUserForResponse = (user: {
     id: String(user.id),
     email: user.email,
     name: user.name,
+    firstName: user.firstName ?? null,
+    lastName: user.lastName ?? null,
     currency: user.currency,
     createdAt: user.createdAt.toISOString(),
   };
@@ -43,12 +68,21 @@ const formatUserForResponse = (user: {
 
 // Documentation only: Registers a new user with a hashed password and returns
 // a signed JWT together with the sanitized user profile.
-// Validates that email and password are present (controller checks this first,
-// but the service guards again to be robust).
+// Runs the password strength policy first (throws AppError 400 if it fails).
 // Throws AppError 409 if a user with the given email already exists.
-// Accepts a RegisterDto { email, name?, password }.
+// Accepts a RegisterDto { firstName, lastName, email, password }.
+// Sets `name` to "<firstName> <lastName>" so that existing name-based display
+// in the app keeps working without changes on the frontend.
 // Returns a Promise resolving to AuthResponseDto { token, user }.
 export const registerUser = async (dto: RegisterDto): Promise<AuthResponseDto> => {
+  // Run the password strength check before touching the DB.
+  // This ensures we never persist a user whose password would later be
+  // rejected if we run the same check on another code path.
+  const passwordPolicyViolation = validatePasswordStrength(dto.password);
+  if (passwordPolicyViolation !== null) {
+    throw new AppError(400, passwordPolicyViolation);
+  }
+
   const existingUser = await prisma.user.findUnique({
     where: { email: dto.email },
   });
@@ -62,10 +96,17 @@ export const registerUser = async (dto: RegisterDto): Promise<AuthResponseDto> =
 
   const hashedPassword = await bcrypt.hash(dto.password, BCRYPT_SALT_ROUNDS);
 
+  // Compose the backwards-compatible `name` field from the two discrete parts.
+  // Trim each part before joining so leading/trailing whitespace from the caller
+  // doesn't produce a name like " User" or "Demo ".
+  const composedFullName = `${dto.firstName.trim()} ${dto.lastName.trim()}`;
+
   const newUser = await prisma.user.create({
     data: {
       email: dto.email,
-      name: dto.name ?? null,
+      firstName: dto.firstName.trim(),
+      lastName: dto.lastName.trim(),
+      name: composedFullName,
       passwordHash: hashedPassword,
       // currency defaults to "₱" via the Prisma schema default
     },
@@ -207,4 +248,68 @@ export const updateProfile = async (
   });
 
   return formatUserForResponse(updatedUser);
+};
+
+// Documentation only: Looks up the user by email and, if found, issues a short-lived
+// password-reset token tied to that account.
+// Throws AppError 404 if no account exists with the given email so the caller can
+// give the user a helpful message rather than silently doing nothing.
+// MVP NOTE: In production, this function would dispatch the reset token via email
+// (e.g. SendGrid / Nodemailer) and return only a generic success message. For this
+// MVP there is no email service in scope, so the reset token is returned directly
+// in the response body for the mobile app to carry into the reset step.
+// Accepts email (string) — already normalised (lowercased & trimmed) by the controller.
+// Returns a Promise resolving to ForgotPasswordResponseDto { resetToken, email }.
+export const forgotPassword = async (
+  email: string
+): Promise<ForgotPasswordResponseDto> => {
+  const user = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (!user) {
+    throw new AppError(404, "No account found with that email address.");
+  }
+
+  const resetToken = signResetToken({ id: user.id, email: user.email });
+
+  return { resetToken, email: user.email };
+};
+
+// Documentation only: Verifies a password-reset token and replaces the user's
+// password with a freshly hashed version of the supplied newPassword.
+// Throws AppError 401 if the token is invalid, expired, or not a reset token.
+// Throws AppError 400 if newPassword is fewer than 6 characters.
+// On success: updates passwordHash in the DB and returns a confirmation message.
+// Accepts token (string) — the raw reset JWT — and newPassword (string).
+// Returns a Promise resolving to ResetPasswordResponseDto { message }.
+export const resetPassword = async (
+  token: string,
+  newPassword: string
+): Promise<ResetPasswordResponseDto> => {
+  // Verify the token before touching the DB; any JWT error becomes a 401.
+  let verifiedPayload: { id: number; email: string };
+
+  try {
+    verifiedPayload = verifyResetToken(token);
+  } catch {
+    throw new AppError(
+      401,
+      "This reset link is invalid or has expired. Please try again."
+    );
+  }
+
+  // Enforce a minimum password length before doing any DB work.
+  if (newPassword.length < 6) {
+    throw new AppError(400, "New password must be at least 6 characters.");
+  }
+
+  const newPasswordHash = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
+
+  await prisma.user.update({
+    where: { id: verifiedPayload.id },
+    data: { passwordHash: newPasswordHash },
+  });
+
+  return { message: "Your password has been reset. Please sign in." };
 };

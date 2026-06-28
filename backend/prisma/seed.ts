@@ -91,6 +91,12 @@ async function seed(): Promise<void> {
       // so the first real registration gets id=2 instead of colliding on id=1.
       email: "demo@voltwise.app",
       name: "Demo User",
+      // Intentional: the seed sets firstName/lastName directly via Prisma rather
+      // than calling registerUser(), so it intentionally bypasses the strong-password
+      // policy. The demo password ("password123") is only 11 chars and would fail
+      // the policy, but the seeded account must remain loginable for demos.
+      firstName: "Demo",
+      lastName: "User",
       currency: "₱",
       passwordHash: demoPasswordHash,
     },
