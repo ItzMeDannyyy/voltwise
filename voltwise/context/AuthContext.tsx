@@ -32,7 +32,7 @@ interface AuthContextValue {
   isBootstrapping: boolean;
   isAuthenticated: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, name: string, password: string) => Promise<void>;
+  signUp: (firstName: string, lastName: string, email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (dto: UpdateProfileDto) => Promise<void>;
 }
@@ -130,10 +130,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signUp = useCallback(
-    async (email: string, name: string, password: string) => {
+    async (firstName: string, lastName: string, email: string, password: string) => {
       const { token: t, user: u } = await api.post<AuthResponse>("/auth/register", {
+        firstName,
+        lastName,
         email,
-        name: name || undefined,
         password,
       });
       await saveToken(t);

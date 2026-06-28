@@ -6,13 +6,23 @@
 
 import type { Request, Response, NextFunction } from "express";
 import * as authService from "./auth.service.ts";
-import type { RegisterDto, LoginDto, UpdateProfileDto } from "./auth.dto.ts";
+import type {
+  RegisterDto,
+  LoginDto,
+  UpdateProfileDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+} from "./auth.dto.ts";
 
 // Documentation only: Handles POST /api/auth/register.
-// Validates that email and password are present in the request body.
+// Validates presence of firstName, lastName, email, and password from the request body.
+// The password STRENGTH check (letter + number + special char, >= 12 chars) is delegated
+// to the service layer (auth.service.ts::validatePasswordStrength) so the rule lives in
+// one place and is reusable. This controller only checks that each field is a non-empty string.
 // On success: creates the user, issues a JWT, and returns 201 with { token, user }.
 // On duplicate email: the service throws AppError 409 which the global handler converts.
 // On missing fields: returns 400 immediately without calling the service.
+// On weak password: the service throws AppError 400 which the global handler converts.
 // Passes unexpected errors to the Express error handler via next().
 export const register = async (
   req: Request,
@@ -20,7 +30,24 @@ export const register = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { email, name, password } = req.body as Partial<RegisterDto>;
+    const { firstName, lastName, email, password } =
+      req.body as Partial<RegisterDto>;
+
+    if (!firstName || typeof firstName !== "string" || firstName.trim() === "") {
+      res.status(400).json({
+        success: false,
+        message: "firstName is required to register.",
+      });
+      return;
+    }
+
+    if (!lastName || typeof lastName !== "string" || lastName.trim() === "") {
+      res.status(400).json({
+        success: false,
+        message: "lastName is required to register.",
+      });
+      return;
+    }
 
     if (!email || typeof email !== "string" || email.trim() === "") {
       res.status(400).json({
@@ -39,8 +66,9 @@ export const register = async (
     }
 
     const registerDto: RegisterDto = {
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
       email: email.trim().toLowerCase(),
-      name: name ? name.trim() : undefined,
       password,
     };
 
@@ -109,6 +137,83 @@ export const me = async (
 
     const userProfile = await authService.getProfile(userId);
     res.status(200).json({ success: true, data: userProfile });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Documentation only: Handles POST /api/auth/forgot-password.
+// Validates that email is present and is a non-empty string, then normalises it
+// (trim + lowercase) before delegating to the service.
+// On missing/invalid email: returns 400 immediately without calling the service.
+// On unknown email: the service throws AppError 404 which the global handler converts.
+// On success: returns 200 with { success: true, data: { resetToken, email } }.
+// MVP NOTE: the reset token is returned directly in the response because there is
+// no email service in scope. In production the token would be emailed as a link
+// and this endpoint would return only a generic "check your inbox" message.
+// Passes unexpected errors to the Express error handler via next().
+export const forgotPassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { email } = req.body as Partial<ForgotPasswordDto>;
+
+    if (!email || typeof email !== "string" || email.trim() === "") {
+      res.status(400).json({
+        success: false,
+        message: "email is required to reset your password.",
+      });
+      return;
+    }
+
+    const normalisedEmail = email.trim().toLowerCase();
+
+    const resetPayload = await authService.forgotPassword(normalisedEmail);
+    res.status(200).json({ success: true, data: resetPayload });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Documentation only: Handles POST /api/auth/reset-password.
+// Validates that token and newPassword are both present and are non-empty strings.
+// On missing fields: returns 400 immediately without calling the service.
+// On invalid/expired token: the service throws AppError 401 which the global handler converts.
+// On newPassword too short: the service throws AppError 400.
+// On success: returns 200 with { success: true, data: { message } }.
+// Passes unexpected errors to the Express error handler via next().
+export const resetPassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { token, newPassword } = req.body as Partial<ResetPasswordDto>;
+
+    if (!token || typeof token !== "string" || token.trim() === "") {
+      res.status(400).json({
+        success: false,
+        message: "token is required to reset your password.",
+      });
+      return;
+    }
+
+    if (
+      !newPassword ||
+      typeof newPassword !== "string" ||
+      newPassword.trim() === ""
+    ) {
+      res.status(400).json({
+        success: false,
+        message: "newPassword is required.",
+      });
+      return;
+    }
+
+    const result = await authService.resetPassword(token.trim(), newPassword);
+    res.status(200).json({ success: true, data: result });
   } catch (error) {
     next(error);
   }

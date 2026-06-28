@@ -6,10 +6,13 @@
 // ─── Inbound Request DTOs ──────────────────────────────────────────────────────
 
 // Request body for POST /api/auth/register.
-// password is required for real auth (unlike the old MVP stub).
+// firstName and lastName are required and will be combined into name for
+// backwards-compatible display. password must satisfy the strong-password policy
+// enforced in auth.service.ts (validatePasswordStrength).
 export interface RegisterDto {
+  firstName: string;
+  lastName: string;
   email: string;
-  name?: string;
   password: string;
 }
 
@@ -30,6 +33,17 @@ export interface UpdateProfileDto {
   newPassword?: string;
 }
 
+// Request body for POST /api/auth/forgot-password.
+export interface ForgotPasswordDto {
+  email: string;
+}
+
+// Request body for POST /api/auth/reset-password.
+export interface ResetPasswordDto {
+  token: string;
+  newPassword: string;
+}
+
 // ─── Outbound Response DTOs ────────────────────────────────────────────────────
 
 // The user object returned in all auth responses.
@@ -38,7 +52,11 @@ export interface AuthUserResponseDto {
   // String form of the numeric DB primary key (keeps the mobile app JSON-friendly).
   id: string;
   email: string;
+  // Kept for backwards-compatible display (set to "<firstName> <lastName>" on register).
   name: string | null;
+  // Discrete name parts added for the registration update (2026-06-21).
+  firstName: string | null;
+  lastName: string | null;
   currency: string;
   // ISO 8601 timestamp — included so the mobile app can display "member since".
   createdAt: string;
@@ -49,4 +67,18 @@ export interface AuthUserResponseDto {
 export interface AuthResponseDto {
   token: string;
   user: AuthUserResponseDto;
+}
+
+// The payload returned by POST /api/auth/forgot-password.
+// MVP: returns the reset token directly so the mobile app can carry it into
+// the reset step without an email service. In production this would be omitted
+// and the token would be delivered via an email link only.
+export interface ForgotPasswordResponseDto {
+  resetToken: string;
+  email: string;
+}
+
+// The payload returned by POST /api/auth/reset-password.
+export interface ResetPasswordResponseDto {
+  message: string;
 }

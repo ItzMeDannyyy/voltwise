@@ -27,6 +27,8 @@ model User {
   id           Int      @id @default(autoincrement())
   email        String   @unique
   name         String?
+  firstName    String?
+  lastName     String?
   passwordHash String?
   currency     String   @default("₱")
   createdAt    DateTime @default(now())
