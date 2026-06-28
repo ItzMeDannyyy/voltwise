@@ -9,9 +9,10 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../context/AuthContext";
 
@@ -28,6 +29,7 @@ const C = {
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
+  const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -102,8 +104,11 @@ export default function LoginScreen() {
         >
           {/* Wordmark */}
           <View style={styles.brandRow}>
-            <Text style={styles.brand}>VoltWise</Text>
-            <Text style={styles.brandSub}>Smart Energy Monitor</Text>
+            <Image
+              source={require("../../assets/images/voltwise-logo.png")}
+              style={styles.brandLogo}
+              resizeMode="contain"
+            />
           </View>
 
           {/* Card */}
@@ -172,6 +177,15 @@ export default function LoginScreen() {
               {passwordError && <Text style={styles.fieldError}>{passwordError}</Text>}
             </View>
 
+            {/* Forgot password */}
+            <TouchableOpacity
+              style={styles.forgotRow}
+              onPress={() => router.push("/(auth)/forgot-password")}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.forgotLink}>Forgot password?</Text>
+            </TouchableOpacity>
+
             {/* Submit */}
             <TouchableOpacity
               style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
@@ -221,16 +235,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 40,
   },
-  brand: {
-    color: C.accent,
-    fontSize: 34,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
-  brandSub: {
-    color: C.sub,
-    fontSize: 14,
-    marginTop: 4,
+  brandLogo: {
+    width: 240,
+    height: 96,
   },
   card: {
     backgroundColor: C.card,
@@ -308,6 +315,15 @@ const styles = StyleSheet.create({
     color: C.red,
     fontSize: 12,
     marginTop: 4,
+  },
+  forgotRow: {
+    alignItems: "flex-end",
+    marginBottom: 16,
+  },
+  forgotLink: {
+    color: C.accent,
+    fontSize: 13,
+    fontWeight: "600",
   },
   submitBtn: {
     backgroundColor: C.accent,
