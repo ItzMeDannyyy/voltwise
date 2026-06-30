@@ -78,8 +78,8 @@ model Device {
   userId     Int
   roomId     Int?
   name       String
-  icon       String
   category   String?
+  imageUri   String?
   ratedWatts Int          @default(0)
   status     DeviceStatus
   enabled    Boolean      @default(true)
