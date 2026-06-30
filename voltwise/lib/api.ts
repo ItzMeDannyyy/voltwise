@@ -168,12 +168,23 @@ export interface DashboardData {
 
 export interface ApiDevice {
   id: string;
-  icon: string;
   name: string;
   room: string;
+  category: string | null;
+  imageUri: string | null;
   status: "ACTIVE" | "IDLE" | "OFF";
   watts: number;
   enabled: boolean;
+}
+
+export interface ApiDeviceReading {
+  watts: number;
+  kwh: number;
+  voltage: number | null;
+  current: number | null;
+  frequency: number | null;
+  powerFactor: number | null;
+  timestamp: string;
 }
 
 export interface ApiAlert {
