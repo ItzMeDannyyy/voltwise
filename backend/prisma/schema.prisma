@@ -1,0 +1,129 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum DeviceStatus {
+  ACTIVE
+  IDLE
+  OFF
+}
+
+enum AlertType {
+  CRITICAL
+  WARNING
+  INFO
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  name         String?
+  firstName    String?
+  lastName     String?
+  passwordHash String?
+  currency     String   @default("₱")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  rooms          Room[]
+  devices        Device[]
+  alerts         Alert[]
+  tariffs        Tariff[]
+  billingPeriods BillingPeriod[]
+  energyReadings EnergyReading[]
+}
+
+model Tariff {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  ratePerKwh    Float
+  currency      String   @default("₱")
+  effectiveFrom DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model BillingPeriod {
+  id             Int       @id @default(autoincrement())
+  userId         Int
+  startDate      DateTime
+  endDate        DateTime?
+  accumulatedKwh Float     @default(0)
+  estimatedCost  Float     @default(0)
+  tariffRate     Float
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Room {
+  id     Int    @id @default(autoincrement())
+  userId Int
+  name   String
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  devices Device[]
+}
+
+model Device {
+  id         Int          @id @default(autoincrement())
+  userId     Int
+  roomId     Int?
+  name       String
+  category   String?
+  imageUri   String?
+  ratedWatts Int          @default(0)
+  status     DeviceStatus
+  enabled    Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room     Room?           @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  readings EnergyReading[]
+  alerts   Alert[]
+}
+
+model EnergyReading {
+  id        Int      @id @default(autoincrement())
+  deviceId  Int?
+  userId    Int
+  timestamp DateTime
+  watts       Float
+  kwh         Float
+  voltage     Float?
+  current     Float?   // Amperage (A)
+  frequency   Float?   // Hz
+  powerFactor Float?   // PF, 0-1
+
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, timestamp])
+  @@index([userId, timestamp])
+}
+
+model Alert {
+  id             Int       @id @default(autoincrement())
+  userId         Int
+  deviceId       Int?
+  type           AlertType
+  title          String
+  description    String
+  recommendation String?
+  threshold      Float?
+  value          Float?
+  read           Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+}
