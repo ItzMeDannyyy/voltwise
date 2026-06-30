@@ -6,7 +6,11 @@
 
 import type { Request, Response, NextFunction } from "express";
 import * as devicesService from "./devices.service.ts";
-import type { CreateDeviceDto, UpdateDeviceDto } from "./devices.dto.ts";
+import type {
+  CreateDeviceDto,
+  UpdateDeviceDto,
+  DeviceLatestReadingDto,
+} from "./devices.dto.ts";
 
 // Documentation only: Handles GET /api/devices.
 // Reads the authenticated user's id from req.user (set by requireAuth middleware).
@@ -28,8 +32,9 @@ export const getAllDevices = async (
 };
 
 // Documentation only: Handles POST /api/devices.
-// Reads icon, name, room, watts, and enabled from the request body.
-// Validates that required fields are present before calling the service.
+// Reads name, room, watts, and enabled from the request body as required fields.
+// Also reads optional category and imageUri fields if provided.
+// Validates that all required fields are present before calling the service.
 // Returns 201 with { success: true, data: DeviceResponseDto } on success.
 // Passes any errors to the Express error handler via next().
 export const createDevice = async (
@@ -39,23 +44,25 @@ export const createDevice = async (
 ): Promise<void> => {
   try {
     const userId = req.user!.id;
-    const { icon, name, room, watts, enabled } = req.body as CreateDeviceDto;
+    const { name, room, watts, enabled, category, imageUri } =
+      req.body as CreateDeviceDto;
 
-    if (!icon || !name || !room || watts === undefined || enabled === undefined) {
+    if (!name || !room || watts === undefined || enabled === undefined) {
       res.status(400).json({
         success: false,
         message:
-          "Missing required fields: icon, name, room, watts, and enabled are all required.",
+          "Missing required fields: name, room, watts, and enabled are all required.",
       });
       return;
     }
 
     const createDeviceDto: CreateDeviceDto = {
-      icon,
       name,
       room,
       watts: Number(watts),
       enabled: Boolean(enabled),
+      category,
+      imageUri,
     };
 
     const createdDevice = await devicesService.createDevice(userId, createDeviceDto);
@@ -88,8 +95,9 @@ export const updateDevice = async (
 
     const updateDeviceDto: UpdateDeviceDto = {};
 
-    if (req.body.icon !== undefined) updateDeviceDto.icon = req.body.icon;
     if (req.body.name !== undefined) updateDeviceDto.name = req.body.name;
+    if (req.body.category !== undefined) updateDeviceDto.category = req.body.category;
+    if (req.body.imageUri !== undefined) updateDeviceDto.imageUri = req.body.imageUri;
     if (req.body.room !== undefined) updateDeviceDto.room = req.body.room;
     if (req.body.watts !== undefined)
       updateDeviceDto.watts = Number(req.body.watts);
@@ -140,6 +148,37 @@ export const deleteDevice = async (
       res.status(404).json({ success: false, message: "Device not found." });
       return;
     }
+    next(error);
+  }
+};
+
+// Documentation only: Handles GET /api/devices/:id/readings/latest.
+// Reads the device ID from the route params and the authenticated user's id from req.user.
+// Fetches the single most recent EnergyReading row for that device.
+// Returns 200 with { success: true, data: DeviceLatestReadingDto | null } — data is null
+// when no readings exist yet for the device (e.g. newly added device).
+// Passes any errors to the Express error handler via next().
+export const getDeviceLatestReading = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const deviceId = Number(req.params.id);
+
+    if (isNaN(deviceId)) {
+      res
+        .status(400)
+        .json({ success: false, message: "Device ID must be a valid number." });
+      return;
+    }
+
+    const reading: DeviceLatestReadingDto | null =
+      await devicesService.getDeviceLatestReading(userId, deviceId);
+
+    res.status(200).json({ success: true, data: reading });
+  } catch (error) {
     next(error);
   }
 };

@@ -10,16 +10,19 @@ import type {
   DeviceResponseDto,
   CreateDeviceDto,
   UpdateDeviceDto,
+  DeviceLatestReadingDto,
 } from "./devices.dto.ts";
 
 // Documentation only: Formats a raw Prisma Device record (with its Room relation)
 // into the DeviceResponseDto shape the mobile app expects.
-// Accepts the Prisma device object with an optional room relation included.
+// Accepts the Prisma device object including optional category and imageUri fields,
+// plus an optional room relation.
 // Returns a DeviceResponseDto.
 const formatDeviceForResponse = (device: {
   id: number;
-  icon: string;
   name: string;
+  category: string | null;
+  imageUri: string | null;
   ratedWatts: number;
   status: DeviceStatus;
   enabled: boolean;
@@ -27,9 +30,10 @@ const formatDeviceForResponse = (device: {
 }): DeviceResponseDto => {
   return {
     id: String(device.id),
-    icon: device.icon,
     name: device.name,
     room: device.room?.name ?? "Unassigned",
+    category: device.category,
+    imageUri: device.imageUri,
     status: device.status,
     watts: device.ratedWatts,
     enabled: device.enabled,
@@ -102,7 +106,8 @@ export const createDevice = async (
       userId,
       roomId,
       name: dto.name,
-      icon: dto.icon,
+      category: dto.category ?? null,
+      imageUri: dto.imageUri ?? null,
       ratedWatts: dto.watts,
       status,
       enabled: dto.enabled,
@@ -152,7 +157,8 @@ export const updateDevice = async (
     where: { id: deviceId },
     data: {
       ...(dto.name !== undefined && { name: dto.name }),
-      ...(dto.icon !== undefined && { icon: dto.icon }),
+      ...(dto.category !== undefined && { category: dto.category }),
+      ...(dto.imageUri !== undefined && { imageUri: dto.imageUri }),
       ...(updatedRoomId !== undefined && { roomId: updatedRoomId }),
       ratedWatts: newRatedWatts,
       enabled: newEnabled,
@@ -183,4 +189,30 @@ export const deleteDevice = async (
 
   await prisma.device.delete({ where: { id: deviceId } });
   return true;
+};
+
+// Documentation only: Retrieves the most recent EnergyReading row for a specific device.
+// Filters by both deviceId and userId to ensure the reading belongs to the authenticated user's device.
+// Accepts userId (number) and deviceId (number).
+// Returns a Promise resolving to a DeviceLatestReadingDto if a reading exists, or null if none found.
+export const getDeviceLatestReading = async (
+  userId: number,
+  deviceId: number
+): Promise<DeviceLatestReadingDto | null> => {
+  const reading = await prisma.energyReading.findFirst({
+    where: { deviceId, userId },
+    orderBy: { timestamp: "desc" },
+  });
+
+  if (!reading) return null;
+
+  return {
+    watts: reading.watts,
+    kwh: reading.kwh,
+    voltage: reading.voltage,
+    current: reading.current,
+    frequency: reading.frequency,
+    powerFactor: reading.powerFactor,
+    timestamp: reading.timestamp.toISOString(),
+  };
 };
