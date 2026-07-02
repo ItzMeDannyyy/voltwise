@@ -11,7 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, ApiAlert, ALERTS_CHANGED_EVENT, emitAlertsChanged } from "../../lib/api";
-import { AnomalyModal } from "../../components/AnomalyModal";
+import { AlertDetailModal } from "../../components/AlertDetailModal";
 
 const C = {
   bg: "#1a1f2e",
@@ -114,8 +114,6 @@ export default function AlertsScreen() {
   const [alerts, setAlerts] = useState<AlertItem[]>(INITIAL_ALERTS);
   const [activeTab, setActiveTab] = useState<FilterTab>("All");
   const [modalAlert, setModalAlert] = useState<AlertItem | null>(null);
-  const [countdown, setCountdown] = useState(3);
-  const [powerOff, setPowerOff] = useState(false);
 
   // Load the alert feed from the backend.
   const loadAlerts = useCallback(() => {
@@ -141,17 +139,6 @@ export default function AlertsScreen() {
     const sub = DeviceEventEmitter.addListener(ALERTS_CHANGED_EVENT, loadAlerts);
     return () => sub.remove();
   }, [loadAlerts]);
-
-  // Countdown timer for critical/warning modal.
-  useEffect(() => {
-    if (!modalAlert || modalAlert.type === "info" || powerOff) return;
-    if (countdown <= 0) {
-      setPowerOff(true);
-      return;
-    }
-    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [modalAlert, countdown, powerOff]);
 
   const filteredAlerts = alerts.filter((a) => {
     if (activeTab === "Unread") return !a.read;
@@ -189,18 +176,18 @@ export default function AlertsScreen() {
 
   function openModal(alert: AlertItem) {
     setModalAlert(alert);
-    setCountdown(3);
-    setPowerOff(false);
   }
 
-  function closeModal(doMarkRead = true) {
-    if (doMarkRead && modalAlert) markRead(modalAlert.id);
+  function closeModal() {
     setModalAlert(null);
   }
 
-  function handlePowerOff() {
-    setPowerOff(true);
-    setTimeout(() => closeModal(true), 1500);
+  // Mark the open alert as read, then reflect that in the modal so its footer
+  // and status pill update without closing the sheet.
+  function markModalRead() {
+    if (!modalAlert) return;
+    markRead(modalAlert.id);
+    setModalAlert({ ...modalAlert, read: true });
   }
 
   return (
@@ -283,12 +270,10 @@ export default function AlertsScreen() {
         </ScrollView>
       </View>
 
-      <AnomalyModal
+      <AlertDetailModal
         alert={modalAlert}
-        countdown={countdown}
-        powerOff={powerOff}
-        onPowerOff={handlePowerOff}
-        onSkip={() => closeModal(true)}
+        onClose={closeModal}
+        onMarkRead={markModalRead}
       />
     </SafeAreaView>
   );
