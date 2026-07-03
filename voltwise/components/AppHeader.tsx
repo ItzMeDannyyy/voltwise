@@ -138,6 +138,17 @@ export default function AppHeader() {
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={() => router.push("/settings")}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Open settings"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="settings-outline" size={24} color={C.text} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={styles.avatar}
           onPress={() => router.push("/profile")}
           activeOpacity={0.8}
