@@ -23,6 +23,18 @@ export default function RootLayout() {
             presentation: "card",
           }}
         />
+        <Stack.Screen
+          name="settings"
+          options={{
+            headerShown: true,
+            title: "Settings",
+            headerStyle: { backgroundColor: "#1a1f2e" },
+            headerTintColor: "#ffffff",
+            headerTitleStyle: { fontWeight: "700", fontSize: 18 },
+            headerBackTitle: "",
+            presentation: "card",
+          }}
+        />
       </Stack>
     </AuthProvider>
   );

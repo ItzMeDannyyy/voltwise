@@ -153,10 +153,6 @@ export default function AnalyticsScreen() {
     };
   }, [period]);
 
-  function cyclePeriod() {
-    setPeriod((p) => PERIODS[(PERIODS.indexOf(p) + 1) % PERIODS.length]);
-  }
-
   const breakdown    = analytics?.breakdown   ?? DONUT_SEGMENTS;
   const topConsumers = analytics?.topConsumers ?? TOP_CONSUMERS;
   const totalKwh     = analytics?.totalKwh     ?? 87.4;
@@ -287,10 +283,24 @@ export default function AnalyticsScreen() {
         {/* Top Consumers */}
         <View style={[styles.consumersHeader, { marginTop: 24, marginBottom: 12 }]}>
           <Text style={styles.sectionTitle}>Top Consumers</Text>
-          <TouchableOpacity style={styles.periodPill} onPress={cyclePeriod}>
-            <Text style={styles.periodPillText}>{period}</Text>
-            <Ionicons name="chevron-down" size={12} color={C.text} />
-          </TouchableOpacity>
+          <View style={styles.periodSelector}>
+            {PERIODS.map((p) => (
+              <TouchableOpacity
+                key={p}
+                style={[styles.periodBtn, period === p && styles.periodBtnActive]}
+                onPress={() => setPeriod(p)}
+              >
+                <Text
+                  style={[
+                    styles.periodLabel,
+                    period === p && styles.periodLabelActive,
+                  ]}
+                >
+                  {p}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         <View style={[styles.card, styles.consumersCard]}>
@@ -522,20 +532,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  periodPill: {
+  periodSelector: {
     flexDirection: "row",
-    alignItems: "center",
     backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    gap: 4,
+    borderRadius: 10,
+    padding: 3,
   },
-  periodPillText: {
-    color: C.text,
+  periodBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  periodBtnActive: {
+    backgroundColor: C.text,
+  },
+  periodLabel: {
+    color: C.sub,
     fontSize: 13,
+    fontWeight: "500",
+  },
+  periodLabelActive: {
+    color: C.bg,
+    fontWeight: "700",
   },
   consumersCard: {
     gap: 14,
