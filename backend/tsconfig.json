@@ -9,6 +9,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
+    "isolatedModules": true,
     "noEmit": true
   },
   "include": ["src/**/*.ts"]
