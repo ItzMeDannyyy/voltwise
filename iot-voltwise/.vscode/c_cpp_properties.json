@@ -10,6 +10,7 @@
             "includePath": [
                 "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/include",
                 "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/src",
+                "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/.pio/libdeps/esp32dev/PZEM-004T-v30/src",
                 "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/newlib/platform_include",
                 "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/freertos/include",
                 "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/freertos/include/esp_additions/freertos",
@@ -246,6 +247,7 @@
                 "path": [
                     "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/include",
                     "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/src",
+                    "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/.pio/libdeps/esp32dev/PZEM-004T-v30/src",
                     "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/newlib/platform_include",
                     "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/freertos/include",
                     "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/freertos/include/esp_additions/freertos",
