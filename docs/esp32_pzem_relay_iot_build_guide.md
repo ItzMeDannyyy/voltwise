@@ -1,6 +1,6 @@
-# ESP32 + PZEM-004T + CT Clamp + 4-Channel Relay IoT Build Guide
+# ESP32 + PZEM-004T + CT Clamp + 2-Channel Relay IoT Build Guide
 
-This guide explains how to use an **ESP32**, **PZEM-004T v3.0 sensor with CT clamp**, **4-channel relay module**, **Hi-Link AC-DC power module**, and **logic level converter**.
+This guide explains how to use an **ESP32**, **PZEM-004T v3.0 sensor with CT clamp**, **2-channel relay module**, **Hi-Link AC-DC power module**, and **logic level converter**.
 
 It includes:
 
@@ -53,13 +53,13 @@ The PZEM must also be connected properly to its AC measurement side to read volt
 
 ---
 
-### 1.3 4-Channel Relay Module
+### 1.3 2-Channel Relay Module
 
 The **relay module** allows the ESP32 to control appliances or loads.
 
 Each relay channel usually has:
 
-- `IN1`, `IN2`, `IN3`, `IN4` — control pins from ESP32
+- `IN1`, `IN2` — control pins from ESP32
 - `VCC` — usually 5V
 - `GND` — common ground
 - `COM` — common relay terminal
@@ -116,7 +116,7 @@ ESP32 3.3V signal <-> 5V module signal
 Use it especially between:
 
 - ESP32 UART pins and PZEM UART pins
-- ESP32 relay control pins and relay `IN1-IN4`, if your relay module does not reliably accept 3.3V signals
+- ESP32 relay control pins and relay `IN1-IN2`, if your relay module does not reliably accept 3.3V signals
 
 Some modules may work with 3.3V signals, but level shifting is safer and more reliable.
 
@@ -132,8 +132,6 @@ For a common ESP32 DevKit:
 | PZEM TX |    GPIO17 | PZEM RX through level converter |
 | Relay 1 |    GPIO25 | Relay IN1                       |
 | Relay 2 |    GPIO26 | Relay IN2                       |
-| Relay 3 |    GPIO27 | Relay IN3                       |
-| Relay 4 |    GPIO33 | Relay IN4                       |
 | 5V      |  VIN / 5V | Hi-Link 5V output               |
 | GND     |       GND | Common ground                   |
 | 3.3V    |       3V3 | Level converter LV              |
@@ -232,14 +230,12 @@ For a real panel, do not leave this exposed on a breadboard. Use proper terminal
 ```text
 ESP32 GPIO25 -> Relay IN1
 ESP32 GPIO26 -> Relay IN2
-ESP32 GPIO27 -> Relay IN3
-ESP32 GPIO33 -> Relay IN4
 
 Relay VCC -> 5V
 Relay GND -> GND
 ```
 
-If the relay does not trigger reliably from ESP32 3.3V pins, route `IN1-IN4` through the logic level converter or use a proper transistor/opto driver board.
+If the relay does not trigger reliably from ESP32 3.3V pins, route `IN1-IN2` through the logic level converter or use a proper transistor/opto driver board.
 
 ---
 
@@ -326,6 +322,8 @@ monitor_speed = 115200
 
 lib_deps =
     mandulaj/PZEM-004T-v30
+    knolleary/PubSubClient@^2.8
+    bblanchon/ArduinoJson@^7.4
 ```
 
 ---
@@ -336,7 +334,7 @@ This code does four things:
 
 1. Reads PZEM values.
 2. Prints voltage, current, power, energy, frequency, and power factor.
-3. Initializes 4 relays safely OFF.
+3. Initializes 2 relays safely OFF.
 4. Turns all relays OFF if power goes above your configured threshold.
 
 ```cpp
@@ -352,20 +350,18 @@ This code does four things:
 const int PZEM_RX_PIN = 16; // ESP32 RX2 receives from PZEM TX
 const int PZEM_TX_PIN = 17; // ESP32 TX2 sends to PZEM RX
 
-// Relay pins
+// Relay pins (2-channel relay module)
 const int RELAY_1_PIN = 25;
 const int RELAY_2_PIN = 26;
-const int RELAY_3_PIN = 27;
-const int RELAY_4_PIN = 33;
 
-const int RELAY_PINS[4] = {
+const int NUM_RELAYS = 2;
+
+const int RELAY_PINS[NUM_RELAYS] = {
   RELAY_1_PIN,
-  RELAY_2_PIN,
-  RELAY_3_PIN,
-  RELAY_4_PIN
+  RELAY_2_PIN
 };
 
-// Most 4-channel relay modules are active LOW.
+// Most relay modules are active LOW.
 // If your relay turns ON when you write HIGH, change this to false.
 const bool RELAY_ACTIVE_LOW = true;
 
@@ -426,7 +422,7 @@ void setup() {
   turnAllRelaysOff();
 
   Serial.println();
-  Serial.println("ESP32 + PZEM-004T + 4-Channel Relay Started");
+  Serial.println("ESP32 + PZEM-004T + 2-Channel Relay Started");
   Serial.println("All relays are OFF at startup.");
 }
 
@@ -462,7 +458,7 @@ void loop() {
 // =========================
 
 void setupRelays() {
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < NUM_RELAYS; i++) {
     pinMode(RELAY_PINS[i], OUTPUT);
     digitalWrite(RELAY_PINS[i], getRelayOffState());
   }
@@ -470,7 +466,7 @@ void setupRelays() {
 
 
 void turnAllRelaysOff() {
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < NUM_RELAYS; i++) {
     digitalWrite(RELAY_PINS[i], getRelayOffState());
   }
 
@@ -479,8 +475,8 @@ void turnAllRelaysOff() {
 
 
 void setRelay(int relayNumber, bool turnOn) {
-  if (relayNumber < 1 || relayNumber > 4) {
-    Serial.println("Invalid relay number. Use 1 to 4 only.");
+  if (relayNumber < 1 || relayNumber > NUM_RELAYS) {
+    Serial.println("Invalid relay number. Use 1 to 2 only.");
     return;
   }
 
@@ -620,7 +616,7 @@ pio device monitor
 Expected:
 
 ```text
-ESP32 + PZEM-004T + 4-Channel Relay Started
+ESP32 + PZEM-004T + 2-Channel Relay Started
 All relays are OFF at startup.
 ```
 
@@ -777,7 +773,7 @@ But for learning, one readable `main.cpp` is okay.
 
 ---
 
-## 10. ==Basic W==iring Summary]]
+## 10. ==Basic W==iring Summary
 
 ```text
 ESP32 GPIO16  <- Level Converter LV1 <- HV1 <- PZEM TX
@@ -785,8 +781,6 @@ ESP32 GPIO17  -> Level Converter LV2 -> HV2 -> PZEM RX
 
 ESP32 GPIO25  -> Relay IN1
 ESP32 GPIO26  -> Relay IN2
-ESP32 GPIO27  -> Relay IN3
-ESP32 GPIO33  -> Relay IN4
 
 ESP32 VIN/5V  <- Hi-Link 5V OUT+
 ESP32 GND     <- Hi-Link GND OUT-
@@ -828,3 +822,63 @@ Start in this order:
 5. Add Wi-Fi/MQTT/API only after the hardware works.
 
 This keeps debugging easier and safer.
+
+---
+
+## 13. WiFi + MQTT Connectivity (HiveMQ Cloud)
+
+The firmware in `src/main.cpp` now connects to WiFi and publishes to the
+HiveMQ Cloud broker over TLS (port 8883). The mobile app subscribes over
+secure WebSocket (port 8884, path `/mqtt`) and the backend over `mqtts://`.
+
+### 13.1 Credentials — `include/secrets.h`
+
+Copy the template and fill in your real values (the file is gitignored):
+
+```bash
+cp include/secrets.h.example include/secrets.h
+```
+
+It defines `WIFI_SSID`, `WIFI_PASSWORD`, `MQTT_HOST`, `MQTT_PORT`,
+`MQTT_USERNAME`, `MQTT_PASSWORD`, and `DEVICE_UID`. The WiFi network must be
+**2.4 GHz** — the ESP32 cannot join 5 GHz networks. `DEVICE_UID` must match
+`MQTT_DEVICE_UID` in `backend/.env` and `EXPO_PUBLIC_MQTT_DEVICE_UID` in
+`app-voltwise/.env`.
+
+### 13.2 Topic Contract
+
+| Topic | Direction | QoS | Retained | Payload |
+| --- | --- | --- | --- | --- |
+| `voltwise/<uid>/telemetry` | ESP32 → subscribers | 0 | no | `{"voltage":230.1,"current":0.42,"watts":96.5,"kwh":1.234,"frequency":60.0,"powerFactor":0.98,"ms":123456}` |
+| `voltwise/<uid>/relay/state` | ESP32 → subscribers | 1 | yes | `{"on":true,"reason":"boot"}` — reason is `boot`, `remote`, `overpower`, or `countdown` |
+| `voltwise/<uid>/relay/set` | backend → ESP32 | 1 | no | `{"on":false}` |
+| `voltwise/<uid>/status` | LWT (broker) | 1 | yes | `"online"` / `"offline"` |
+
+Telemetry keys mirror the backend's `EnergyReading` columns so the ingestion
+bridge inserts rows without transformation. The payload carries no timestamp —
+the backend stamps arrival time. `ms` is device uptime, for debugging only.
+
+### 13.3 TLS and the Clock
+
+TLS certificate validation needs a correct clock, and a fresh ESP32 boots
+thinking it is 1970 — so the firmware syncs NTP **before** the first MQTT
+connect. The Let's Encrypt root CA (ISRG Root X1, valid to 2035) is embedded
+in the firmware. If TLS ever fails mysteriously, there is a commented
+`secureClient.setInsecure()` line for debugging only.
+
+### 13.4 Remote Relay Commands and the Shutdown Latch
+
+The relays are driven together as one master switch (2-channel module):
+
+- `{"on":false}` → all relays open (power cut) and the shutdown latch is set,
+  so nothing re-enables power automatically.
+- `{"on":true}` → the latch is **cleared** and the relays close again. A
+  `remoteOverride` flag stops the 30-second auto-shutdown countdown from
+  instantly re-arming while current is still flowing; it clears itself once
+  current drops below the detection threshold.
+- The over-power safety (`MAX_ALLOWED_POWER_WATTS`) is **never** overridden —
+  if the load is still above the limit it cuts power again with reason
+  `overpower`.
+
+The firmware keeps reading the sensor and running all safety logic even while
+WiFi or the broker is down (non-blocking reconnect with backoff).

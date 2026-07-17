@@ -4,7 +4,10 @@
 // All functions accept a userId parameter so they operate on the authenticated
 // user's data rather than a hardcoded demo user.
 
+import fs from "node:fs";
+import path from "node:path";
 import { prisma } from "../../lib/prisma.ts";
+import { UPLOADS_DIR } from "../../lib/upload.ts";
 import { DeviceStatus } from "../../generated/prisma/index.js";
 import type {
   DeviceResponseDto,
@@ -189,6 +192,42 @@ export const deleteDevice = async (
 
   await prisma.device.delete({ where: { id: deviceId } });
   return true;
+};
+
+// Documentation only: Attaches an uploaded photo to a device.
+// Verifies the device exists AND belongs to the given user before touching it
+// (uploads must never land on another user's device). Replaces imageUri with
+// the served path of the new file and best-effort deletes the previously
+// uploaded file so the uploads folder doesn't accumulate orphans.
+// Accepts userId (number), deviceId (number), and the stored filename (string).
+// Returns a Promise resolving to the updated DeviceResponseDto.
+// Throws an error if the device does not exist or is owned by another user.
+export const setDeviceImage = async (
+  userId: number,
+  deviceId: number,
+  filename: string
+): Promise<DeviceResponseDto> => {
+  const existingDevice = await prisma.device.findUnique({
+    where: { id: deviceId },
+  });
+
+  if (!existingDevice || existingDevice.userId !== userId) {
+    throw new Error("Device not found");
+  }
+
+  // Clean up the previous upload (only files we manage under /uploads/).
+  if (existingDevice.imageUri?.startsWith("/uploads/")) {
+    const oldFile = path.join(UPLOADS_DIR, path.basename(existingDevice.imageUri));
+    fs.promises.unlink(oldFile).catch(() => {});
+  }
+
+  const updatedDevice = await prisma.device.update({
+    where: { id: deviceId },
+    data: { imageUri: `/uploads/${filename}` },
+    include: { room: true },
+  });
+
+  return formatDeviceForResponse(updatedDevice);
 };
 
 // Documentation only: Retrieves the most recent EnergyReading row for a specific device.

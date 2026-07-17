@@ -5,6 +5,13 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
+  TextInput,
+  Modal,
+  ActivityIndicator,
+  Pressable,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -136,8 +143,15 @@ const METRIC_ACCENT: Record<MetricStat["key"], string> = {
 export default function AnalyticsScreen() {
   const [period, setPeriod]     = useState<Period>("Day");
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  // Fetch analytics whenever the selected period changes.
+  // States for updating tariff rate
+  const [tariffModalVisible, setTariffModalVisible] = useState(false);
+  const [tariffInput, setTariffInput] = useState("");
+  const [updatingTariff, setUpdatingTariff] = useState(false);
+  const [tariffError, setTariffError] = useState<string | null>(null);
+
+  // Fetch analytics whenever the selected period or refresh trigger changes.
   useEffect(() => {
     let cancelled = false;
     api
@@ -151,10 +165,10 @@ export default function AnalyticsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [period]);
+  }, [period, refreshTrigger]);
 
   const breakdown    = analytics?.breakdown   ?? DONUT_SEGMENTS;
-  const topConsumers = analytics?.topConsumers ?? TOP_CONSUMERS;
+  const topConsumers = analytics !== null ? analytics.topConsumers : TOP_CONSUMERS;
   const totalKwh     = analytics?.totalKwh     ?? 87.4;
   const metrics      = analytics?.metrics      ?? FALLBACK_METRICS;
   const bill = analytics?.billPredictor ?? {
@@ -163,6 +177,39 @@ export default function AnalyticsScreen() {
     accumulatedKwh: 87.4,
     estimatedBill: 917.7,
     cycleStart: "Jun 1, 2026",
+  };
+
+  const handleSaveTariff = async () => {
+    const rate = parseFloat(tariffInput);
+    if (isNaN(rate) || rate <= 0) {
+      setTariffError("Please enter a valid rate greater than 0.");
+      return;
+    }
+
+    setUpdatingTariff(true);
+    setTariffError(null);
+
+    try {
+      await api.put("/analytics/tariff", { ratePerKwh: rate });
+      setTariffModalVisible(false);
+      setRefreshTrigger((prev) => prev + 1);
+    } catch (err: any) {
+      console.warn("Backend update failed, updating local state for offline demo:", err);
+      // Fallback for offline mode: update local analytics state
+      if (analytics) {
+        setAnalytics({
+          ...analytics,
+          billPredictor: {
+            ...analytics.billPredictor,
+            tariff: rate,
+            estimatedBill: parseFloat((rate * analytics.billPredictor.accumulatedKwh).toFixed(2)),
+          },
+        });
+      }
+      setTariffModalVisible(false);
+    } finally {
+      setUpdatingTariff(false);
+    }
   };
 
   let cumulative = 0;
@@ -194,12 +241,30 @@ export default function AnalyticsScreen() {
 
           <View style={styles.divider} />
 
-          <View style={styles.billRow}>
+          <TouchableOpacity
+            style={styles.billRow}
+            onPress={() => {
+              setTariffInput(bill.tariff.toString());
+              setTariffError(null);
+              setTariffModalVisible(true);
+            }}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Edit Tariff Rate"
+          >
             <Text style={styles.billRowLabel}>Tariff</Text>
-            <Text style={[styles.billRowValue, styles.dashedValue]}>
-              {bill.currency} {bill.tariff.toFixed(2)} /kWh
-            </Text>
-          </View>
+            <View style={styles.tariffValueContainer}>
+              <Text style={[styles.billRowValue, styles.dashedValue]}>
+                {bill.currency} {bill.tariff.toFixed(2)} /kWh
+              </Text>
+              <Ionicons
+                name="create-outline"
+                size={14}
+                color={C.accent}
+                style={{ marginLeft: 6 }}
+              />
+            </View>
+          </TouchableOpacity>
 
           <View style={[styles.billRow, { marginTop: 10 }]}>
             <Text style={styles.billRowLabel}>Rate Accumulated</Text>
@@ -304,20 +369,27 @@ export default function AnalyticsScreen() {
         </View>
 
         <View style={[styles.card, styles.consumersCard]}>
-          {topConsumers.map((item) => (
-            <View key={item.id} style={styles.consumerRow}>
-              <Text style={styles.consumerName}>{item.name}</Text>
-              <View style={styles.consumerBarBg}>
-                <View
-                  style={[
-                    styles.consumerBar,
-                    { width: `${item.pct}%`, backgroundColor: item.color },
-                  ]}
-                />
-              </View>
-              <Text style={styles.consumerPct}>{item.pct}%</Text>
+          {topConsumers.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="alert-circle-outline" size={24} color={C.sub} style={{ marginBottom: 6 }} />
+              <Text style={styles.emptyText}>No appliances connected or active at the moment.</Text>
             </View>
-          ))}
+          ) : (
+            topConsumers.map((item) => (
+              <View key={item.id} style={styles.consumerRow}>
+                <Text style={styles.consumerName}>{item.name}</Text>
+                <View style={styles.consumerBarBg}>
+                  <View
+                    style={[
+                      styles.consumerBar,
+                      { width: `${item.pct}%`, backgroundColor: item.color },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.consumerPct}>{item.pct}%</Text>
+              </View>
+            ))
+          )}
         </View>
 
         {/* ---- Sensor Metrics section ---- */}
@@ -370,8 +442,94 @@ export default function AnalyticsScreen() {
           );
         })}
 
-        <View style={{ height: 24 }} />
       </ScrollView>
+
+      {/* Update Tariff Modal */}
+      <Modal
+        visible={tariffModalVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => {
+          if (!updatingTariff) setTariffModalVisible(false);
+        }}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => {
+              if (!updatingTariff) {
+                Keyboard.dismiss();
+                setTariffModalVisible(false);
+              }
+            }}
+          >
+            <Pressable style={styles.modalCard} onPress={Keyboard.dismiss}>
+              <View style={styles.modalIconWrap}>
+                <Ionicons name="calculator-outline" size={28} color={C.accent} />
+              </View>
+
+              <Text style={styles.modalTitle}>Update Tariff Rate</Text>
+              <Text style={styles.modalMessage}>
+                Set the utility rate charged by your electricity provider per kWh.
+              </Text>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.currencyPrefix}>{bill.currency}</Text>
+                <TextInput
+                  style={styles.tariffTextInput}
+                  keyboardType="decimal-pad"
+                  value={tariffInput}
+                  onChangeText={(text) => {
+                    setTariffInput(text);
+                    if (tariffError) setTariffError(null);
+                  }}
+                  placeholder="10.50"
+                  placeholderTextColor={C.sub}
+                  selectTextOnFocus
+                  autoFocus
+                  editable={!updatingTariff}
+                />
+                <Text style={styles.unitSuffix}>/kWh</Text>
+              </View>
+
+              {tariffError && (
+                <Text style={styles.errorText}>{tariffError}</Text>
+              )}
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalCancelBtn]}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setTariffModalVisible(false);
+                  }}
+                  activeOpacity={0.8}
+                  disabled={updatingTariff}
+                >
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalSaveBtn]}
+                  onPress={handleSaveTariff}
+                  activeOpacity={0.8}
+                  disabled={updatingTariff}
+                >
+                  {updatingTariff ? (
+                    <ActivityIndicator size="small" color="#1a1f2e" />
+                  ) : (
+                    <Text style={styles.modalSaveText}>Save</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -653,5 +811,130 @@ const styles = StyleSheet.create({
     color: C.sub,
     fontSize: 13,
     lineHeight: 20,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 340,
+    backgroundColor: C.card,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 24,
+    alignItems: "center",
+  },
+  modalIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(0,212,170,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    color: C.text,
+    fontSize: 18,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 6,
+  },
+  modalMessage: {
+    color: C.sub,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.bg,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 54,
+    width: "100%",
+    marginBottom: 12,
+  },
+  currencyPrefix: {
+    color: C.accent,
+    fontSize: 18,
+    fontWeight: "700",
+    marginRight: 8,
+  },
+  tariffTextInput: {
+    flex: 1,
+    color: C.text,
+    fontSize: 18,
+    fontWeight: "600",
+    paddingVertical: 8,
+  },
+  unitSuffix: {
+    color: C.sub,
+    fontSize: 14,
+    fontWeight: "500",
+    marginLeft: 8,
+  },
+  errorText: {
+    color: C.red,
+    fontSize: 13,
+    fontWeight: "500",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 8,
+    alignSelf: "stretch",
+  },
+  modalBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalCancelBtn: {
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: "transparent",
+  },
+  modalCancelText: {
+    color: C.sub,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  modalSaveBtn: {
+    backgroundColor: C.accent,
+  },
+  modalSaveText: {
+    color: "#1a1f2e",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  tariffValueContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 24,
+    gap: 4,
+  },
+  emptyText: {
+    color: C.sub,
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 18,
   },
 });

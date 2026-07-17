@@ -42,3 +42,31 @@ export const getAnalytics = async (
     next(error);
   }
 };
+
+// Documentation only: Handles PUT /api/analytics/tariff.
+// Validates that ratePerKwh is a positive number and optional currency is present.
+// Delegates to the analytics service and returns the newly created tariff.
+export const updateTariff = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { ratePerKwh, currency } = req.body;
+
+    if (ratePerKwh === undefined || typeof ratePerKwh !== "number" || ratePerKwh <= 0) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid tariff rate. ratePerKwh is required and must be a positive number.",
+      });
+      return;
+    }
+
+    const updated = await analyticsService.updateTariff(userId, ratePerKwh, currency);
+    res.status(200).json({ success: true, data: updated });
+  } catch (error) {
+    next(error);
+  }
+};
+

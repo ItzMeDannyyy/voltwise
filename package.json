@@ -7,9 +7,9 @@
     "doc": "docs"
   },
   "scripts": {
-    "dev": "concurrently --kill-others-on-fail --names \"backend,app\" --prefix-colors \"cyan,magenta\" \"npm run dev --prefix backend\" \"npm run start --prefix voltwise -- -c\"",
+    "dev": "concurrently --kill-others-on-fail --names \"backend,app\" --prefix-colors \"cyan,magenta\" \"npm run dev --prefix backend\" \"npm run start --prefix app-voltwise -- -c\"",
     "dev:backend": "npm run dev --prefix backend",
-    "dev:app": "npm run start --prefix voltwise -- -c",
+    "dev:app": "npm run start --prefix app-voltwise -- -c",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
