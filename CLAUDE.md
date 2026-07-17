@@ -5,29 +5,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 **VoltWise** is a capstone project: a smart energy tracking & monitoring system.
-The repo holds the **mobile MVP** — an Expo React Native app backed by a modular
-Express + Prisma + PostgreSQL API. The physical IoT layer (sensors/MCU/MQTT) is
-out of scope for the MVP and is simulated by a database seed.
+The repo is a monorepo with four parts: an Expo React Native app (`app-voltwise/`),
+a modular Express + Prisma + PostgreSQL API (`backend/`), ESP32 firmware for the
+physical sensor layer (`iot-voltwise/`), and a FastAPI KMeans ML service
+(`ml-voltwise/`). The app + backend form the working MVP. The IoT layer is
+wired through **HiveMQ Cloud MQTT**: the ESP32 publishes telemetry over TLS,
+the backend ingests it into `EnergyReading` and exposes relay control at
+`/api/iot`, and the app subscribes directly over WSS for live dashboard data
+(see "MQTT / IoT layer" below). The seed still provides the rich demo dataset;
+the ML service is not yet wired into the backend.
 
 See `VOLTWISE_CORE_FEATURES.md` for the product feature set and `docs/` for the
-ERD, data flow, and system architecture diagrams.
+ERD, data flow, system architecture, and the IoT/NILM/KMeans design guides.
 
 ## Structure
 
 ```
 voltwise/
-├── backend/        # Express 5 + Prisma 7 API (TypeScript, ESM)
-│   ├── prisma/     # schema.prisma, seed.ts, migrations/
-│   └── src/        # index.ts, routes/, lib/prisma.ts, configs/, modules/<feature>/
-├── voltwise/       # Expo React Native app (expo-router)
-│   ├── app/(tabs)/ # dashboard · devices · alerts · analytics screens
-│   ├── components/ # DemoFab, AnomalyModal, Collapsible
-│   ├── lib/api.ts  # typed API client + shared response types
-│   └── assets/
-├── docs/           # ERD.md, DATA_FLOW.md, SYSTEM_ARCHITECTURE.md
-├── README.md
+├── backend/         # Express 5 + Prisma 7 API (TypeScript, ESM)
+│   ├── prisma/      # schema.prisma, seed.ts, migrations/
+│   ├── src/         # index.ts, routes/, lib/prisma.ts, configs/, modules/<feature>/
+│   └── test/        # Jest unit tests (ESM + ts-jest)
+├── app-voltwise/    # Expo React Native app (expo-router)
+│   ├── app/         # (auth) login/register · (tabs) dashboard/devices/alerts/analytics · profile · settings
+│   ├── components/  # DemoFab, AnomalyModal, AlertDetailModal, ConfirmModal, AppHeader
+│   ├── context/     # AuthContext, MqttContext
+│   └── lib/         # api.ts (typed client + shared types), auth-storage.ts
+├── iot-voltwise/    # PlatformIO ESP32 firmware (PZEM-004T v3.0 + 2-channel relay + MQTT)
+├── ml-voltwise/     # FastAPI KMeans service (scaffold: app/main.py, train.py are empty stubs)
+├── docs/            # ERD, DATA_FLOW, SYSTEM_ARCHITECTURE + NILM/KMeans/ESP32 build guides
 └── VOLTWISE_CORE_FEATURES.md
 ```
+
+> The root `package.json` `dev`/`dev:app` scripts still reference the old
+> `voltwise/` app directory (renamed to `app-voltwise/`) and are broken. Run
+> the backend and app from their own directories instead.
 
 ## Backend (`backend/`)
 
@@ -46,31 +58,41 @@ npx prisma generate                          # regenerate client into src/genera
 npm run seed                                 # load mock data (prisma/seed.ts)
 npm run fresh:db                             # reset DB and re-apply all migrations (no seed)
 npm run dev                                  # start API on http://localhost:3000
+npm test                                     # Jest (ESM via --experimental-vm-modules)
+npm test -- dashboard                        # run a single test file by name
+npm run test:watch                           # Jest watch mode
 ```
 
-> No test runner is configured — `npm test` is a placeholder that exits 1.
-> `npm run add:module <name>` (alias for `node scripts/createModule.js`) scaffolds a module from the `sample/` template.
+### Backend testing
+
+Jest is configured for native ESM (`jest.config.mjs`, ts-jest with `useESM`;
+the npm scripts pass `--experimental-vm-modules`). Tests live in `test/` and
+**mock the shared Prisma client with `jest.unstable_mockModule` before importing
+the code under test** — no real database is touched. `test/dashboard.test.ts`
+is the reference pattern for mocking `src/lib/prisma.ts` and the generated
+enums in an ESM world.
 
 ### API routes
 
 All routes are prefixed with `/api`:
 
-| Prefix         | Module    | Purpose                                    |
-| -------------- | --------- | ------------------------------------------ |
+| Prefix       | Module    | Purpose                                                                      |
+| ------------ | --------- | ---------------------------------------------------------------------------- |
 | `/auth`      | auth      | `POST /register`, `POST /login` (public); `GET /me`, `PATCH /me` (protected) |
-| `/devices`   | devices   | CRUD for smart devices                     |
-| `/dashboard` | dashboard | Live summary (kW, kWh, history, consumers) |
-| `/alerts`    | alerts    | Alert management;`POST /` creates alerts |
-| `/analytics` | analytics | Bill prediction, kWh breakdown, metrics    |
-| `/health`    | —        | `GET /api/health` liveness check         |
+| `/devices`   | devices   | CRUD for smart devices                                                        |
+| `/dashboard` | dashboard | Live summary (kW, kWh, history, consumers)                                    |
+| `/alerts`    | alerts    | Alert management; `POST /` creates alerts                                     |
+| `/analytics` | analytics | Bill prediction, kWh breakdown, metrics                                       |
+| `/iot`       | iot       | `POST /relay` master relay command; `GET /status` last-known device state    |
+| `/health`    | —         | `GET /api/health` liveness check                                              |
 
-## Mobile app (`voltwise/`)
+## Mobile app (`app-voltwise/`)
 
 - **Stack:** Expo SDK 54, React Native 0.81, React 19, expo-router (file-based tabs in `app/(tabs)`).
 - **Data:** screens fetch from the backend through `lib/api.ts`, which auto-resolves the dev host from `expo-constants` and unwraps `{success,data}`. Each screen keeps local mock constants as an **offline-first fallback** and uses **optimistic updates** for writes.
-- **Expo is versioned:** before writing app code, consult the exact docs at https://docs.expo.dev/versions/v54.0.0/ (see `voltwise/AGENTS.md`).
+- **Expo is versioned:** before writing app code, consult the exact docs at https://docs.expo.dev/versions/v54.0.0/ (see `app-voltwise/AGENTS.md`).
 
-### App commands (run from `voltwise/`)
+### App commands (run from `app-voltwise/`)
 
 ```bash
 npm install
@@ -81,6 +103,34 @@ npm run lint              # ESLint via expo lint
 ```
 
 > On a physical device, `lib/api.ts` derives the LAN IP automatically. Override with `EXPO_PUBLIC_API_URL` (e.g. `http://192.168.1.10:3000/api`).
+
+## IoT firmware (`iot-voltwise/`)
+
+PlatformIO project (`env:esp32dev`, Arduino framework) in a single `src/main.cpp`.
+It reads a **PZEM-004T v3.0** power sensor over `Serial2` (RX 16 / TX 17) every
+2 s and drives a 2-channel relay module (pins 25/26, **active-LOW**, both
+channels switched together as a master) with a safety cutoff at
+`MAX_ALLOWED_POWER_WATTS` and a 30 s auto-shutdown countdown. It publishes
+telemetry to HiveMQ Cloud over TLS MQTT and accepts remote relay commands (see
+"MQTT / IoT layer" below). Credentials live in `include/secrets.h` (gitignored;
+copy from `include/secrets.h.example`). `DIAGNOSTIC_MODE` (on by default) prints
+raw readings + the PZEM slave address to separate UART faults from AC-power
+issues. See `docs/esp32_pzem_relay_iot_build_guide.md` for the wiring guide and
+§13 there for the MQTT design.
+
+```bash
+pio run                   # build (from iot-voltwise/)
+pio run -t upload         # flash the ESP32
+pio device monitor        # serial monitor at 115200 baud
+```
+
+## ML service (`ml-voltwise/`)
+
+FastAPI + scikit-learn KMeans service, currently a **scaffold**: `app/main.py`,
+`train.py`, and `feature_engineering.py` are empty stubs; `artifacts/` holds a
+pre-trained `kmeans_pipeline.joblib` + `cluster_profiles.csv`. The intended
+design is in `docs/voltwise_kmeans_fastapi_guide.md` and
+`docs/voltwise_model_service_guide.md`. Dependencies: `pip install -r requirements.txt`.
 
 ## Key architectural patterns
 
@@ -111,6 +161,39 @@ The `EnergyReading` table serves two purposes distinguished by `deviceId`:
 - `deviceId != null` → per-device readings (used by top-consumers and analytics breakdown)
 
 When querying this table, always filter on `deviceId` intentionally.
+
+### MQTT / IoT layer
+
+All three tiers share one topic contract, keyed by a device UID (default
+`esp32-01`; firmware `DEVICE_UID` in `include/secrets.h`, backend
+`MQTT_DEVICE_UID`, app `EXPO_PUBLIC_MQTT_DEVICE_UID` — they must match):
+
+| Topic                        | Direction           | Retained | Payload                                             |
+| ---------------------------- | ------------------- | -------- | --------------------------------------------------- |
+| `voltwise/<uid>/telemetry`   | ESP32 → subscribers | no       | PZEM JSON every ~2 s (keys mirror `EnergyReading`)  |
+| `voltwise/<uid>/relay/state` | ESP32 → subscribers | yes      | `{ on, reason: boot\|remote\|overpower\|countdown }` |
+| `voltwise/<uid>/relay/set`   | backend → ESP32     | no       | `{ on: boolean }` (master — both channels together)  |
+| `voltwise/<uid>/status`      | LWT                 | yes      | `"online"` / `"offline"`                             |
+
+- **Broker:** HiveMQ Cloud. ESP32 + backend connect on 8883 (TLS), the app on
+  8884 (`wss://…/mqtt`). Credentials live only in gitignored files
+  (`backend/.env`, `app-voltwise/.env`, `iot-voltwise/include/secrets.h`).
+- **Backend:** `src/lib/mqtt.ts` is the client singleton — started from
+  `index.ts`, it ingests telemetry into `EnergyReading` (whole-home,
+  `deviceId: null`, owned by `MQTT_INGEST_USER_EMAIL`, default the demo
+  account) and holds in-memory device state. The `iot` module wraps it:
+  `POST /api/iot/relay` publishes commands (JWT-protected — the app never
+  publishes to MQTT directly), `GET /api/iot/status` reports last-known state.
+- **App:** `context/MqttContext.tsx` (`useMqtt()`) subscribes read-only for
+  live dashboard telemetry and relay state; the dashboard's Master Power card
+  toggles the relay optimistically via the REST endpoint and reconciles when
+  the firmware confirms on `relay/state`.
+- **Firmware semantics:** a remote OFF latches power off; a remote ON clears
+  the latch and suppresses the auto-shutdown countdown until current drops
+  once (`remoteOverride`). The over-power cutoff is never overridable.
+- A retained `"online"` status can outlive a crashed device — both backend and
+  app cross-check telemetry age (≤15 s / ≤10 s) before reporting the device
+  online.
 
 ### Alert event bus
 

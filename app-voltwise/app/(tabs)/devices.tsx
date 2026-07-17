@@ -19,8 +19,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import { api, ApiDevice, ApiDeviceReading } from "../../lib/api";
+import { api, ApiDevice, ApiDeviceReading, resolveAssetUrl } from "../../lib/api";
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
 
@@ -54,16 +55,6 @@ interface Device {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const INITIAL_DEVICES: Device[] = [
-  { id: "1", name: "Air Conditioner", room: "Bedroom", category: "Cooling", imageUri: null, status: "ACTIVE", watts: 1200, enabled: true },
-  { id: "2", name: "Living Room Lights", room: "Living Room", category: "Lighting", imageUri: null, status: "ACTIVE", watts: 340, enabled: true },
-  { id: "3", name: "Smart TV", room: "Living Room", category: "Entertainment", imageUri: null, status: "IDLE", watts: 0, enabled: false },
-  { id: "4", name: "Kitchen Appliances", room: "Kitchen", category: "Cooking", imageUri: null, status: "ACTIVE", watts: 860, enabled: true },
-  { id: "5", name: "Washing Machine", room: "Laundry", category: "Appliance", imageUri: null, status: "OFF", watts: 0, enabled: false },
-  { id: "6", name: "Refrigerator", room: "Kitchen", category: "Cooling", imageUri: null, status: "ACTIVE", watts: 180, enabled: true },
-  { id: "7", name: "Water Heater", room: "Bathroom", category: "Heating", imageUri: null, status: "ACTIVE", watts: 1500, enabled: true },
-];
-
 const STATUS_COLORS: Record<DeviceStatus, string> = {
   ACTIVE: C.accent,
   IDLE: C.yellow,
@@ -79,7 +70,9 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function DevicesScreen() {
-  const [devices, setDevices] = useState<Device[]>(INITIAL_DEVICES);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [loadingDevices, setLoadingDevices] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("banner");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -93,9 +86,7 @@ export default function DevicesScreen() {
   const [formPhotoUri, setFormPhotoUri] = useState<string | null>(null);
   const [formEnabled, setFormEnabled] = useState(true);
 
-  const originalsRef = useRef<Record<string, { status: DeviceStatus; watts: number }>>(
-    Object.fromEntries(INITIAL_DEVICES.map((d) => [d.id, { status: d.status, watts: d.watts }]))
-  );
+  const originalsRef = useRef<Record<string, { status: DeviceStatus; watts: number }>>({});
   const accordionHeightsRef = useRef<Partial<Record<string, number>>>({});
   const accordionAnimsRef = useRef<Partial<Record<string, Animated.Value>>>({});
 
@@ -106,6 +97,20 @@ export default function DevicesScreen() {
     return accordionAnimsRef.current[id]!;
   }
 
+  // ── Deep link: ?openAdd=1 auto-opens the add-device form ─────────────────
+  // Used by the "New load detected" prompt to jump straight into registering
+  // the appliance that just switched on.
+
+  const { openAdd } = useLocalSearchParams<{ openAdd?: string }>();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!openAdd) return;
+    setModalVisible(true);
+    // Clear the param so navigating back to this tab doesn't re-open the form.
+    router.setParams({ openAdd: undefined });
+  }, [openAdd, router]);
+
   // ── Load devices ──────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -113,13 +118,21 @@ export default function DevicesScreen() {
     api
       .get<ApiDevice[]>("/devices")
       .then((data) => {
-        if (cancelled || !data?.length) return;
-        setDevices(data);
+        if (cancelled) return;
+        // An empty list is real data (fresh account) — render the empty state,
+        // don't fall back to anything.
+        const list = data ?? [];
+        setDevices(list);
         originalsRef.current = Object.fromEntries(
-          data.map((d) => [d.id, { status: d.status, watts: d.watts }])
+          list.map((d) => [d.id, { status: d.status, watts: d.watts }])
         );
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDevices(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -270,16 +283,42 @@ export default function DevicesScreen() {
     setModalVisible(false);
 
     api
-      .post<ApiDevice>("/devices", { name, room, watts, enabled: formEnabled, category, imageUri: photoUri })
-      .then((created) => {
+      .post<ApiDevice>("/devices", { name, room, watts, enabled: formEnabled, category })
+      .then(async (created) => {
         if (!created) return;
         originalsRef.current[created.id] = { status: created.status, watts: created.watts };
-        setDevices((prev) => prev.map((d) => (d.id === id ? created : d)));
+
+        // The photo is a local file — send it as multipart so the backend can
+        // store it in its uploads bucket and hand back a served URL.
+        let finalDevice = created;
+        if (photoUri) {
+          try {
+            finalDevice = await uploadDevicePhoto(created.id, photoUri);
+          } catch {
+            // Device exists either way; keep showing the local photo for now.
+            finalDevice = { ...created, imageUri: photoUri };
+          }
+        }
+        setDevices((prev) => prev.map((d) => (d.id === id ? finalDevice : d)));
       })
       .catch(() => {});
   }
 
-  // ── Camera ────────────────────────────────────────────────────────────────
+  // ── Photo upload ──────────────────────────────────────────────────────────
+
+  async function uploadDevicePhoto(deviceId: string, uri: string): Promise<ApiDevice> {
+    const filename = uri.split("/").pop() ?? "photo.jpg";
+    const extension = filename.split(".").pop()?.toLowerCase();
+    const mimeType =
+      extension === "png" ? "image/png" : extension === "webp" ? "image/webp" : "image/jpeg";
+
+    const form = new FormData();
+    // React Native's FormData takes a { uri, name, type } file descriptor.
+    form.append("photo", { uri, name: filename, type: mimeType } as unknown as Blob);
+    return api.upload<ApiDevice>(`/devices/${deviceId}/photo`, form);
+  }
+
+  // ── Camera / gallery ──────────────────────────────────────────────────────
 
   async function handleTakePhoto() {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -288,7 +327,24 @@ export default function DevicesScreen() {
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setFormPhotoUri(result.assets[0].uri);
+    }
+  }
+
+  async function handlePickFromGallery() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission required", "Photo library access is needed to pick an image.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.7,
@@ -397,7 +453,7 @@ export default function DevicesScreen() {
     return (
       <View style={styles.photoCard}>
         {device.imageUri ? (
-          <Image source={{ uri: device.imageUri }} style={styles.photoCardImage} />
+          <Image source={{ uri: resolveAssetUrl(device.imageUri)! }} style={styles.photoCardImage} />
         ) : (
           <View style={styles.photoCardPlaceholder}>
             <Ionicons name="flash-outline" size={36} color={C.sub} />
@@ -417,6 +473,46 @@ export default function DevicesScreen() {
             <Text style={styles.watts}>{formatWatts(device.watts)}</Text>
           </View>
         </View>
+      </View>
+    );
+  }
+
+  // ── Render: loading / empty states ────────────────────────────────────────
+
+  function renderListState() {
+    if (loadingDevices) {
+      return (
+        <View style={styles.emptyState}>
+          <ActivityIndicator size="large" color={C.accent} />
+          <Text style={styles.emptyStateText}>Loading devices…</Text>
+        </View>
+      );
+    }
+    if (loadError) {
+      return (
+        <View style={styles.emptyState}>
+          <Ionicons name="cloud-offline-outline" size={40} color={C.sub} />
+          <Text style={styles.emptyStateTitle}>{"Couldn't reach the server"}</Text>
+          <Text style={styles.emptyStateText}>
+            Check your connection, then come back to this tab to retry.
+          </Text>
+        </View>
+      );
+    }
+    if (devices.length === 0) {
+      return (
+        <View style={styles.emptyState}>
+          <Ionicons name="flash-outline" size={40} color={C.sub} />
+          <Text style={styles.emptyStateTitle}>No devices yet</Text>
+          <Text style={styles.emptyStateText}>Tap + Add to register your first device.</Text>
+        </View>
+      );
+    }
+    // Devices exist but the search matched nothing.
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="search-outline" size={40} color={C.sub} />
+        <Text style={styles.emptyStateText}>{`No devices match "${search}".`}</Text>
       </View>
     );
   }
@@ -466,26 +562,32 @@ export default function DevicesScreen() {
         </View>
 
         {/* Banner mode — vertical accordion list */}
-        {viewMode === "banner" && (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}>
-            {filtered.map((device) => renderBannerCard(device))}
-            <View style={{ height: 16 }} />
-          </ScrollView>
-        )}
+        {viewMode === "banner" &&
+          (filtered.length === 0 ? (
+            renderListState()
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}>
+              {filtered.map((device) => renderBannerCard(device))}
+              <View style={{ height: 16 }} />
+            </ScrollView>
+          ))}
 
         {/* Photo mode — 2-column image grid */}
-        {viewMode === "photo" && (
-          <FlatList
-            data={filtered}
-            keyExtractor={(item) => item.id}
-            numColumns={2}
-            columnWrapperStyle={styles.photoRow}
-            contentContainerStyle={styles.list}
-            showsVerticalScrollIndicator={false}
-            renderItem={renderPhotoCard}
-            ListFooterComponent={<View style={{ height: 16 }} />}
-          />
-        )}
+        {viewMode === "photo" &&
+          (filtered.length === 0 ? (
+            renderListState()
+          ) : (
+            <FlatList
+              data={filtered}
+              keyExtractor={(item) => item.id}
+              numColumns={2}
+              columnWrapperStyle={styles.photoRow}
+              contentContainerStyle={styles.list}
+              showsVerticalScrollIndicator={false}
+              renderItem={renderPhotoCard}
+              ListFooterComponent={<View style={{ height: 16 }} />}
+            />
+          ))}
       </View>
 
       {/* Add Device Modal */}
@@ -570,10 +672,16 @@ export default function DevicesScreen() {
                     <Text style={styles.photoPlaceholderText}>No image</Text>
                   </View>
                 )}
-                <TouchableOpacity style={styles.cameraBtn} onPress={handleTakePhoto} activeOpacity={0.8}>
-                  <Ionicons name="camera-outline" size={18} color={C.accent} />
-                  <Text style={styles.cameraBtnText}>Take a picture</Text>
-                </TouchableOpacity>
+                <View style={styles.photoBtnRow}>
+                  <TouchableOpacity style={styles.cameraBtn} onPress={handleTakePhoto} activeOpacity={0.8}>
+                    <Ionicons name="camera-outline" size={18} color={C.accent} />
+                    <Text style={styles.cameraBtnText}>Camera</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.cameraBtn} onPress={handlePickFromGallery} activeOpacity={0.8}>
+                    <Ionicons name="images-outline" size={18} color={C.accent} />
+                    <Text style={styles.cameraBtnText}>Gallery</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <View style={styles.enabledRow}>
@@ -682,6 +790,26 @@ const styles = StyleSheet.create({
   // Shared list container
   list: {
     gap: 12,
+  },
+
+  // Loading / empty states
+  emptyState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingBottom: 64,
+    paddingHorizontal: 24,
+  },
+  emptyStateTitle: {
+    color: C.text,
+    fontSize: 17,
+    fontWeight: "700",
+  },
+  emptyStateText: {
+    color: C.sub,
+    fontSize: 14,
+    textAlign: "center",
   },
 
   // Banner card
@@ -903,6 +1031,10 @@ const styles = StyleSheet.create({
     color: C.sub,
     fontSize: 13,
     fontWeight: "500",
+  },
+  photoBtnRow: {
+    flexDirection: "row",
+    gap: 8,
   },
   cameraBtn: {
     flexDirection: "row",

@@ -10,6 +10,10 @@
             "includePath": [
                 "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/include",
                 "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/src",
+                "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
+                "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
+                "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/.pio/libdeps/esp32dev/ArduinoJson/src",
+                "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/.pio/libdeps/esp32dev/PubSubClient/src",
                 "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/.pio/libdeps/esp32dev/PZEM-004T-v30/src",
                 "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/newlib/platform_include",
                 "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/freertos/include",
@@ -236,8 +240,6 @@
                 "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/USB/src",
                 "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/Update/src",
                 "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src",
-                "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
-                "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
                 "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/WiFiProv/src",
                 "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src",
                 ""
@@ -247,6 +249,10 @@
                 "path": [
                     "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/include",
                     "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/src",
+                    "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
+                    "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
+                    "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/.pio/libdeps/esp32dev/ArduinoJson/src",
+                    "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/.pio/libdeps/esp32dev/PubSubClient/src",
                     "/home/danyxtu021/Subjects/capstone/voltwise/iot-voltwise/.pio/libdeps/esp32dev/PZEM-004T-v30/src",
                     "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/newlib/platform_include",
                     "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/freertos/include",
@@ -473,8 +479,6 @@
                     "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/USB/src",
                     "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/Update/src",
                     "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src",
-                    "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
-                    "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
                     "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/WiFiProv/src",
                     "/home/danyxtu021/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src",
                     ""

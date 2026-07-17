@@ -1,4 +1,4 @@
-import { Tabs, Redirect } from "expo-router";
+import { Tabs, Redirect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import {
@@ -12,8 +12,10 @@ import * as Haptics from "expo-haptics";
 import { PlatformPressable } from "@react-navigation/elements";
 import type { BottomTabBarButtonProps } from "@react-navigation/bottom-tabs";
 import DemoFab from "../../components/DemoFab";
-import { api, ApiAlert, ALERTS_CHANGED_EVENT } from "../../lib/api";
+import ConfirmModal from "../../components/ConfirmModal";
+import { api, ApiAlert, ALERTS_CHANGED_EVENT, emitAlertsChanged } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
+import { useMqtt } from "../../context/MqttContext";
 
 const COLORS = {
   background: "#1a1f2e",
@@ -58,6 +60,48 @@ function AlertsBadge() {
     <View style={styles.badge}>
       <Text style={styles.badgeText}>{count > 99 ? "99+" : count}</Text>
     </View>
+  );
+}
+
+/**
+ * Live "new load detected" prompt: when the backend's load detector publishes
+ * a new_load event on the MQTT events topic, offer to register the appliance.
+ * Confirming jumps to the Devices tab with the add-device form pre-opened.
+ * Mounted globally (next to DemoFab) so the prompt appears on any tab.
+ */
+function NewLoadPrompt() {
+  const { lastEvent } = useMqtt();
+  const router = useRouter();
+  // receivedAt of the event the user already dealt with (one event = one prompt).
+  const [handledAt, setHandledAt] = useState<number | null>(null);
+
+  const isNewLoad = lastEvent?.type === "new_load";
+  const visible = isNewLoad && lastEvent.receivedAt !== handledAt;
+
+  // The detector also stored an INFO alert — refresh the tab badge right away.
+  useEffect(() => {
+    if (isNewLoad) emitAlertsChanged();
+  }, [isNewLoad, lastEvent?.receivedAt]);
+
+  if (!visible) return null;
+
+  const wattsLabel =
+    lastEvent.deltaWatts !== undefined ? `~${Math.round(lastEvent.deltaWatts)} W` : "A load";
+
+  return (
+    <ConfirmModal
+      visible
+      icon="flash-outline"
+      title="New load detected"
+      message={`${wattsLabel} just switched on. Add it as a device to track its usage?`}
+      confirmText="Add device"
+      cancelText="Dismiss"
+      onConfirm={() => {
+        setHandledAt(lastEvent.receivedAt);
+        router.push({ pathname: "/(tabs)/devices", params: { openAdd: "1" } });
+      }}
+      onCancel={() => setHandledAt(lastEvent.receivedAt)}
+    />
   );
 }
 
@@ -134,6 +178,7 @@ export default function TabLayout() {
       />
       </Tabs>
       <DemoFab />
+      <NewLoadPrompt />
     </View>
   );
 }

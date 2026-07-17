@@ -380,3 +380,43 @@ export const getAnalyticsData = async (
     metrics,
   };
 };
+
+// Documentation only: Creates a new tariff record for the authenticated user.
+// Also updates the current open billing period's tariff rate if one is active.
+// Accepts userId (number), ratePerKwh (number), and optional currency (string).
+// Returns a Promise resolving to the updated tariff info.
+export const updateTariff = async (
+  userId: number,
+  ratePerKwh: number,
+  currency?: string
+): Promise<{ ratePerKwh: number; currency: string; effectiveFrom: Date }> => {
+  // Update the current open billing cycle's tariff rate so the calculations in the
+  // active cycle are kept consistent.
+  const activeBillingPeriod = await prisma.billingPeriod.findFirst({
+    where: { userId, endDate: null },
+    orderBy: { startDate: "desc" },
+  });
+
+  if (activeBillingPeriod) {
+    await prisma.billingPeriod.update({
+      where: { id: activeBillingPeriod.id },
+      data: { tariffRate: ratePerKwh },
+    });
+  }
+
+  const newTariff = await prisma.tariff.create({
+    data: {
+      userId,
+      ratePerKwh,
+      currency: currency ?? "₱",
+      effectiveFrom: new Date(),
+    },
+  });
+
+  return {
+    ratePerKwh: newTariff.ratePerKwh,
+    currency: newTariff.currency,
+    effectiveFrom: newTariff.effectiveFrom,
+  };
+};
+

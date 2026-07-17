@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { api, ApiAlert, emitAlertsChanged } from "../lib/api";
+import { api, ApiAlert, emitAlertsChanged, requestMasterShutdown } from "../lib/api";
 import { AnomalyModal } from "./AnomalyModal";
 
 const C = {
@@ -136,7 +136,12 @@ export default function DemoFab() {
 
   useEffect(() => {
     if (!demoModal || demoModal.type === "info" || powerOff) return;
-    if (countdown <= 0) { setPowerOff(true); return; }
+    if (countdown <= 0) {
+      // Countdown expiring performs the same real shutdown as TURN OFF NOW.
+      setPowerOff(true);
+      void requestMasterShutdown();
+      return;
+    }
     const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
     return () => clearTimeout(t);
   }, [demoModal, countdown, powerOff]);
@@ -173,6 +178,9 @@ export default function DemoFab() {
 
   function handleDemoPowerOff() {
     setPowerOff(true);
+    // Lab demo is real: command the relay off through the backend so the
+    // physical load actually loses power.
+    void requestMasterShutdown();
     setTimeout(() => setDemoModal(null), 1500);
   }
 

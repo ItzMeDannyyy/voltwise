@@ -11,12 +11,14 @@ import {
   Easing,
   LayoutAnimation,
   Platform,
+  Switch,
   UIManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LineChart } from "react-native-chart-kit";
-import { api, checkHealth, DashboardData, DashboardDevice, Reading } from "../../lib/api";
+import { api, checkHealth, DashboardData, DashboardDevice, IotStatus, Reading } from "../../lib/api";
+import { useMqtt } from "../../context/MqttContext";
 import AppHeader from "../../components/AppHeader";
 
 // Enable LayoutAnimation on Android.
@@ -82,21 +84,6 @@ const DAY_LABELS   = ["6a", "9a", "12p", "3p", "6p", "9p", "12a"];
 const WEEK_LABELS  = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-const DEVICES = [
-  { id: "1", name: "AC",     watts: 1200, active: true  },
-  { id: "2", name: "Fridge", watts: 180,  active: true  },
-  { id: "3", name: "TV",     watts: 85,   active: false },
-  { id: "4", name: "Washer", watts: 500,  active: false },
-];
-
-const TOP_CONSUMERS = [
-  { id: "1", name: "Air Conditioner", pct: 47, color: "#00d4aa" },
-  { id: "2", name: "Refrigerator",    pct: 21, color: "#3b82f6" },
-  { id: "3", name: "Water Heater",    pct: 18, color: "#f59e0b" },
-  { id: "4", name: "TV & Devices",    pct: 9,  color: "#8b5cf6" },
-  { id: "5", name: "Lighting",        pct: 5,  color: "#ec4899" },
-];
-
 type PillStatus = "online" | "offline" | "degraded" | "unknown";
 
 function StatusPill({ label, status }: { label: string; status: PillStatus }) {
@@ -140,6 +127,24 @@ function jitter(value: number, range: number, min: number, max: number): number 
 
 type LiveMetrics = Omit<Reading, "timestamp">;
 
+// Telemetry older than this is stale — the device publishes every ~2 s, so a
+// 10 s gap means the feed is effectively down and the UI must say so.
+const TELEMETRY_FRESH_MS = 10_000;
+
+// What is currently driving the live metrics:
+//   "mqtt" — real PZEM telemetry streaming from the broker
+//   "sim"  — backend says IoT is online but no fresh MQTT data (demo fallback)
+//   "off"  — nothing live; readings freeze
+type LiveSource = "mqtt" | "sim" | "off";
+
+// Human-readable explanations for the firmware's relay/state reason codes.
+const RELAY_REASON_LABELS: Record<string, string> = {
+  boot: "On since device start",
+  remote: "Switched remotely",
+  overpower: "Safety cutoff — power limit exceeded",
+  countdown: "Auto shutdown countdown finished",
+};
+
 export default function DashboardScreen() {
   const [currentKw, setCurrentKw]         = useState(3.24);
   const [period, setPeriod]               = useState<Period>("Day");
@@ -158,6 +163,18 @@ export default function DashboardScreen() {
 
   const [serverOnline, setServerOnline] = useState<boolean | null>(null);
   const [iotOnline, setIotOnline]       = useState<boolean | null>(null);
+
+  // Real-time IoT feed (direct MQTT subscription to the broker).
+  const { telemetry, telemetryAt, relayState } = useMqtt();
+  const [liveSource, setLiveSource] = useState<LiveSource>("off");
+  // Read inside the interval tick without re-creating the interval.
+  const telemetryAtRef = useRef<number | null>(null);
+
+  // Master relay control: optimistic value while a command is in flight,
+  // reconciled when the firmware confirms on the relay/state topic.
+  const [relayLocal, setRelayLocal]     = useState<boolean | null>(null);
+  const [relayPending, setRelayPending] = useState(false);
+  const relayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const intervalRef       = useRef<ReturnType<typeof setInterval> | null>(null);
   const healthIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -205,18 +222,54 @@ export default function DashboardScreen() {
     };
   }, []);
 
-  // Unified 2-second tick: jitter currentKw AND all six PZEM metrics.
-  // Each value random-walks from its previous value (matching the original
-  // currentKw logic), so the latest API-seeded reading is preserved and
-  // drifts gently rather than snapping back to the fallback base.
-  //
-  // Live monitoring only runs while the IoT layer is online — when it's
-  // offline (or status is still unknown) the readings freeze, mirroring how
-  // analytics shows static values rather than a fake live feed.
+  // Apply real MQTT telemetry the moment it arrives: the six PZEM metrics and
+  // the hero kW value come straight from the sensor, replacing the simulation.
   useEffect(() => {
-    if (iotOnline !== true) return;
+    if (!telemetry || telemetryAt === null) return;
+    telemetryAtRef.current = telemetryAt;
+    setLiveSource("mqtt");
+    setCurrentKw(Math.round((telemetry.watts / 1000) * 100) / 100);
+    setLiveMetrics((prev) => ({
+      voltage:     telemetry.voltage     ?? prev.voltage,
+      current:     telemetry.current     ?? prev.current,
+      activePower: telemetry.watts,
+      energy:      telemetry.kwh,
+      frequency:   telemetry.frequency   ?? prev.frequency,
+      powerFactor: telemetry.powerFactor ?? prev.powerFactor,
+    }));
+  }, [telemetry, telemetryAt]);
 
-    intervalRef.current = setInterval(() => {
+  // Reconcile the relay switch when the firmware confirms a state change on
+  // the retained relay/state topic (or when the retained state first loads).
+  useEffect(() => {
+    if (relayState === null) return;
+    if (relayTimeoutRef.current) clearTimeout(relayTimeoutRef.current);
+    setRelayLocal(null);
+    setRelayPending(false);
+  }, [relayState]);
+
+  // Unified 2-second tick deciding what drives the live metrics:
+  //   fresh MQTT telemetry -> real data (the effect above already applied it);
+  //   backend says IoT online but no MQTT -> keep the original jitter
+  //   simulation as a demo fallback; otherwise freeze the readings.
+  useEffect(() => {
+    const tick = () => {
+      const fresh =
+        telemetryAtRef.current !== null &&
+        Date.now() - telemetryAtRef.current < TELEMETRY_FRESH_MS;
+
+      if (fresh) {
+        setLiveSource("mqtt");
+        return;
+      }
+
+      if (iotOnline !== true) {
+        setLiveSource("off");
+        return;
+      }
+
+      setLiveSource("sim");
+
       // kW fluctuation (unchanged from original logic).
       setCurrentKw((prev) => {
         const delta = (Math.random() - 0.5) * 0.1;
@@ -232,12 +285,36 @@ export default function DashboardScreen() {
         frequency:   jitter(prev.frequency,   JITTER.frequency,   45,  65),
         powerFactor: jitter(prev.powerFactor, JITTER.powerFactor, 0,   1),
       }));
-    }, 2000);
+    };
+
+    tick();
+    intervalRef.current = setInterval(tick, 2000);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [iotOnline]);
+
+  // Master relay toggle: optimistic flip -> POST /api/iot/relay -> the
+  // firmware's relay/state message reconciles (or the 10 s timeout reverts).
+  async function handleRelayToggle(value: boolean) {
+    setRelayLocal(value);
+    setRelayPending(true);
+    if (relayTimeoutRef.current) clearTimeout(relayTimeoutRef.current);
+    relayTimeoutRef.current = setTimeout(() => {
+      // Device never confirmed — drop the optimistic value.
+      setRelayLocal(null);
+      setRelayPending(false);
+    }, 10_000);
+
+    try {
+      await api.post<IotStatus>("/iot/relay", { on: value });
+    } catch {
+      if (relayTimeoutRef.current) clearTimeout(relayTimeoutRef.current);
+      setRelayLocal(null);
+      setRelayPending(false);
+    }
+  }
 
   function toggleExpanded() {
     const next = !expanded;
@@ -262,13 +339,36 @@ export default function DashboardScreen() {
     outputRange: ["0deg", "180deg"],
   });
 
-  // Backend supplies matched labels/data per period; fall back to local mock.
+  // Master relay display state: the optimistic value wins while a command is
+  // in flight; before any relay/state message arrives assume ON (firmware
+  // boots with relays energized).
+  const relayOn = relayLocal ?? relayState?.on ?? true;
+  const relayReasonLabel = relayOn
+    ? "Power is flowing to your loads"
+    : RELAY_REASON_LABELS[relayState?.reason ?? ""] ?? "Power is off";
+  // The switch only works when the device is reachable and no command is
+  // already pending confirmation.
+  const relaySwitchDisabled = relayPending || liveSource !== "mqtt";
+
+  // IoT pill: real telemetry beats the backend's opinion; the simulation is
+  // shown honestly as a degraded state.
+  const iotPill: { label: string; status: PillStatus } =
+    liveSource === "mqtt"
+      ? { label: "IoT Live", status: "online" }
+      : liveSource === "sim"
+        ? { label: "IoT Sim", status: "degraded" }
+        : iotOnline === null && telemetryAt === null
+          ? { label: "IoT...", status: "unknown" }
+          : { label: "IoT Offline", status: "offline" };
+
+  // Backend supplies matched labels/data per period; the chart falls back to a
+  // local demo curve, but device data is always real (empty until it loads).
   const fallback       = getChartConfig(period);
   const visibleLabels  = dashboard?.history.labels ?? fallback.labels;
   const chartData      = dashboard?.history.data   ?? fallback.data;
-  const devices        = dashboard?.devices        ?? DEVICES;
-  const topConsumers   = dashboard?.topConsumers   ?? TOP_CONSUMERS;
-  const totalToday     = dashboard?.totalTodayKwh  ?? 18.7;
+  const devices        = dashboard?.devices        ?? [];
+  const topConsumers   = dashboard?.topConsumers   ?? [];
+  const totalToday     = dashboard?.totalTodayKwh  ?? 0;
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
@@ -285,10 +385,7 @@ export default function DashboardScreen() {
             label={serverOnline === null ? "Server..." : serverOnline ? "Server Live" : "Server Offline"}
             status={serverOnline === null ? "unknown" : serverOnline ? "online" : "offline"}
           />
-          <StatusPill
-            label={iotOnline === null ? "IoT..." : iotOnline ? "IoT Live" : "IoT Offline"}
-            status={iotOnline === null ? "unknown" : iotOnline ? "online" : "degraded"}
-          />
+          <StatusPill label={iotPill.label} status={iotPill.status} />
         </View>
 
         {/* Current Usage Card — hero always visible, metric grid collapsible */}
@@ -297,7 +394,7 @@ export default function DashboardScreen() {
           <View style={styles.usageCardTop}>
             <Text style={styles.usageLabel}>Current{"\n"}Usage</Text>
             <View style={styles.usageTopRight}>
-              {iotOnline ? (
+              {liveSource !== "off" ? (
                 <View style={styles.livePill}>
                   <View style={styles.liveDot} />
                   <Text style={styles.liveText}>LIVE</Text>
@@ -367,7 +464,49 @@ export default function DashboardScreen() {
           )}
         </View>
 
+        {/* Master Power — remote relay control for the whole-home feed */}
+        <View style={styles.relayCard}>
+          <View
+            style={[
+              styles.relayIconWrap,
+              { backgroundColor: relayOn ? "#0d2b22" : "#2b0d0d" },
+            ]}
+          >
+            <Ionicons
+              name="power"
+              size={22}
+              color={relayOn ? C.accent : C.red}
+            />
+          </View>
+          <View style={styles.relayTextWrap}>
+            <Text style={styles.relayTitle}>Master Power</Text>
+            <Text style={styles.relaySubtitle}>
+              {relayPending
+                ? "Waiting for device confirmation..."
+                : liveSource !== "mqtt"
+                  ? "Device offline — control unavailable"
+                  : relayReasonLabel}
+            </Text>
+          </View>
+          <Switch
+            value={relayOn}
+            onValueChange={handleRelayToggle}
+            disabled={relaySwitchDisabled}
+            trackColor={{ false: C.border, true: "#0d5c4a" }}
+            thumbColor={relayOn ? C.accent : C.sub}
+            accessibilityLabel="Master power relay"
+          />
+        </View>
+
         {/* Device Cards */}
+        {devices.length === 0 ? (
+          <View style={styles.emptyStrip}>
+            <Ionicons name="flash-outline" size={16} color={C.sub} />
+            <Text style={styles.emptyStripText}>
+              No devices registered — add them in the Devices tab.
+            </Text>
+          </View>
+        ) : (
         <FlatList
           data={devices}
           horizontal
@@ -396,6 +535,7 @@ export default function DashboardScreen() {
             </View>
           )}
         />
+        )}
 
         {/* Usage History */}
         <View style={styles.section}>
@@ -463,6 +603,12 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Top Consumers</Text>
           <View style={styles.consumersCard}>
+            {topConsumers.length === 0 && (
+              <Text style={styles.emptyStripText}>
+                No consumption data yet — readings will appear once your devices
+                report usage.
+              </Text>
+            )}
             {topConsumers.map((item) => (
               <View key={item.id} style={styles.consumerRow}>
                 <View
@@ -629,10 +775,53 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 3,
   },
+  relayCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    gap: 12,
+  },
+  relayIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  relayTextWrap: {
+    flex: 1,
+  },
+  relayTitle: {
+    color: C.text,
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  relaySubtitle: {
+    color: C.sub,
+    fontSize: 12,
+  },
   deviceList: {
     gap: 10,
     paddingRight: 4,
     marginBottom: 24,
+  },
+  emptyStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: C.card,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 24,
+  },
+  emptyStripText: {
+    color: C.sub,
+    fontSize: 13,
+    flex: 1,
   },
   deviceCard: {
     backgroundColor: C.card,

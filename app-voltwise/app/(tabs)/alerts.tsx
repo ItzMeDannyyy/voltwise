@@ -10,7 +10,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { api, ApiAlert, ALERTS_CHANGED_EVENT, emitAlertsChanged } from "../../lib/api";
+import {
+  api,
+  ApiAlert,
+  ALERTS_CHANGED_EVENT,
+  emitAlertsChanged,
+  requestMasterShutdown,
+} from "../../lib/api";
 import { AnomalyModal } from "../../components/AnomalyModal";
 
 const C = {
@@ -142,11 +148,13 @@ export default function AlertsScreen() {
     return () => sub.remove();
   }, [loadAlerts]);
 
-  // Countdown timer for critical/warning modal.
+  // Countdown timer for critical/warning modal. Reaching zero performs the
+  // same real relay shutdown as pressing TURN OFF NOW.
   useEffect(() => {
     if (!modalAlert || modalAlert.type === "info" || powerOff) return;
     if (countdown <= 0) {
       setPowerOff(true);
+      void requestMasterShutdown();
       return;
     }
     const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
@@ -200,6 +208,9 @@ export default function AlertsScreen() {
 
   function handlePowerOff() {
     setPowerOff(true);
+    // Real shutdown: the backend publishes relay/set { on: false } and the
+    // firmware latches power off (dashboard Master Power turns it back on).
+    void requestMasterShutdown();
     setTimeout(() => closeModal(true), 1500);
   }
 

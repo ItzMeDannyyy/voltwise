@@ -7,6 +7,8 @@ import express from "express";
 import cors from "cors";
 import appRouter from "./routes/index.ts";
 import { AppError } from "./lib/AppError.ts";
+import { initMqtt, closeMqtt } from "./lib/mqtt.ts";
+import { UPLOADS_DIR } from "./lib/upload.ts";
 
 const app = express();
 
@@ -15,6 +17,10 @@ app.use(cors());
 
 // Parse incoming JSON request bodies automatically.
 app.use(express.json());
+
+// Serve uploaded device photos (backend/uploads/) as static files, so an
+// imageUri like "/uploads/device-3-1720....jpg" resolves for the mobile app.
+app.use("/uploads", express.static(UPLOADS_DIR));
 
 // Mount all feature module routes under the /api prefix.
 app.use("/api", appRouter);
@@ -56,8 +62,25 @@ app.use(
 
 const PORT = process.env.PORT ?? 3000;
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`VoltWise backend running on http://localhost:${PORT}`);
+
+  // Connect the long-lived MQTT client (HiveMQ Cloud) after the HTTP server
+  // is up. Failure to connect only disables the IoT layer — never the API.
+  initMqtt().catch((error) => {
+    console.error("MQTT: initialization failed — IoT layer disabled.", error);
+  });
 });
+
+// Graceful shutdown: cleanly disconnect the MQTT client (so the broker doesn't
+// wait out our keepalive) and stop accepting HTTP connections.
+const shutdown = (): void => {
+  console.log("Shutting down...");
+  closeMqtt();
+  server.close(() => process.exit(0));
+};
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
 
 export default app;

@@ -56,14 +56,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ? { Authorization: `Bearer ${_authToken}` }
     : {};
 
+  // Multipart bodies must NOT get an explicit Content-Type — fetch generates
+  // the multipart boundary itself, and overriding it breaks the upload.
+  const isFormData =
+    typeof FormData !== "undefined" && init?.body instanceof FormData;
+
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       headers: {
-        "Content-Type": "application/json",
+        ...(isFormData ? {} : { "Content-Type": "application/json" }),
         ...authHeaders,
-        // Allow callers to override headers (e.g. for multipart uploads in the future).
+        // Allow callers to override headers when needed.
         ...(init?.headers as Record<string, string> | undefined),
       },
     });
@@ -100,7 +105,39 @@ export const api = {
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  /** Multipart POST (e.g. device photo upload) — pass a ready-built FormData. */
+  upload: <T>(path: string, form: FormData) =>
+    request<T>(path, { method: "POST", body: form }),
 };
+
+/**
+ * Commands the master relay OFF through the backend (which publishes the MQTT
+ * relay/set message the firmware acts on). Used by the anomaly "TURN OFF NOW"
+ * flow, so it never throws — the modal choreography must not hang on a broker
+ * outage. Returns true when the backend accepted the command.
+ */
+export async function requestMasterShutdown(): Promise<boolean> {
+  try {
+    await api.post<IotStatus>("/iot/relay", { on: false });
+    return true;
+  } catch (error) {
+    console.warn("[VoltWise] Master shutdown command failed:", error);
+    return false;
+  }
+}
+
+/**
+ * Resolves a server-relative asset path (e.g. "/uploads/device-3-....jpg")
+ * against the backend host. Absolute http(s) and local file:// URIs pass
+ * through untouched, so it is safe to call on any imageUri.
+ */
+export function resolveAssetUrl(uri: string | null): string | null {
+  if (!uri) return null;
+  if (uri.startsWith("/")) {
+    return `${API_BASE_URL.replace(/\/api\/?$/, "")}${uri}`;
+  }
+  return uri;
+}
 
 /** Pings /api/health with a 3-second timeout. Returns true if server responds ok. Never throws. */
 export async function checkHealth(): Promise<boolean> {
@@ -196,6 +233,30 @@ export interface ApiAlert {
   section: "TODAY" | "YESTERDAY";
   read: boolean;
   recommendation?: string;
+}
+
+/** Last-known relay state (from the firmware's retained relay/state topic). */
+export interface RelayState {
+  on: boolean;
+  /** "boot" | "remote" | "overpower" | "countdown" */
+  reason: string;
+  updatedAt: string;
+}
+
+/** Response of POST /api/iot/relay and GET /api/iot/status. */
+export interface IotStatus {
+  online: boolean;
+  brokerConnected: boolean;
+  relay: RelayState | null;
+  lastTelemetry: {
+    voltage?: number;
+    current?: number;
+    watts: number;
+    kwh: number;
+    frequency?: number;
+    powerFactor?: number;
+  } | null;
+  lastTelemetryAt: string | null;
 }
 
 export interface AnalyticsData {
