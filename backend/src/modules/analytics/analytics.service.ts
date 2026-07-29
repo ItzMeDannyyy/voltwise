@@ -5,6 +5,7 @@
 // No HTTP-specific code lives here.
 
 import { prisma } from "../../lib/prisma.ts";
+import { getLatestTariff } from "../../lib/tariff.ts";
 import type {
   AnalyticsResponseDto,
   AnalyticsPeriod,
@@ -63,24 +64,6 @@ const getDateRangeForPeriod = (
   return { start, end: now };
 };
 
-// Documentation only: Retrieves the most recently effective tariff for the given user.
-// If no tariff exists, returns a default rate of 10.5 ₱/kWh.
-// Accepts userId (number).
-// Returns a Promise resolving to { ratePerKwh: number, currency: string }.
-const getLatestTariff = async (
-  userId: number
-): Promise<{ ratePerKwh: number; currency: string }> => {
-  const latestTariff = await prisma.tariff.findFirst({
-    where: { userId },
-    orderBy: { effectiveFrom: "desc" },
-  });
-
-  return {
-    ratePerKwh: latestTariff?.ratePerKwh ?? 10.5,
-    currency: latestTariff?.currency ?? "₱",
-  };
-};
-
 // Documentation only: Retrieves the most recent open BillingPeriod for the given user
 // (a period where endDate is null, meaning the cycle is still active).
 // If none exists, returns sensible defaults.
@@ -111,12 +94,14 @@ const getCurrentBillingPeriod = async (userId: number) => {
 // Documentation only: Computes per-device kWh totals over the period window,
 // then groups them into top devices + an "Others" bucket for the breakdown chart.
 // Uses the SEGMENT_COLORS palette and caps individual entries at 5 before collapsing.
-// Accepts userId (number) and { start, end } — the period window.
+// Each entry's cost is its kWh multiplied by the given tariff rate.
+// Accepts userId (number), { start, end } — the period window, and ratePerKwh (number).
 // Returns a Promise resolving to { breakdown: BreakdownEntryDto[], topConsumers: TopConsumerDto[] }.
 const buildBreakdownAndTopConsumers = async (
   userId: number,
   start: Date,
-  end: Date
+  end: Date,
+  ratePerKwh: number
 ): Promise<{
   breakdown: BreakdownEntryDto[];
   topConsumers: TopConsumerDto[];
@@ -164,12 +149,17 @@ const buildBreakdownAndTopConsumers = async (
   // Top 5 devices for topConsumers.
   const topConsumers: TopConsumerDto[] = sortedGroups
     .slice(0, 5)
-    .map((group, index) => ({
-      id: String(group.deviceId),
-      name: deviceNameMap.get(group.deviceId as number) ?? "Unknown",
-      pct: Math.round(((group._sum.kwh ?? 0) / totalKwh) * 100),
-      color: SEGMENT_COLORS[index % SEGMENT_COLORS.length],
-    }));
+    .map((group, index) => {
+      const kwh = parseFloat((group._sum.kwh ?? 0).toFixed(3));
+      return {
+        id: String(group.deviceId),
+        name: deviceNameMap.get(group.deviceId as number) ?? "Unknown",
+        pct: Math.round((kwh / totalKwh) * 100),
+        color: SEGMENT_COLORS[index % SEGMENT_COLORS.length],
+        kwh,
+        cost: parseFloat((kwh * ratePerKwh).toFixed(2)),
+      };
+    });
 
   // Breakdown: top 3 devices + "Others" bucket for everything beyond 3.
   const TOP_BREAKDOWN_COUNT = 3;
@@ -177,16 +167,20 @@ const buildBreakdownAndTopConsumers = async (
   const topThree = sortedGroups.slice(0, TOP_BREAKDOWN_COUNT);
   const othersGroups = sortedGroups.slice(TOP_BREAKDOWN_COUNT);
 
-  const breakdown: BreakdownEntryDto[] = topThree.map((group, index) => ({
-    label: deviceNameMap.get(group.deviceId as number) ?? "Unknown",
-    pct: Math.round(((group._sum.kwh ?? 0) / totalKwh) * 100),
-    color: SEGMENT_COLORS[index % SEGMENT_COLORS.length],
-  }));
+  const breakdown: BreakdownEntryDto[] = topThree.map((group, index) => {
+    const kwh = parseFloat((group._sum.kwh ?? 0).toFixed(3));
+    return {
+      label: deviceNameMap.get(group.deviceId as number) ?? "Unknown",
+      pct: Math.round((kwh / totalKwh) * 100),
+      color: SEGMENT_COLORS[index % SEGMENT_COLORS.length],
+      kwh,
+      cost: parseFloat((kwh * ratePerKwh).toFixed(2)),
+    };
+  });
 
   if (othersGroups.length > 0) {
-    const othersKwh = othersGroups.reduce(
-      (sum, g) => sum + (g._sum.kwh ?? 0),
-      0
+    const othersKwh = parseFloat(
+      othersGroups.reduce((sum, g) => sum + (g._sum.kwh ?? 0), 0).toFixed(3)
     );
     const othersPct = Math.round((othersKwh / totalKwh) * 100);
     if (othersPct > 0) {
@@ -194,6 +188,8 @@ const buildBreakdownAndTopConsumers = async (
         label: "Others",
         pct: othersPct,
         color: SEGMENT_COLORS[TOP_BREAKDOWN_COUNT % SEGMENT_COLORS.length],
+        kwh: othersKwh,
+        cost: parseFloat((othersKwh * ratePerKwh).toFixed(2)),
       });
     }
   }
@@ -368,7 +364,7 @@ export const getAnalyticsData = async (
   };
 
   const [{ breakdown, topConsumers }, metrics] = await Promise.all([
-    buildBreakdownAndTopConsumers(userId, start, end),
+    buildBreakdownAndTopConsumers(userId, start, end, tariff.ratePerKwh),
     buildMetricStats(userId, start, end),
   ]);
 

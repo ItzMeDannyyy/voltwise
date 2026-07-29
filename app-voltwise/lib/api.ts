@@ -171,6 +171,8 @@ export interface ConsumerSlice {
   name: string;
   pct: number;
   color: string;
+  kwh: number;
+  cost: number;
 }
 
 export interface Reading {
@@ -217,6 +219,8 @@ export interface ApiDevice {
 export interface ApiDeviceReading {
   watts: number;
   kwh: number;
+  todayKwh: number;
+  costToday: number;
   voltage: number | null;
   current: number | null;
   frequency: number | null;
@@ -268,7 +272,7 @@ export interface AnalyticsData {
     cycleStart: string;
   };
   totalKwh: number;
-  breakdown: { label: string; pct: number; color: string }[];
+  breakdown: { label: string; pct: number; color: string; kwh: number; cost: number }[];
   topConsumers: ConsumerSlice[];
   metrics: MetricStat[];
 }

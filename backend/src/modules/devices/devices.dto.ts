@@ -41,9 +41,13 @@ export interface UpdateDeviceDto {
 // The shape of a single energy reading returned for a specific device.
 // All electrical measurement fields are nullable because not all readings
 // include voltage, current, frequency, or power factor data.
+// todayKwh/costToday are computed separately from the day's readings for this
+// device (not just the latest row), using the user's current tariff rate.
 export interface DeviceLatestReadingDto {
   watts: number;
   kwh: number;
+  todayKwh: number;
+  costToday: number;
   voltage: number | null;
   current: number | null;
   frequency: number | null;

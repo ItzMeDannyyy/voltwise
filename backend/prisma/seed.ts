@@ -115,23 +115,7 @@ async function seed(): Promise<void> {
   });
   console.log(`  Created tariff: ₱${tariff.ratePerKwh}/kWh`);
 
-  // ── 4. Billing Period ────────────────────────────────────────────────────────
-  console.log("Creating billing period...");
-  const billingPeriod = await prisma.billingPeriod.create({
-    data: {
-      userId: demoUser.id,
-      startDate: new Date("2026-06-01T00:00:00.000Z"),
-      endDate: null, // open — still ongoing
-      accumulatedKwh: 87.4,
-      estimatedCost: parseFloat((10.5 * 87.4).toFixed(2)),
-      tariffRate: 10.5,
-    },
-  });
-  console.log(
-    `  Created billing period: Jun 1 2026 → open (${billingPeriod.accumulatedKwh} kWh)`
-  );
-
-  // ── 5. Rooms ──────────────────────────────────────────────────────────────────
+  // ── 4. Rooms ──────────────────────────────────────────────────────────────────
   console.log("Creating rooms...");
   const roomNames = ["Bedroom", "Living Room", "Kitchen", "Laundry", "Bathroom"];
   const createdRooms = await Promise.all(
@@ -144,7 +128,7 @@ async function seed(): Promise<void> {
   const roomByName = new Map(createdRooms.map((r) => [r.name, r]));
   console.log(`  Created ${createdRooms.length} rooms.`);
 
-  // ── 6. Devices ──────────────────────────────────────────────────────────────
+  // ── 5. Devices ──────────────────────────────────────────────────────────────
   console.log("Creating devices...");
 
   // Device definitions matching the spec exactly.
@@ -233,10 +217,10 @@ async function seed(): Promise<void> {
   const deviceByName = new Map(createdDevices.map((d) => [d.name, d]));
   console.log(`  Created ${createdDevices.length} devices.`);
 
-  // ── 7. Energy Readings — 30 days of hourly data ────────────────────────────
+  // ── 6. Energy Readings — 30 days of hourly data ────────────────────────────
   console.log("Generating energy readings (this may take a moment)...");
 
-  // Only ACTIVE devices generate per-device readings.
+  // Only ACTIVE devices generate per-device readings at their rated wattage.
   const activeDevices = createdDevices.filter(
     (d) => d.status === DeviceStatus.ACTIVE
   );
@@ -244,6 +228,18 @@ async function seed(): Promise<void> {
   // Base hourly kWh per device: watts / 1000 (one hour of consumption).
   const deviceBaseKwhPerHour = new Map(
     activeDevices.map((d) => [d.id, d.ratedWatts / 1000])
+  );
+
+  // IDLE/OFF devices still draw a small standby load in real life (a TV's
+  // standby circuit, a washer's control board) — give them a tiny wattage so
+  // they still show up with (near-zero) consumption and cost instead of being
+  // invisible in top consumers / device history.
+  const STANDBY_WATTS: Record<string, number> = {
+    "Smart TV": 4,
+    "Washing Machine": 1,
+  };
+  const standbyDevices = createdDevices.filter(
+    (d) => STANDBY_WATTS[d.name] !== undefined
   );
 
   const allReadings: {
@@ -262,14 +258,18 @@ async function seed(): Promise<void> {
   const DAYS_OF_HISTORY = 30;
   const HOURS_PER_DAY = 24;
 
+  // Snapshot "now" once so every generated timestamp — and the billing period
+  // computed from them below — is anchored to the same moment.
+  const now = new Date();
+
   for (let daysAgo = DAYS_OF_HISTORY; daysAgo >= 0; daysAgo--) {
     for (let hour = 0; hour < HOURS_PER_DAY; hour++) {
       // Skip future hours on today.
-      if (daysAgo === 0 && hour > new Date().getHours()) {
+      if (daysAgo === 0 && hour > now.getHours()) {
         continue;
       }
 
-      const timestamp = new Date();
+      const timestamp = new Date(now);
       timestamp.setDate(timestamp.getDate() - daysAgo);
       timestamp.setHours(hour, 0, 0, 0);
 
@@ -316,6 +316,39 @@ async function seed(): Promise<void> {
         hourlyTotalWatts += adjustedWatts;
       }
 
+      // Per-device standby readings for IDLE/OFF devices (tiny, roughly
+      // constant load — no peak/off-peak swing since nothing is "in use").
+      for (const device of standbyDevices) {
+        const standbyWatts = STANDBY_WATTS[device.name]!;
+        const jitteredWatts = parseFloat(
+          (standbyWatts * randomBetween(0.85, 1.15)).toFixed(2)
+        );
+        const standbyKwh = parseFloat((jitteredWatts / 1000).toFixed(4));
+
+        const deviceVoltage = randomBetween(218, 224);
+        const deviceCurrentBase = jitteredWatts / deviceVoltage;
+        const deviceCurrent = parseFloat(
+          (deviceCurrentBase + randomBetween(-0.01, 0.01)).toFixed(3)
+        );
+
+        allReadings.push({
+          deviceId: device.id,
+          userId: demoUser.id,
+          timestamp,
+          watts: jitteredWatts,
+          kwh: standbyKwh,
+          voltage: deviceVoltage,
+          current: Math.max(0, deviceCurrent),
+          frequency: randomBetween(59.8, 60.2),
+          // Standby loads (switch-mode power supplies at low load) tend to
+          // have a poorer power factor than the appliance running normally.
+          powerFactor: randomBetween(0.5, 0.7),
+        });
+
+        hourlyTotalKwh += standbyKwh;
+        hourlyTotalWatts += jitteredWatts;
+      }
+
       // Whole-home aggregate reading (deviceId = null).
       // Voltage and current reflect the whole-home load on the incoming line.
       // Power factor uses a slightly lower band for the aggregate since mixed loads
@@ -347,6 +380,42 @@ async function seed(): Promise<void> {
     const chunk = allReadings.slice(i, i + BATCH_SIZE);
     await prisma.energyReading.createMany({ data: chunk });
   }
+
+  // ── 7. Billing Period ────────────────────────────────────────────────────────
+  // accumulatedKwh/estimatedCost are derived from the whole-home aggregate
+  // readings actually generated above (summed from the start of the current
+  // month to now), instead of a disconnected hand-typed figure — so the
+  // Analytics "Estimated Bill" reflects the same data every other screen
+  // (dashboard totals, top consumers, breakdown) is built from.
+  console.log("Creating billing period...");
+  const billingPeriodStart = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    1,
+    0,
+    0,
+    0,
+    0
+  );
+  const accumulatedKwh = parseFloat(
+    allReadings
+      .filter((r) => r.deviceId === null && r.timestamp >= billingPeriodStart)
+      .reduce((sum, r) => sum + r.kwh, 0)
+      .toFixed(2)
+  );
+  const billingPeriod = await prisma.billingPeriod.create({
+    data: {
+      userId: demoUser.id,
+      startDate: billingPeriodStart,
+      endDate: null, // open — still ongoing
+      accumulatedKwh,
+      estimatedCost: parseFloat((tariff.ratePerKwh * accumulatedKwh).toFixed(2)),
+      tariffRate: tariff.ratePerKwh,
+    },
+  });
+  console.log(
+    `  Created billing period: ${billingPeriodStart.toDateString()} → open (${billingPeriod.accumulatedKwh} kWh, est. ${tariff.currency}${billingPeriod.estimatedCost})`
+  );
 
   // Insert one reading timestamped right now so the IoT liveness check (5-minute
   // window) passes immediately after seeding. In production the sensor pushes

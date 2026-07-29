@@ -368,8 +368,9 @@ export default function DevicesScreen() {
             { label: "Current", value: `${reading.current?.toFixed(2) ?? "—"} A` },
             { label: "Frequency", value: `${reading.frequency?.toFixed(1) ?? "—"} Hz` },
             { label: "Power Factor", value: reading.powerFactor?.toFixed(2) ?? "—" },
-            { label: "kWh Today", value: `${reading.kwh.toFixed(3)} kWh` },
+            { label: "kWh Today", value: `${reading.todayKwh.toFixed(3)} kWh` },
             { label: "Watts Live", value: `${reading.watts.toFixed(0)} W` },
+            { label: "Cost Today", value: `₱${reading.costToday.toFixed(2)}` },
           ]
         : [];
 

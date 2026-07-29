@@ -39,19 +39,21 @@ const CX = 110;
 const CY = 110;
 const STROKE_WIDTH = 24;
 
+// kwh/cost figures assume the same 87.4 kWh / ₱10.5 per kWh mock used by the
+// bill predictor fallback below, so the offline demo numbers stay consistent.
 const DONUT_SEGMENTS = [
-  { label: "Aircon", pct: 42, color: C.accent },
-  { label: "Fridge", pct: 21, color: C.blue   },
-  { label: "Lights", pct: 14, color: C.yellow  },
-  { label: "Others", pct: 23, color: "#4b5563" },
+  { label: "Aircon", pct: 42, color: C.accent,    kwh: 36.71, cost: 385.46 },
+  { label: "Fridge", pct: 21, color: C.blue,      kwh: 18.35, cost: 192.68 },
+  { label: "Lights", pct: 14, color: C.yellow,    kwh: 12.24, cost: 128.52 },
+  { label: "Others", pct: 23, color: "#4b5563",   kwh: 20.10, cost: 211.05 },
 ];
 
 const TOP_CONSUMERS = [
-  { id: "1", name: "Aircon",          pct: 42, color: C.accent },
-  { id: "2", name: "Fridge",          pct: 21, color: C.blue   },
-  { id: "3", name: "Lights",          pct: 14, color: C.yellow  },
-  { id: "4", name: "Washing Machine", pct: 9,  color: C.purple  },
-  { id: "5", name: "Others",          pct: 5,  color: C.pink    },
+  { id: "1", name: "Aircon",          pct: 42, color: C.accent, kwh: 36.71, cost: 385.46 },
+  { id: "2", name: "Fridge",          pct: 21, color: C.blue,   kwh: 18.35, cost: 192.68 },
+  { id: "3", name: "Lights",          pct: 14, color: C.yellow, kwh: 12.24, cost: 128.52 },
+  { id: "4", name: "Washing Machine", pct: 9,  color: C.purple, kwh: 7.87,  cost: 82.64  },
+  { id: "5", name: "Others",          pct: 5,  color: C.pink,   kwh: 4.37,  cost: 45.89  },
 ];
 
 // ---- Offline-first fallback for PZEM-004T metrics ----
@@ -338,7 +340,7 @@ export default function AnalyticsScreen() {
               <View key={seg.label} style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: seg.color }]} />
                 <Text style={styles.legendText}>
-                  {seg.label} {seg.pct}%
+                  {seg.label} {seg.pct}% · {bill.currency}{seg.cost.toFixed(2)}
                 </Text>
               </View>
             ))}
@@ -386,7 +388,12 @@ export default function AnalyticsScreen() {
                     ]}
                   />
                 </View>
-                <Text style={styles.consumerPct}>{item.pct}%</Text>
+                <View style={styles.consumerRight}>
+                  <Text style={styles.consumerPct}>{item.pct}%</Text>
+                  <Text style={styles.consumerCost}>
+                    {bill.currency}{item.cost.toFixed(2)}
+                  </Text>
+                </View>
               </View>
             ))
           )}
@@ -737,10 +744,20 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
   },
+  consumerRight: {
+    alignItems: "flex-end",
+    width: 68,
+  },
   consumerPct: {
     color: C.sub,
     fontSize: 12,
-    width: 36,
+    textAlign: "right",
+  },
+  consumerCost: {
+    color: C.text,
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 2,
     textAlign: "right",
   },
   // ---- Sensor Metrics ----

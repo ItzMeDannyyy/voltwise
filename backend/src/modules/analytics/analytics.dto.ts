@@ -17,6 +17,8 @@ export interface BreakdownEntryDto {
   label: string;
   pct: number;
   color: string;
+  kwh: number;
+  cost: number;
 }
 
 // A top consumer entry for the horizontal bar chart.
@@ -25,6 +27,8 @@ export interface TopConsumerDto {
   name: string;
   pct: number;
   color: string;
+  kwh: number;
+  cost: number;
 }
 
 // Statistical summary for a single PZEM-004T metric over the selected period.
