@@ -1,0 +1,36 @@
+{
+  "name": "voltwise",
+  "version": "1.0.0",
+  "description": "> A smart power management and optimization platform designed to monitor, analyze, and reduce power consumption in real-time.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names \"backend,app\" --prefix-colors \"cyan,magenta\" \"npm run dev --prefix backend\" \"npm run start --prefix app-voltwise -- -c\"",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:app": "npm run start --prefix app-voltwise -- -c",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "install:backend": "cd backend && npm install",
+    "install:app": "cd app-voltwise && npm install",
+    "install:all": "npm run install:backend && npm run install:app",
+    "add:env:backend": "cd backend && cp .env.example .env",
+    "add:env:app": "cd app-voltwise && cp .env.example .env",
+    "add:env:all": "npm run add:env:backend && npm run add:env:app"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Danyxtu/voltwise.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Danyxtu/voltwise/issues"
+  },
+  "homepage": "https://github.com/Danyxtu/voltwise#readme",
+  "devDependencies": {
+    "concurrently": "^10.0.3"
+  }
+}

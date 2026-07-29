@@ -4,6 +4,7 @@
 // delegates to the service, and returns standardized JSON responses.
 // No business logic lives here.
 
+import fs from "node:fs";
 import type { Request, Response, NextFunction } from "express";
 import * as devicesService from "./devices.service.ts";
 import type {
@@ -144,6 +145,57 @@ export const deleteDevice = async (
     await devicesService.deleteDevice(userId, deviceId);
     res.status(200).json({ success: true });
   } catch (error: unknown) {
+    if (error instanceof Error && error.message === "Device not found") {
+      res.status(404).json({ success: false, message: "Device not found." });
+      return;
+    }
+    next(error);
+  }
+};
+
+// Documentation only: Handles POST /api/devices/:id/photo.
+// The route's multer middleware has already stored the multipart "photo" file
+// into the uploads folder and set req.file; this handler validates the id and
+// file presence, then delegates to the service to attach it to the device.
+// Returns 200 with { success: true, data: DeviceResponseDto } on success.
+// Returns 400 when no file was sent, 404 when the device isn't the user's.
+// Passes any errors to the Express error handler via next().
+export const uploadDevicePhoto = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const deviceId = Number(req.params.id);
+
+    if (isNaN(deviceId)) {
+      res
+        .status(400)
+        .json({ success: false, message: "Device ID must be a valid number." });
+      return;
+    }
+
+    if (!req.file) {
+      res.status(400).json({
+        success: false,
+        message: 'Missing image file: send it as the multipart field "photo".',
+      });
+      return;
+    }
+
+    const updatedDevice = await devicesService.setDeviceImage(
+      userId,
+      deviceId,
+      req.file.filename
+    );
+
+    res.status(200).json({ success: true, data: updatedDevice });
+  } catch (error: unknown) {
+    // The file was already written by multer — remove it when the device
+    // lookup fails so rejected uploads don't linger in the bucket.
+    if (req.file) fs.promises.unlink(req.file.path).catch(() => {});
+
     if (error instanceof Error && error.message === "Device not found") {
       res.status(404).json({ success: false, message: "Device not found." });
       return;

@@ -4,6 +4,7 @@
 
 import { Router } from "express";
 import * as devicesController from "./devices.controller.ts";
+import { deviceImageUpload } from "../../lib/upload.ts";
 
 const devicesRouter = Router();
 
@@ -15,6 +16,15 @@ devicesRouter.post("/", devicesController.createDevice);
 
 // PATCH /api/devices/:id — partially updates a device's fields.
 devicesRouter.patch("/:id", devicesController.updateDevice);
+
+// POST /api/devices/:id/photo — attaches an uploaded image (multipart field
+// "photo") to the device; the file lands in backend/uploads/ and is served
+// back at the /uploads path stored in imageUri.
+devicesRouter.post(
+  "/:id/photo",
+  deviceImageUpload.single("photo"),
+  devicesController.uploadDevicePhoto
+);
 
 // GET /api/devices/:id/readings/latest — returns the most recent energy reading for a device.
 devicesRouter.get("/:id/readings/latest", devicesController.getDeviceLatestReading);

@@ -221,7 +221,6 @@ async function seed(): Promise<void> {
           userId: demoUser.id,
           roomId: roomByName.get(def.roomName)!.id,
           name: def.name,
-          icon: def.icon,
           category: def.category,
           ratedWatts: def.ratedWatts,
           status: def.status,

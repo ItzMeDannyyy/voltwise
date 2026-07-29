@@ -13,3 +13,7 @@ coverage/
 *.swp
 *.swo   
 /src/generated/prisma
+
+# Uploaded device photos (local storage bucket) — keep the folder, not the files
+uploads/*
+!uploads/.gitkeep
