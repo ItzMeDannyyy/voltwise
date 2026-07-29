@@ -7,6 +7,7 @@ const C = {
   accent: "#00d4aa",
   sub: "#6b7280",
 };
+console.log("test");
 
 /**
  * Entry point for the app.
