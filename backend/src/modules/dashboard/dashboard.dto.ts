@@ -23,6 +23,8 @@ export interface TopConsumerDto {
   name: string;
   pct: number;
   color: string;
+  kwh: number;
+  cost: number;
 }
 
 // The six PZEM-004T sensor metrics for the latest whole-home reading.

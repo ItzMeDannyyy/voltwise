@@ -623,7 +623,10 @@ export default function DashboardScreen() {
                     ]}
                   />
                 </View>
-                <Text style={styles.consumerPct}>{item.pct}%</Text>
+                <View style={styles.consumerRight}>
+                  <Text style={styles.consumerPct}>{item.pct}%</Text>
+                  <Text style={styles.consumerCost}>₱{item.cost.toFixed(2)}</Text>
+                </View>
               </View>
             ))}
           </View>
@@ -932,10 +935,20 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
   },
+  consumerRight: {
+    alignItems: "flex-end",
+    width: 60,
+  },
   consumerPct: {
     color: C.sub,
     fontSize: 12,
-    width: 32,
+    textAlign: "right",
+  },
+  consumerCost: {
+    color: C.text,
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 2,
     textAlign: "right",
   },
 });

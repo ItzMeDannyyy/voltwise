@@ -34,6 +34,9 @@ const prismaMock = {
     findFirst: jest.fn<AnyFn>(),
     count: jest.fn<AnyFn>(),
   },
+  tariff: {
+    findFirst: jest.fn<AnyFn>(),
+  },
 };
 
 jest.unstable_mockModule("../src/lib/prisma.ts", () => ({
@@ -64,6 +67,7 @@ function seedEmptyDatabase() {
   prismaMock.energyReading.groupBy.mockResolvedValue([]);
   prismaMock.energyReading.findFirst.mockResolvedValue(null);
   prismaMock.energyReading.count.mockResolvedValue(0);
+  prismaMock.tariff.findFirst.mockResolvedValue(null);
 }
 
 beforeEach(() => {
@@ -164,10 +168,36 @@ describe("getDashboardData (service)", () => {
     const data = await getDashboardData(1, "Day");
 
     // Total = 10 kWh → 60%, 30%, 10%. Sorted descending, top 5.
+    // No tariff seeded → falls back to the default ₱10.5/kWh rate.
     expect(data.topConsumers).toEqual([
-      { id: "10", name: "Aircon", pct: 60, color: "#00d4aa" },
-      { id: "20", name: "Fridge", pct: 30, color: "#3b82f6" },
-      { id: "30", name: "Lights", pct: 10, color: "#f59e0b" },
+      { id: "10", name: "Aircon", pct: 60, color: "#00d4aa", kwh: 6, cost: 63 },
+      { id: "20", name: "Fridge", pct: 30, color: "#3b82f6", kwh: 3, cost: 31.5 },
+      { id: "30", name: "Lights", pct: 10, color: "#f59e0b", kwh: 1, cost: 10.5 },
+    ]);
+  });
+
+  it("computes topConsumers cost using the user's active tariff rate", async () => {
+    prismaMock.energyReading.groupBy.mockResolvedValue([
+      { deviceId: 10, _sum: { kwh: 2 } },
+    ]);
+    prismaMock.device.findMany.mockImplementation((args: any) => {
+      if (args?.where?.id?.in) {
+        return Promise.resolve([{ id: 10, name: "Aircon" }]);
+      }
+      return Promise.resolve([]);
+    });
+    prismaMock.tariff.findFirst.mockResolvedValue({
+      id: 1,
+      userId: 1,
+      ratePerKwh: 12,
+      currency: "₱",
+      effectiveFrom: new Date(),
+    });
+
+    const data = await getDashboardData(1, "Day");
+
+    expect(data.topConsumers).toEqual([
+      { id: "10", name: "Aircon", pct: 100, color: "#00d4aa", kwh: 2, cost: 24 },
     ]);
   });
 });

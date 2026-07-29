@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "../../lib/prisma.ts";
 import { UPLOADS_DIR } from "../../lib/upload.ts";
+import { getLatestTariff } from "../../lib/tariff.ts";
 import { DeviceStatus } from "../../generated/prisma/index.js";
 import type {
   DeviceResponseDto,
@@ -230,7 +231,8 @@ export const setDeviceImage = async (
   return formatDeviceForResponse(updatedDevice);
 };
 
-// Documentation only: Retrieves the most recent EnergyReading row for a specific device.
+// Documentation only: Retrieves the most recent EnergyReading row for a specific device,
+// plus that device's total kWh consumed today and its cost at the user's current tariff rate.
 // Filters by both deviceId and userId to ensure the reading belongs to the authenticated user's device.
 // Accepts userId (number) and deviceId (number).
 // Returns a Promise resolving to a DeviceLatestReadingDto if a reading exists, or null if none found.
@@ -238,16 +240,32 @@ export const getDeviceLatestReading = async (
   userId: number,
   deviceId: number
 ): Promise<DeviceLatestReadingDto | null> => {
-  const reading = await prisma.energyReading.findFirst({
-    where: { deviceId, userId },
-    orderBy: { timestamp: "desc" },
-  });
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+
+  const [reading, todayAggregate, tariff] = await Promise.all([
+    prisma.energyReading.findFirst({
+      where: { deviceId, userId },
+      orderBy: { timestamp: "desc" },
+    }),
+    prisma.energyReading.aggregate({
+      where: { deviceId, userId, timestamp: { gte: todayStart, lte: todayEnd } },
+      _sum: { kwh: true },
+    }),
+    getLatestTariff(userId),
+  ]);
 
   if (!reading) return null;
+
+  const todayKwh = parseFloat((todayAggregate._sum.kwh ?? 0).toFixed(3));
 
   return {
     watts: reading.watts,
     kwh: reading.kwh,
+    todayKwh,
+    costToday: parseFloat((todayKwh * tariff.ratePerKwh).toFixed(2)),
     voltage: reading.voltage,
     current: reading.current,
     frequency: reading.frequency,

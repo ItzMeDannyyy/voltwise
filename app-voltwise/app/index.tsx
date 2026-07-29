@@ -1,4 +1,4 @@
-import { ActivityIndicator, StyleSheet, View, Text } from "react-native";
+import { ActivityIndicator, Image, StyleSheet, View } from "react-native";
 import { Redirect } from "expo-router";
 import { useAuth } from "../context/AuthContext";
 
@@ -12,7 +12,7 @@ const C = {
  * Entry point for the app.
  *
  * While the AuthProvider is restoring a persisted session (bootstrapping), we
- * show a themed splash/loading indicator. Once settled:
+ * show the VoltWise logo as a themed splash/loading screen. Once settled:
  *   - Unauthenticated → send to the login screen.
  *   - Authenticated   → send into the tabs.
  *
@@ -24,7 +24,11 @@ export default function Index() {
   if (isBootstrapping) {
     return (
       <View style={styles.splash}>
-        <Text style={styles.logo}>VoltWise</Text>
+        <Image
+          source={require("../assets/images/voltwise-logo.png")}
+          style={styles.logo}
+          resizeMode="contain"
+        />
         <ActivityIndicator size="large" color={C.accent} style={styles.spinner} />
       </View>
     );
@@ -46,10 +50,8 @@ const styles = StyleSheet.create({
     gap: 24,
   },
   logo: {
-    color: C.accent,
-    fontSize: 32,
-    fontWeight: "800",
-    letterSpacing: 1,
+    width: 260,
+    height: 104,
   },
   spinner: {
     marginTop: 8,
