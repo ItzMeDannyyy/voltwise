@@ -5,6 +5,7 @@
 // user's data rather than a hardcoded demo user. No HTTP-specific code lives here.
 
 import { prisma } from "../../lib/prisma.ts";
+import { getLatestTariff } from "../../lib/tariff.ts";
 import { DeviceStatus } from "../../generated/prisma/index.js";
 import type {
   DashboardResponseDto,
@@ -174,7 +175,8 @@ const buildHistoryForPeriod = async (
 
 // Documentation only: Computes top consumers for the current day (regardless of period)
 // by summing each ACTIVE device's per-device EnergyReading kWh for today,
-// expressing each as an integer percentage of the total.
+// expressing each as an integer percentage of the total. Each entry's cost is
+// its kWh multiplied by the user's current tariff rate (₱/kWh).
 // Accepts userId (number) — scopes all queries to the authenticated user.
 // Returns a Promise resolving to an array of up to 5 TopConsumerDto items.
 const buildTopConsumers = async (userId: number): Promise<TopConsumerDto[]> => {
@@ -183,15 +185,18 @@ const buildTopConsumers = async (userId: number): Promise<TopConsumerDto[]> => {
   const todayEnd = endOfDay(now);
 
   // Fetch all per-device readings for today (deviceId IS NOT NULL).
-  const deviceReadings = await prisma.energyReading.groupBy({
-    by: ["deviceId"],
-    where: {
-      userId,
-      deviceId: { not: null },
-      timestamp: { gte: todayStart, lte: todayEnd },
-    },
-    _sum: { kwh: true },
-  });
+  const [deviceReadings, tariff] = await Promise.all([
+    prisma.energyReading.groupBy({
+      by: ["deviceId"],
+      where: {
+        userId,
+        deviceId: { not: null },
+        timestamp: { gte: todayStart, lte: todayEnd },
+      },
+      _sum: { kwh: true },
+    }),
+    getLatestTariff(userId),
+  ]);
 
   if (deviceReadings.length === 0) {
     return [];
@@ -223,12 +228,17 @@ const buildTopConsumers = async (userId: number): Promise<TopConsumerDto[]> => {
     (a, b) => (b._sum.kwh ?? 0) - (a._sum.kwh ?? 0)
   );
 
-  return sortedReadings.slice(0, 5).map((reading, index) => ({
-    id: String(reading.deviceId),
-    name: deviceNameMap.get(reading.deviceId as number) ?? "Unknown Device",
-    pct: Math.round(((reading._sum.kwh ?? 0) / totalKwh) * 100),
-    color: CONSUMER_COLORS[index % CONSUMER_COLORS.length],
-  }));
+  return sortedReadings.slice(0, 5).map((reading, index) => {
+    const kwh = parseFloat((reading._sum.kwh ?? 0).toFixed(3));
+    return {
+      id: String(reading.deviceId),
+      name: deviceNameMap.get(reading.deviceId as number) ?? "Unknown Device",
+      pct: Math.round((kwh / totalKwh) * 100),
+      color: CONSUMER_COLORS[index % CONSUMER_COLORS.length],
+      kwh,
+      cost: parseFloat((kwh * tariff.ratePerKwh).toFixed(2)),
+    };
+  });
 };
 
 // Nominal sensor defaults used when a reading row has NULL for a PZEM-004T column.
