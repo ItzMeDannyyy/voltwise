@@ -13,7 +13,6 @@ export interface PullToRefreshProps {
   contentContainerStyle?: StyleProp<ViewStyle>;
   style?: StyleProp<ViewStyle>;
   indicatorColor?: string;
-  indicatorBackground?: string;
 }
 
 /**
@@ -29,7 +28,6 @@ export default function PullToRefresh({
   contentContainerStyle,
   style,
   indicatorColor,
-  indicatorBackground,
 }: PullToRefreshProps) {
   const { pullDistance, scrollHandler, composedGesture, contentStyle } = usePullGesture({
     refreshing,
@@ -44,7 +42,6 @@ export default function PullToRefresh({
           triggerDistance={TRIGGER_DISTANCE}
           refreshing={refreshing}
           color={indicatorColor}
-          background={indicatorBackground}
         />
         <Animated.ScrollView
           onScroll={scrollHandler}

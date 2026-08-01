@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { Platform } from "react-native";
+import * as Haptics from "expo-haptics";
 import {
   Gesture,
   type GestureUpdateEvent,
@@ -13,16 +15,25 @@ import {
   withTiming,
 } from "react-native-reanimated";
 
-export const TRIGGER_DISTANCE = 72; // drag distance (px) that commits to a refresh
-export const MAX_PULL_DISTANCE = 96; // hard cap so the gesture doesn't feel unbounded
-const PULL_RESISTANCE = 0.5; // rubber-band factor applied to raw finger travel
+export const TRIGGER_DISTANCE = 64; // drag distance (px) that commits to a refresh
+export const REFRESH_HOLD_DISTANCE = 88; // gap held open under the spinner while refreshing
+export const MAX_PULL_DISTANCE = 120; // hard cap so the gesture doesn't feel unbounded
+const PULL_RESISTANCE = 0.55; // rubber-band factor applied to raw finger travel
 const SETTLE_SPRING = { damping: 16, stiffness: 180 };
+const HOLD_SPRING = { damping: 18, stiffness: 220 };
 
 type PanGestureEvent = GestureUpdateEvent<PanGestureHandlerEventPayload>;
 
 interface UsePullGestureArgs {
   refreshing: boolean;
   onRefresh: () => void;
+}
+
+function tick() {
+  // Matches the tab bar's convention: haptics on iOS only.
+  if (Platform.OS === "ios") {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }
 }
 
 /**
@@ -36,6 +47,9 @@ interface UsePullGestureArgs {
  */
 export function usePullGesture({ refreshing, onRefresh }: UsePullGestureArgs) {
   const pullDistance = useSharedValue(0);
+  // Latches once per drag so the "release to refresh" haptic fires on the
+  // threshold crossing rather than on every frame past it.
+  const armed = useSharedValue(false);
   // The pan gesture is only allowed to intercept drags while the list is
   // pinned at y=0; everywhere else the scrollable's native gesture wins.
   const [pullEnabled, setPullEnabled] = useState(true);
@@ -55,28 +69,41 @@ export function usePullGesture({ refreshing, onRefresh }: UsePullGestureArgs) {
     .enabled(pullEnabled)
     .activeOffsetY(12)
     .failOffsetX([-10, 10])
+    .onBegin(() => {
+      armed.value = false;
+    })
     .onUpdate((event: PanGestureEvent) => {
       if (event.translationY <= 0) {
         pullDistance.value = 0;
         return;
       }
       pullDistance.value = Math.min(event.translationY * PULL_RESISTANCE, MAX_PULL_DISTANCE);
+      if (!armed.value && pullDistance.value >= TRIGGER_DISTANCE) {
+        armed.value = true;
+        runOnJS(tick)();
+      }
     })
     .onEnd(() => {
       if (pullDistance.value >= TRIGGER_DISTANCE) {
-        pullDistance.value = withTiming(TRIGGER_DISTANCE * 0.55, { duration: 150 });
+        // Settle into the wider hold gap so the spinner has room of its own
+        // while the fetch is in flight.
+        pullDistance.value = withSpring(REFRESH_HOLD_DISTANCE, HOLD_SPRING);
         runOnJS(onRefresh)();
       } else {
         pullDistance.value = withSpring(0, SETTLE_SPRING);
       }
+      armed.value = false;
     });
 
   const composedGesture = Gesture.Simultaneous(panGesture, nativeGesture);
 
-  // Once the caller's async refresh resolves, snap the indicator away.
+  // Open the gap for refreshes started elsewhere (a button, a screen focus),
+  // and snap it shut again once the caller's async refresh resolves.
   useEffect(() => {
-    if (!refreshing) {
-      pullDistance.value = withSpring(0, SETTLE_SPRING);
+    if (refreshing) {
+      pullDistance.value = withSpring(REFRESH_HOLD_DISTANCE, HOLD_SPRING);
+    } else {
+      pullDistance.value = withTiming(0, { duration: 220 });
     }
   }, [refreshing, pullDistance]);
 

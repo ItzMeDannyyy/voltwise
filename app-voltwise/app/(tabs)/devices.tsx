@@ -563,7 +563,6 @@ export default function DevicesScreen() {
               onRefresh={onRefresh}
               contentContainerStyle={styles.list}
               indicatorColor={colors.accent}
-              indicatorBackground={colors.card}
             >
               {filtered.map((device) => renderBannerCard(device))}
               <View style={{ height: 16 }} />
@@ -579,7 +578,6 @@ export default function DevicesScreen() {
               refreshing={refreshing}
               onRefresh={onRefresh}
               indicatorColor={colors.accent}
-              indicatorBackground={colors.card}
               data={filtered}
               keyExtractor={(item) => item.id}
               numColumns={2}
