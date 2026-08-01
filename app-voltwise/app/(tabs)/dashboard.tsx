@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
   StyleSheet,
   Dimensions,
@@ -20,6 +19,8 @@ import { LineChart } from "react-native-chart-kit";
 import { api, checkHealth, DashboardData, DashboardDevice, IotStatus, Reading } from "../../lib/api";
 import { useMqtt } from "../../context/MqttContext";
 import AppHeader from "../../components/AppHeader";
+import { PullToRefresh } from "../../components/pull-to-refresh";
+import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 
 // Enable LayoutAnimation on Android.
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -183,29 +184,26 @@ export default function DashboardScreen() {
   // Animated value for chevron rotation.
   const chevronAnim     = useRef(new Animated.Value(1)).current;
 
-  // Fetch dashboard data.
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get<DashboardData>(`/dashboard?period=${period}`)
-      .then((data) => {
-        if (cancelled) return;
-        setDashboard(data);
-        setCurrentKw(data.currentKw);
-        setIotOnline(data.iotOnline ?? false);
-        // Seed live metrics from the backend reading if present.
-        if (data.reading) {
-          const { timestamp: _ts, ...rest } = data.reading;
-          setLiveMetrics(rest);
-        }
-      })
-      .catch(() => {
-        // Offline-first: keep showing FALLBACK_READING values.
-      });
-    return () => {
-      cancelled = true;
-    };
+  // Fetch dashboard data — shared by the initial load and pull-to-refresh.
+  const fetchDashboard = useCallback(async () => {
+    const data = await api.get<DashboardData>(`/dashboard?period=${period}`);
+    setDashboard(data);
+    setCurrentKw(data.currentKw);
+    setIotOnline(data.iotOnline ?? false);
+    // Seed live metrics from the backend reading if present.
+    if (data.reading) {
+      const { timestamp: _ts, ...rest } = data.reading;
+      setLiveMetrics(rest);
+    }
   }, [period]);
+
+  useEffect(() => {
+    fetchDashboard().catch(() => {
+      // Offline-first: keep showing FALLBACK_READING values.
+    });
+  }, [fetchDashboard]);
+
+  const { refreshing, onRefresh } = usePullToRefresh(fetchDashboard);
 
   // Server health polling — immediate on mount, then every 15 seconds.
   useEffect(() => {
@@ -372,9 +370,12 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
-      <ScrollView
+      <PullToRefresh
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
+        indicatorColor={C.accent}
+        indicatorBackground={C.card}
       >
         {/* Brand header — logo + interactive bell/profile */}
         <AppHeader />
@@ -633,7 +634,7 @@ export default function DashboardScreen() {
         </View>
 
         <View style={{ height: 16 }} />
-      </ScrollView>
+      </PullToRefresh>
     </SafeAreaView>
   );
 }

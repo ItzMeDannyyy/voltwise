@@ -6,7 +6,7 @@
 
 import type { Request, Response, NextFunction } from "express";
 import * as analyticsService from "./analytics.service.ts";
-import type { AnalyticsPeriod } from "./analytics.dto.ts";
+import type { AnalyticsPeriod } from "./analytics";
 
 // The set of valid period values the mobile app is permitted to send.
 const VALID_PERIODS: AnalyticsPeriod[] = ["Day", "Week", "Month"];

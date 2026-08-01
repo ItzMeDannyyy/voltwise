@@ -113,7 +113,7 @@ export default function AppHeader() {
   return (
     <View style={styles.header}>
       <Image
-        source={require("../assets/images/voltwise-logo.png")}
+        source={require("../assets/images/voltwise-logo/voltwise-logo-complete.png")}
         style={styles.logo}
         resizeMode="contain"
       />

@@ -11,7 +11,7 @@ import type {
   CreateDeviceDto,
   UpdateDeviceDto,
   DeviceLatestReadingDto,
-} from "./devices.dto.ts";
+} from "./devices";
 
 // Documentation only: Handles GET /api/devices.
 // Reads the authenticated user's id from req.user (set by requireAuth middleware).

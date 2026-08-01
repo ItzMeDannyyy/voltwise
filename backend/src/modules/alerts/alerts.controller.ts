@@ -5,7 +5,7 @@
 
 import type { Request, Response, NextFunction } from "express";
 import * as alertsService from "./alerts.service.ts";
-import type { CreateAlertDto } from "./alerts.dto.ts";
+import type { CreateAlertDto } from "./alerts";
 
 const VALID_ALERT_TYPES = ["critical", "warning", "info"] as const;
 

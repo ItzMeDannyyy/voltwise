@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
   StyleSheet,
   DeviceEventEmitter,
@@ -18,6 +17,8 @@ import {
   requestMasterShutdown,
 } from "../../lib/api";
 import { AnomalyModal } from "../../components/AnomalyModal";
+import { PullToRefresh } from "../../components/pull-to-refresh";
+import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 
 const C = {
   bg: "#1a1f2e",
@@ -123,9 +124,10 @@ export default function AlertsScreen() {
   const [countdown, setCountdown] = useState(3);
   const [powerOff, setPowerOff] = useState(false);
 
-  // Load the alert feed from the backend.
+  // Load the alert feed from the backend — shared by focus refetch, the demo
+  // event bus, and pull-to-refresh.
   const loadAlerts = useCallback(() => {
-    api
+    return api
       .get<ApiAlert[]>("/alerts")
       .then((data) => {
         if (data?.length) setAlerts(data);
@@ -147,6 +149,8 @@ export default function AlertsScreen() {
     const sub = DeviceEventEmitter.addListener(ALERTS_CHANGED_EVENT, loadAlerts);
     return () => sub.remove();
   }, [loadAlerts]);
+
+  const { refreshing, onRefresh } = usePullToRefresh(loadAlerts);
 
   // Countdown timer for critical/warning modal. Reaching zero performs the
   // same real relay shutdown as pressing TURN OFF NOW.
@@ -260,9 +264,12 @@ export default function AlertsScreen() {
         </View>
         <View style={styles.tabSeparator} />
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
+        <PullToRefresh
+          refreshing={refreshing}
+          onRefresh={onRefresh}
           contentContainerStyle={styles.scroll}
+          indicatorColor={C.accent}
+          indicatorBackground={C.card}
         >
           {todayAlerts.length > 0 && (
             <View>
@@ -291,7 +298,7 @@ export default function AlertsScreen() {
           )}
 
           <View style={{ height: 16 }} />
-        </ScrollView>
+        </PullToRefresh>
       </View>
 
       <AnomalyModal
