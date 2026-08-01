@@ -238,7 +238,6 @@ export default function AnalyticsScreen() {
         onRefresh={onRefresh}
         contentContainerStyle={styles.scroll}
         indicatorColor={colors.accent}
-        indicatorBackground={colors.card}
       >
         <Text style={styles.heading}>Analytics</Text>
 

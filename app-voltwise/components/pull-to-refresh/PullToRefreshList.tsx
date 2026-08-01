@@ -12,7 +12,6 @@ export interface PullToRefreshListProps<ItemT>
   onRefresh: () => void;
   wrapperStyle?: StyleProp<ViewStyle>;
   indicatorColor?: string;
-  indicatorBackground?: string;
 }
 
 /**
@@ -25,7 +24,6 @@ export default function PullToRefreshList<ItemT>({
   onRefresh,
   wrapperStyle,
   indicatorColor,
-  indicatorBackground,
   style,
   ...flatListProps
 }: PullToRefreshListProps<ItemT>) {
@@ -42,7 +40,6 @@ export default function PullToRefreshList<ItemT>({
           triggerDistance={TRIGGER_DISTANCE}
           refreshing={refreshing}
           color={indicatorColor}
-          background={indicatorBackground}
         />
         <Animated.FlatList<ItemT>
           {...flatListProps}
