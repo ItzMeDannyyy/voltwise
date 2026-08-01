@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   ActivityIndicator,
   Alert,
   Dimensions,
-  FlatList,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -22,6 +21,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { api, ApiDevice, ApiDeviceReading, resolveAssetUrl } from "../../lib/api";
+import { PullToRefresh, PullToRefreshList } from "../../components/pull-to-refresh";
+import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
 
@@ -113,30 +114,25 @@ export default function DevicesScreen() {
 
   // ── Load devices ──────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get<ApiDevice[]>("/devices")
-      .then((data) => {
-        if (cancelled) return;
-        // An empty list is real data (fresh account) — render the empty state,
-        // don't fall back to anything.
-        const list = data ?? [];
-        setDevices(list);
-        originalsRef.current = Object.fromEntries(
-          list.map((d) => [d.id, { status: d.status, watts: d.watts }])
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setLoadError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingDevices(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+  // Fetch the device list — shared by the initial load and pull-to-refresh.
+  const fetchDevices = useCallback(async () => {
+    const data = await api.get<ApiDevice[]>("/devices");
+    // An empty list is real data (fresh account) — render the empty state,
+    // don't fall back to anything.
+    const list = data ?? [];
+    setDevices(list);
+    originalsRef.current = Object.fromEntries(
+      list.map((d) => [d.id, { status: d.status, watts: d.watts }])
+    );
   }, []);
+
+  useEffect(() => {
+    fetchDevices()
+      .catch(() => setLoadError(true))
+      .finally(() => setLoadingDevices(false));
+  }, [fetchDevices]);
+
+  const { refreshing, onRefresh } = usePullToRefresh(fetchDevices);
 
   // ── Filtered list ─────────────────────────────────────────────────────────
 
@@ -567,10 +563,16 @@ export default function DevicesScreen() {
           (filtered.length === 0 ? (
             renderListState()
           ) : (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}>
+            <PullToRefresh
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              contentContainerStyle={styles.list}
+              indicatorColor={C.accent}
+              indicatorBackground={C.card}
+            >
               {filtered.map((device) => renderBannerCard(device))}
               <View style={{ height: 16 }} />
-            </ScrollView>
+            </PullToRefresh>
           ))}
 
         {/* Photo mode — 2-column image grid */}
@@ -578,7 +580,11 @@ export default function DevicesScreen() {
           (filtered.length === 0 ? (
             renderListState()
           ) : (
-            <FlatList
+            <PullToRefreshList
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              indicatorColor={C.accent}
+              indicatorBackground={C.card}
               data={filtered}
               keyExtractor={(item) => item.id}
               numColumns={2}

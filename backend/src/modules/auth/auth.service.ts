@@ -16,7 +16,7 @@ import type {
   AuthResponseDto,
   ForgotPasswordResponseDto,
   ResetPasswordResponseDto,
-} from "./auth.dto.ts";
+} from "./auth";
 
 // The bcrypt cost factor. 10 is the widely-accepted balance between security
 // and hash speed for a low-traffic app; increase to 12 for production.

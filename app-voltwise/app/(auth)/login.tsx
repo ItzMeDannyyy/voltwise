@@ -105,7 +105,7 @@ export default function LoginScreen() {
           {/* Wordmark */}
           <View style={styles.brandRow}>
             <Image
-              source={require("../../assets/images/voltwise-logo.png")}
+              source={require("../../assets/images/voltwise-logo/voltwise-logo-complete.png")}
               style={styles.brandLogo}
               resizeMode="contain"
             />

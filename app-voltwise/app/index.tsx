@@ -25,7 +25,7 @@ export default function Index() {
     return (
       <View style={styles.splash}>
         <Image
-          source={require("../assets/images/voltwise-logo.png")}
+          source={require("../assets/images/voltwise-logo/voltwise-logo.png")}
           style={styles.logo}
           resizeMode="contain"
         />
@@ -50,8 +50,8 @@ const styles = StyleSheet.create({
     gap: 24,
   },
   logo: {
-    width: 260,
-    height: 104,
+    width: 150,
+    height: 170,
   },
   spinner: {
     marginTop: 8,

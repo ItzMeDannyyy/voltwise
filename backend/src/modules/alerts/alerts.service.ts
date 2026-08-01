@@ -5,7 +5,7 @@
 
 import { prisma } from "../../lib/prisma.ts";
 import { AlertType } from "../../generated/prisma/index.js";
-import type { AlertResponseDto, CreateAlertDto } from "./alerts.dto.ts";
+import type { AlertResponseDto, CreateAlertDto } from "./alerts";
 
 // Documentation only: Maps the lowercase string the mobile app sends
 // ("critical" | "warning" | "info") to the Prisma AlertType enum value.

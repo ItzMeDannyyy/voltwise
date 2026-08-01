@@ -4,7 +4,7 @@
 // here — telemetry ingestion lives in lib/mqtt.ts itself.
 
 import { getIotState, publishRelayCommand } from "../../lib/mqtt.ts";
-import type { IotStatusDto } from "./iot.dto.ts";
+import type { IotStatusDto } from "./iot";
 
 // A retained "online" status can outlive a crashed device until the broker's
 // last-will fires, so the device only counts as online when telemetry (sent

@@ -6,7 +6,7 @@
 
 import type { Request, Response, NextFunction } from "express";
 import * as dashboardService from "./dashboard.service.ts";
-import type { DashboardPeriod } from "./dashboard.dto.ts";
+import type { DashboardPeriod } from "./dashboard";
 
 // The set of valid period values the mobile app is permitted to send.
 const VALID_PERIODS: DashboardPeriod[] = ["Day", "Week", "Month"];

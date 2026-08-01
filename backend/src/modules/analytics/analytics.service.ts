@@ -13,7 +13,7 @@ import type {
   BreakdownEntryDto,
   TopConsumerDto,
   MetricStatDto,
-} from "./analytics.dto.ts";
+} from "./analytics";
 
 // A fixed color palette applied in order to breakdown and topConsumer segments.
 const SEGMENT_COLORS = [

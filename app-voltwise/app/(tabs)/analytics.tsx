@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
   StyleSheet,
   TextInput,
@@ -18,6 +17,8 @@ import { Ionicons } from "@expo/vector-icons";
 import Svg, { Circle } from "react-native-svg";
 import { api, AnalyticsData, MetricStat } from "../../lib/api";
 import Collapsible from "../../components/Collapsible";
+import { PullToRefresh } from "../../components/pull-to-refresh";
+import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 
 const C = {
   bg: "#1a1f2e",
@@ -153,21 +154,21 @@ export default function AnalyticsScreen() {
   const [updatingTariff, setUpdatingTariff] = useState(false);
   const [tariffError, setTariffError] = useState<string | null>(null);
 
-  // Fetch analytics whenever the selected period or refresh trigger changes.
+  // Fetch analytics — shared by the period/refresh-trigger effect below and
+  // pull-to-refresh.
+  const fetchAnalytics = useCallback(async () => {
+    const data = await api.get<AnalyticsData>(`/analytics?period=${period}`);
+    setAnalytics(data);
+  }, [period]);
+
+  // Refetch whenever the selected period or refresh trigger changes.
   useEffect(() => {
-    let cancelled = false;
-    api
-      .get<AnalyticsData>(`/analytics?period=${period}`)
-      .then((data) => {
-        if (!cancelled) setAnalytics(data);
-      })
-      .catch(() => {
-        // Offline-first: fall back to local mock values.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [period, refreshTrigger]);
+    fetchAnalytics().catch(() => {
+      // Offline-first: fall back to local mock values.
+    });
+  }, [fetchAnalytics, refreshTrigger]);
+
+  const { refreshing, onRefresh } = usePullToRefresh(fetchAnalytics);
 
   const breakdown    = analytics?.breakdown   ?? DONUT_SEGMENTS;
   const topConsumers = analytics !== null ? analytics.topConsumers : TOP_CONSUMERS;
@@ -224,9 +225,12 @@ export default function AnalyticsScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
-      <ScrollView
+      <PullToRefresh
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
+        indicatorColor={C.accent}
+        indicatorBackground={C.card}
       >
         <Text style={styles.heading}>Analytics</Text>
 
@@ -449,7 +453,7 @@ export default function AnalyticsScreen() {
           );
         })}
 
-      </ScrollView>
+      </PullToRefresh>
 
       {/* Update Tariff Modal */}
       <Modal

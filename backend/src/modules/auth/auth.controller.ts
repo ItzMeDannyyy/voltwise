@@ -12,7 +12,7 @@ import type {
   UpdateProfileDto,
   ForgotPasswordDto,
   ResetPasswordDto,
-} from "./auth.dto.ts";
+} from "./auth";
 
 // Documentation only: Handles POST /api/auth/register.
 // Validates presence of firstName, lastName, email, and password from the request body.

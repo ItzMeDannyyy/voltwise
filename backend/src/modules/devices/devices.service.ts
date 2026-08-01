@@ -15,7 +15,7 @@ import type {
   CreateDeviceDto,
   UpdateDeviceDto,
   DeviceLatestReadingDto,
-} from "./devices.dto.ts";
+} from "./devices";
 
 // Documentation only: Formats a raw Prisma Device record (with its Room relation)
 // into the DeviceResponseDto shape the mobile app expects.

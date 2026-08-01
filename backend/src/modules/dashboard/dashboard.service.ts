@@ -13,7 +13,7 @@ import type {
   DashboardHistoryDto,
   TopConsumerDto,
   ReadingDto,
-} from "./dashboard.dto.ts";
+} from "./dashboard";
 
 // A reading is considered "live" if it arrived within this window.
 const IOT_LIVENESS_WINDOW_MS = 5 * 60 * 1000;

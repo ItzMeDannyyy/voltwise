@@ -6,7 +6,7 @@
 
 import type { Request, Response, NextFunction } from "express";
 import * as iotService from "./iot.service.ts";
-import type { RelayCommandDto } from "./iot.dto.ts";
+import type { RelayCommandDto } from "./iot";
 
 // Documentation only: Handles POST /api/iot/relay.
 // Body must be { on: boolean } (strict boolean — strings like "true" are
