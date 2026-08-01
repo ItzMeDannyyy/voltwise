@@ -2,17 +2,9 @@ import { useEffect, useRef } from "react";
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
-
-const C = {
-  bg: "#1a1f2e",
-  card: "#242b3d",
-  accent: "#00d4aa",
-  text: "#ffffff",
-  sub: "#9ca3af",
-  border: "#2d3448",
-  yellow: "#f59e0b",
-  red: "#ef4444",
-};
+import { useTheme } from "../context/ThemeContext";
+import { useThemedStyles } from "./themed";
+import type { ThemeColors } from "../constants/theme";
 
 export interface ModalAlertData {
   type: "critical" | "warning" | "info";
@@ -20,11 +12,11 @@ export interface ModalAlertData {
   description: string;
 }
 
-function severityColor(type: ModalAlertData["type"]): string {
+function severityColor(type: ModalAlertData["type"], colors: ThemeColors): string {
   switch (type) {
-    case "critical": return C.red;
-    case "warning":  return C.yellow;
-    case "info":     return C.accent;
+    case "critical": return colors.red;
+    case "warning":  return colors.yellow;
+    case "info":     return colors.accent;
   }
 }
 
@@ -74,6 +66,8 @@ export function AnomalyModal({
   onPowerOff: () => void;
   onSkip: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const prevTitle     = useRef<string | null>(null);
   const prevCountdown = useRef(countdown);
 
@@ -104,7 +98,7 @@ export function AnomalyModal({
   }, [powerOff]);
 
   if (!alert) return null;
-  const color = severityColor(alert.type);
+  const color = severityColor(alert.type, colors);
   const icon  = severityIcon(alert.type);
   const showCountdown = alert.type !== "info" && !powerOff;
 
@@ -139,7 +133,7 @@ export function AnomalyModal({
             activeOpacity={0.8}
             disabled={powerOff}
           >
-            <Ionicons name="power" size={28} color="#fff" />
+            <Ionicons name="power" size={28} color={colors.white} />
             <Text style={styles.powerBtnText}>TURN OFF NOW</Text>
           </TouchableOpacity>
 
@@ -152,108 +146,110 @@ export function AnomalyModal({
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.75)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  card: {
-    backgroundColor: C.card,
-    borderRadius: 20,
-    padding: 28,
-    width: "100%",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  iconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 14,
-  },
-  typeLabel: {
-    fontSize: 13,
-    fontWeight: "800",
-    letterSpacing: 1.5,
-    marginBottom: 10,
-  },
-  title: {
-    color: C.text,
-    fontSize: 16,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 6,
-    lineHeight: 22,
-  },
-  desc: {
-    color: C.sub,
-    fontSize: 13,
-    textAlign: "center",
-    lineHeight: 19,
-    marginBottom: 20,
-  },
-  countdownRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 20,
-  },
-  countdownLabel: {
-    color: C.sub,
-    fontSize: 13,
-  },
-  countdownNum: {
-    color: C.red,
-    fontSize: 36,
-    fontWeight: "800",
-    lineHeight: 40,
-    minWidth: 36,
-    textAlign: "center",
-  },
-  shuttingDown: {
-    color: C.red,
-    fontSize: 15,
-    fontWeight: "700",
-    marginBottom: 20,
-    letterSpacing: 0.5,
-  },
-  powerBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    backgroundColor: C.red,
-    borderRadius: 14,
-    paddingVertical: 18,
-    width: "100%",
-    marginBottom: 14,
-    shadowColor: C.red,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.45,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  powerBtnDimmed: {
-    opacity: 0.45,
-  },
-  powerBtnText: {
-    color: "#fff",
-    fontSize: 17,
-    fontWeight: "800",
-    letterSpacing: 1,
-  },
-  skipBtn: {
-    paddingVertical: 10,
-  },
-  skipText: {
-    color: C.sub,
-    fontSize: 14,
-    fontWeight: "500",
-  },
-});
+function createStyles(colors: ThemeColors, fontScale: number) {
+  return StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: colors.overlayStrong,
+      justifyContent: "center",
+      alignItems: "center",
+      padding: 24,
+    },
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: 20,
+      padding: 28,
+      width: "100%",
+      alignItems: "center",
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    iconCircle: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 14,
+    },
+    typeLabel: {
+      fontSize: 13 * fontScale,
+      fontWeight: "800",
+      letterSpacing: 1.5,
+      marginBottom: 10,
+    },
+    title: {
+      color: colors.text,
+      fontSize: 16 * fontScale,
+      fontWeight: "700",
+      textAlign: "center",
+      marginBottom: 6,
+      lineHeight: 22 * fontScale,
+    },
+    desc: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+      textAlign: "center",
+      lineHeight: 19 * fontScale,
+      marginBottom: 20,
+    },
+    countdownRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 20,
+    },
+    countdownLabel: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+    },
+    countdownNum: {
+      color: colors.red,
+      fontSize: 36 * fontScale,
+      fontWeight: "800",
+      lineHeight: 40 * fontScale,
+      minWidth: 36,
+      textAlign: "center",
+    },
+    shuttingDown: {
+      color: colors.red,
+      fontSize: 15 * fontScale,
+      fontWeight: "700",
+      marginBottom: 20,
+      letterSpacing: 0.5,
+    },
+    powerBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 10,
+      backgroundColor: colors.red,
+      borderRadius: 14,
+      paddingVertical: 18,
+      width: "100%",
+      marginBottom: 14,
+      shadowColor: colors.red,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.45,
+      shadowRadius: 8,
+      elevation: 6,
+    },
+    powerBtnDimmed: {
+      opacity: 0.45,
+    },
+    powerBtnText: {
+      color: colors.white,
+      fontSize: 17 * fontScale,
+      fontWeight: "800",
+      letterSpacing: 1,
+    },
+    skipBtn: {
+      paddingVertical: 10,
+    },
+    skipText: {
+      color: colors.sub,
+      fontSize: 14 * fontScale,
+      fontWeight: "500",
+    },
+  });
+}

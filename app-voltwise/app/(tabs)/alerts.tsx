@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
+  ScrollView,
   TouchableOpacity,
   StyleSheet,
   DeviceEventEmitter,
@@ -17,19 +18,9 @@ import {
   requestMasterShutdown,
 } from "../../lib/api";
 import { AnomalyModal } from "../../components/AnomalyModal";
-import { PullToRefresh } from "../../components/pull-to-refresh";
-import { usePullToRefresh } from "../../hooks/usePullToRefresh";
-
-const C = {
-  bg: "#1a1f2e",
-  card: "#242b3d",
-  accent: "#00d4aa",
-  text: "#ffffff",
-  sub: "#9ca3af",
-  border: "#2d3448",
-  yellow: "#f59e0b",
-  red: "#ef4444",
-};
+import { useTheme } from "../../context/ThemeContext";
+import { useThemedStyles } from "../../components/themed";
+import type { ThemeColors } from "../../constants/theme";
 
 type AlertType = "critical" | "warning" | "info";
 type FilterTab = "All" | "Unread" | "Critical";
@@ -95,14 +86,14 @@ const INITIAL_ALERTS: AlertItem[] = [
   },
 ];
 
-function severityColor(type: AlertType): string {
+function severityColor(type: AlertType, colors: ThemeColors): string {
   switch (type) {
     case "critical":
-      return C.red;
+      return colors.red;
     case "warning":
-      return C.yellow;
+      return colors.yellow;
     case "info":
-      return C.accent;
+      return colors.accent;
   }
 }
 
@@ -118,16 +109,16 @@ function severityIcon(type: AlertType): keyof typeof Ionicons.glyphMap {
 }
 
 export default function AlertsScreen() {
+  const styles = useThemedStyles(createStyles);
   const [alerts, setAlerts] = useState<AlertItem[]>(INITIAL_ALERTS);
   const [activeTab, setActiveTab] = useState<FilterTab>("All");
   const [modalAlert, setModalAlert] = useState<AlertItem | null>(null);
   const [countdown, setCountdown] = useState(3);
   const [powerOff, setPowerOff] = useState(false);
 
-  // Load the alert feed from the backend — shared by focus refetch, the demo
-  // event bus, and pull-to-refresh.
+  // Load the alert feed from the backend.
   const loadAlerts = useCallback(() => {
-    return api
+    api
       .get<ApiAlert[]>("/alerts")
       .then((data) => {
         if (data?.length) setAlerts(data);
@@ -149,8 +140,6 @@ export default function AlertsScreen() {
     const sub = DeviceEventEmitter.addListener(ALERTS_CHANGED_EVENT, loadAlerts);
     return () => sub.remove();
   }, [loadAlerts]);
-
-  const { refreshing, onRefresh } = usePullToRefresh(loadAlerts);
 
   // Countdown timer for critical/warning modal. Reaching zero performs the
   // same real relay shutdown as pressing TURN OFF NOW.
@@ -264,12 +253,9 @@ export default function AlertsScreen() {
         </View>
         <View style={styles.tabSeparator} />
 
-        <PullToRefresh
-          refreshing={refreshing}
-          onRefresh={onRefresh}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scroll}
-          indicatorColor={C.accent}
-          indicatorBackground={C.card}
         >
           {todayAlerts.length > 0 && (
             <View>
@@ -298,7 +284,7 @@ export default function AlertsScreen() {
           )}
 
           <View style={{ height: 16 }} />
-        </PullToRefresh>
+        </ScrollView>
       </View>
 
       <AnomalyModal
@@ -319,7 +305,9 @@ function AlertCard({
   alert: AlertItem;
   onPress: () => void;
 }) {
-  const color = severityColor(alert.type);
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  const color = severityColor(alert.type, colors);
   const icon = severityIcon(alert.type);
 
   return (
@@ -346,7 +334,7 @@ function AlertCard({
               <Ionicons
                 name="information-circle"
                 size={14}
-                color={C.accent}
+                color={colors.accent}
                 style={styles.recommendationIcon}
               />
               <Text style={styles.recommendationText}>
@@ -362,176 +350,177 @@ function AlertCard({
 }
 
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: C.bg,
-  },
-  inner: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  title: {
-    color: C.text,
-    fontSize: 28,
-    fontWeight: "700",
-  },
-  markAllBtn: {
-    paddingTop: 4,
-  },
-  markAllText: {
-    color: C.accent,
-    fontSize: 13,
-    textAlign: "right",
-    lineHeight: 18,
-  },
-  tabRow: {
-    flexDirection: "row",
-    gap: 24,
-  },
-  tab: {
-    paddingBottom: 8,
-    position: "relative",
-  },
-  tabLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  tabLabel: {
-    color: C.sub,
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  tabLabelActive: {
-    color: C.text,
-    fontWeight: "600",
-  },
-  tabCountBadge: {
-    backgroundColor: C.sub,
-    borderRadius: 9,
-    minWidth: 18,
-    height: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 5,
-  },
-  tabCountBadgeCritical: {
-    backgroundColor: C.red,
-  },
-  tabCountText: {
-    color: C.bg,
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  tabIndicator: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 2,
-    backgroundColor: C.accent,
-    borderRadius: 1,
-  },
-  tabSeparator: {
-    height: 1,
-    backgroundColor: C.border,
-    marginBottom: 20,
-  },
-  scroll: {
-    paddingBottom: 8,
-  },
-  sectionLabel: {
-    color: C.sub,
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 1,
-    marginBottom: 10,
-    marginTop: 4,
-  },
-  card: {
-    backgroundColor: C.card,
-    borderRadius: 12,
-    marginBottom: 10,
-    flexDirection: "row",
-    overflow: "hidden",
-  },
-  cardStripe: {
-    width: 4,
-    borderRadius: 2,
-  },
-  cardContent: {
-    flex: 1,
-    flexDirection: "row",
-    padding: 14,
-    gap: 12,
-  },
-  iconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  cardBody: {
-    flex: 1,
-  },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-  },
-  alertTitle: {
-    flex: 1,
-    color: C.text,
-    fontSize: 14,
-    fontWeight: "700",
-    lineHeight: 20,
-  },
-  alertTime: {
-    color: C.sub,
-    fontSize: 12,
-    flexShrink: 0,
-    marginTop: 2,
-  },
-  alertDescription: {
-    color: C.sub,
-    fontSize: 13,
-    marginTop: 4,
-    lineHeight: 18,
-  },
-  recommendationRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginTop: 6,
-    gap: 4,
-  },
-  recommendationIcon: {
-    marginTop: 1,
-    flexShrink: 0,
-  },
-  recommendationText: {
-    color: C.accent,
-    fontSize: 12,
-    flex: 1,
-    lineHeight: 17,
-  },
-  unreadDot: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: C.red,
-  },
-
-});
+function createStyles(colors: ThemeColors, fontScale: number) {
+  return StyleSheet.create({
+    root: {
+      flex: 1,
+      backgroundColor: colors.bg,
+    },
+    inner: {
+      flex: 1,
+      paddingHorizontal: 16,
+      paddingTop: 8,
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      marginBottom: 16,
+    },
+    title: {
+      color: colors.text,
+      fontSize: 28 * fontScale,
+      fontWeight: "700",
+    },
+    markAllBtn: {
+      paddingTop: 4,
+    },
+    markAllText: {
+      color: colors.accent,
+      fontSize: 13 * fontScale,
+      textAlign: "right",
+      lineHeight: 18 * fontScale,
+    },
+    tabRow: {
+      flexDirection: "row",
+      gap: 24,
+    },
+    tab: {
+      paddingBottom: 8,
+      position: "relative",
+    },
+    tabLabelRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    tabLabel: {
+      color: colors.sub,
+      fontSize: 15 * fontScale,
+      fontWeight: "500",
+    },
+    tabLabelActive: {
+      color: colors.text,
+      fontWeight: "600",
+    },
+    tabCountBadge: {
+      backgroundColor: colors.sub,
+      borderRadius: 9,
+      minWidth: 18,
+      height: 18,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 5,
+    },
+    tabCountBadgeCritical: {
+      backgroundColor: colors.red,
+    },
+    tabCountText: {
+      color: colors.bg,
+      fontSize: 11 * fontScale,
+      fontWeight: "700",
+    },
+    tabIndicator: {
+      position: "absolute",
+      bottom: 0,
+      left: 0,
+      right: 0,
+      height: 2,
+      backgroundColor: colors.accent,
+      borderRadius: 1,
+    },
+    tabSeparator: {
+      height: 1,
+      backgroundColor: colors.border,
+      marginBottom: 20,
+    },
+    scroll: {
+      paddingBottom: 8,
+    },
+    sectionLabel: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      fontWeight: "600",
+      letterSpacing: 1,
+      marginBottom: 10,
+      marginTop: 4,
+    },
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: 12,
+      marginBottom: 10,
+      flexDirection: "row",
+      overflow: "hidden",
+    },
+    cardStripe: {
+      width: 4,
+      borderRadius: 2,
+    },
+    cardContent: {
+      flex: 1,
+      flexDirection: "row",
+      padding: 14,
+      gap: 12,
+    },
+    iconCircle: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      flexShrink: 0,
+    },
+    cardBody: {
+      flex: 1,
+    },
+    titleRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 8,
+    },
+    alertTitle: {
+      flex: 1,
+      color: colors.text,
+      fontSize: 14 * fontScale,
+      fontWeight: "700",
+      lineHeight: 20 * fontScale,
+    },
+    alertTime: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      flexShrink: 0,
+      marginTop: 2,
+    },
+    alertDescription: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+      marginTop: 4,
+      lineHeight: 18 * fontScale,
+    },
+    recommendationRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      marginTop: 6,
+      gap: 4,
+    },
+    recommendationIcon: {
+      marginTop: 1,
+      flexShrink: 0,
+    },
+    recommendationText: {
+      color: colors.accent,
+      fontSize: 12 * fontScale,
+      flex: 1,
+      lineHeight: 17 * fontScale,
+    },
+    unreadDot: {
+      position: "absolute",
+      top: 10,
+      right: 10,
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: colors.red,
+    },
+  });
+}

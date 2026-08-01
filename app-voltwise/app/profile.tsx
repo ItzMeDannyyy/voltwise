@@ -16,25 +16,14 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
+import { useTheme } from "../context/ThemeContext";
+import { useThemedStyles } from "../components/themed";
+import type { ThemeColors } from "../constants/theme";
 
-/* ─── Design tokens ──────────────────────────────────────────────── */
-const C = {
-  bg: "#0f1320",
-  surface: "#161c2d",
-  card: "#1e2538",
-  cardBorder: "#2a3350",
-  accent: "#00d4aa",
-  accentDim: "rgba(0,212,170,0.12)",
-  accentBorder: "rgba(0,212,170,0.35)",
-  text: "#f0f4ff",
-  sub: "#7b8db0",
-  muted: "#4a5578",
-  red: "#ff5a5a",
-  redDim: "rgba(255,90,90,0.1)",
-  redBorder: "rgba(255,90,90,0.3)",
-  purple: "#a78bfa",
-  gold: "#fbbf24",
-};
+/* ─── Decorative accents (no direct theme equivalent, constant across
+   light/dark) ────────────────────────────────────────────────────── */
+const PURPLE = "#a78bfa";
+const GOLD = "#fbbf24";
 
 /* ─── Helpers ────────────────────────────────────────────────────── */
 function getInitials(name: string, email: string): string {
@@ -64,14 +53,17 @@ function InfoPill({
   label: string;
   value: string;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createPillStyles);
+
   return (
-    <View style={pill.wrap}>
-      <View style={pill.iconBox}>
-        <Ionicons name={icon} size={16} color={C.accent} />
+    <View style={styles.wrap}>
+      <View style={styles.iconBox}>
+        <Ionicons name={icon} size={16} color={colors.accent} />
       </View>
-      <View style={pill.text}>
-        <Text style={pill.label}>{label}</Text>
-        <Text style={pill.value} numberOfLines={1}>
+      <View style={styles.text}>
+        <Text style={styles.label}>{label}</Text>
+        <Text style={styles.value} numberOfLines={1}>
           {value}
         </Text>
       </View>
@@ -79,42 +71,46 @@ function InfoPill({
   );
 }
 
-const pill = StyleSheet.create({
-  wrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    backgroundColor: C.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: C.cardBorder,
-    padding: 14,
-    marginBottom: 10,
-  },
-  iconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: C.accentDim,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  text: { flex: 1 },
-  label: {
-    color: C.sub,
-    fontSize: 11,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: 2,
-  },
-  value: { color: C.text, fontSize: 15, fontWeight: "600" },
-});
+function createPillStyles(colors: ThemeColors, fontScale: number) {
+  return StyleSheet.create({
+    wrap: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      backgroundColor: colors.card,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 14,
+      marginBottom: 10,
+    },
+    iconBox: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      backgroundColor: colors.accentSoft,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    text: { flex: 1 },
+    label: {
+      color: colors.sub,
+      fontSize: 11 * fontScale,
+      fontWeight: "600",
+      textTransform: "uppercase",
+      letterSpacing: 0.6,
+      marginBottom: 2,
+    },
+    value: { color: colors.text, fontSize: 15 * fontScale, fontWeight: "600" },
+  });
+}
 
 /* ─── Main screen ────────────────────────────────────────────────── */
 export default function ProfileScreen() {
   const { user, signOut, updateProfile } = useAuth();
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
 
   const [name, setName] = useState(user?.name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
@@ -260,7 +256,7 @@ export default function ProfileScreen() {
 
             {/* Gradient ring */}
             <LinearGradient
-              colors={["#00d4aa", "#a78bfa", "#00d4aa"]}
+              colors={[colors.accent, PURPLE, colors.accent]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.avatarRing}
@@ -276,14 +272,14 @@ export default function ProfileScreen() {
             {/* Tag row */}
             <View style={styles.tagRow}>
               <View style={styles.tag}>
-                <Ionicons name="flash" size={12} color={C.gold} />
-                <Text style={[styles.tagText, { color: C.gold }]}>
+                <Ionicons name="flash" size={12} color={GOLD} />
+                <Text style={[styles.tagText, { color: GOLD }]}>
                   VoltWise
                 </Text>
               </View>
-              <View style={[styles.tag, { borderColor: C.accentBorder, backgroundColor: C.accentDim }]}>
-                <Ionicons name="person-circle-outline" size={12} color={C.accent} />
-                <Text style={[styles.tagText, { color: C.accent }]}>
+              <View style={[styles.tag, { borderColor: colors.accentBorder, backgroundColor: colors.accentSoft }]}>
+                <Ionicons name="person-circle-outline" size={12} color={colors.accent} />
+                <Text style={[styles.tagText, { color: colors.accent }]}>
                   {memberTag}
                 </Text>
               </View>
@@ -293,7 +289,7 @@ export default function ProfileScreen() {
           {/* ── Feedback banners ────────────────────────────────── */}
           {error && (
             <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle-outline" size={18} color={C.red} />
+              <Ionicons name="alert-circle-outline" size={18} color={colors.red} />
               <Text style={styles.errorBannerText}>{error}</Text>
             </View>
           )}
@@ -302,7 +298,7 @@ export default function ProfileScreen() {
               <Ionicons
                 name="checkmark-circle-outline"
                 size={18}
-                color={C.accent}
+                color={colors.accent}
               />
               <Text style={styles.successBannerText}>{success}</Text>
             </View>
@@ -341,13 +337,13 @@ export default function ProfileScreen() {
               <View style={styles.editCard}>
                 <View style={styles.editCardHeader}>
                   <LinearGradient
-                    colors={[C.accentDim, "transparent"]}
+                    colors={[colors.accentSoft, "transparent"]}
                     style={styles.editCardHeaderAccent}
                   />
                   <Ionicons
                     name="create-outline"
                     size={20}
-                    color={C.accent}
+                    color={colors.accent}
                     style={{ marginRight: 8 }}
                   />
                   <Text style={styles.editCardTitle}>Edit Profile</Text>
@@ -359,13 +355,13 @@ export default function ProfileScreen() {
                     <Ionicons
                       name="person-outline"
                       size={18}
-                      color={C.muted}
+                      color={colors.inactive}
                       style={styles.inputIcon}
                     />
                     <TextInput
                       style={styles.input}
                       placeholder="Your full name"
-                      placeholderTextColor={C.muted}
+                      placeholderTextColor={colors.inactive}
                       value={name}
                       onChangeText={(t) => {
                         setName(t);
@@ -384,13 +380,13 @@ export default function ProfileScreen() {
                     <Ionicons
                       name="mail-outline"
                       size={18}
-                      color={C.muted}
+                      color={colors.inactive}
                       style={styles.inputIcon}
                     />
                     <TextInput
                       style={styles.input}
                       placeholder="you@example.com"
-                      placeholderTextColor={C.muted}
+                      placeholderTextColor={colors.inactive}
                       value={email}
                       onChangeText={(t) => {
                         setEmail(t);
@@ -410,16 +406,16 @@ export default function ProfileScreen() {
               <View style={styles.editCard}>
                 <View style={styles.editCardHeader}>
                   <LinearGradient
-                    colors={["rgba(167,139,250,0.15)", "transparent"]}
+                    colors={[PURPLE + "26", "transparent"]}
                     style={styles.editCardHeaderAccent}
                   />
                   <Ionicons
                     name="lock-closed-outline"
                     size={20}
-                    color={C.purple}
+                    color={PURPLE}
                     style={{ marginRight: 8 }}
                   />
-                  <Text style={[styles.editCardTitle, { color: C.purple }]}>
+                  <Text style={[styles.editCardTitle, { color: PURPLE }]}>
                     Change Password
                   </Text>
                 </View>
@@ -433,13 +429,13 @@ export default function ProfileScreen() {
                     <Ionicons
                       name="key-outline"
                       size={18}
-                      color={C.muted}
+                      color={colors.inactive}
                       style={styles.inputIcon}
                     />
                     <TextInput
                       style={styles.input}
                       placeholder="••••••••"
-                      placeholderTextColor={C.muted}
+                      placeholderTextColor={colors.inactive}
                       value={currentPassword}
                       onChangeText={setCurrentPassword}
                       secureTextEntry={!showCurrentPw}
@@ -454,7 +450,7 @@ export default function ProfileScreen() {
                           showCurrentPw ? "eye-off-outline" : "eye-outline"
                         }
                         size={20}
-                        color={C.muted}
+                        color={colors.inactive}
                       />
                     </TouchableOpacity>
                   </View>
@@ -466,13 +462,13 @@ export default function ProfileScreen() {
                     <Ionicons
                       name="lock-open-outline"
                       size={18}
-                      color={C.muted}
+                      color={colors.inactive}
                       style={styles.inputIcon}
                     />
                     <TextInput
                       style={styles.input}
                       placeholder="Min. 6 characters"
-                      placeholderTextColor={C.muted}
+                      placeholderTextColor={colors.inactive}
                       value={newPassword}
                       onChangeText={setNewPassword}
                       secureTextEntry={!showNewPw}
@@ -485,7 +481,7 @@ export default function ProfileScreen() {
                       <Ionicons
                         name={showNewPw ? "eye-off-outline" : "eye-outline"}
                         size={20}
-                        color={C.muted}
+                        color={colors.inactive}
                       />
                     </TouchableOpacity>
                   </View>
@@ -506,19 +502,19 @@ export default function ProfileScreen() {
                   disabled={saving}
                 >
                   <LinearGradient
-                    colors={["#00d4aa", "#00b894"]}
+                    colors={[colors.accent, "#00b894"]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={styles.primaryBtnGradient}
                   >
                     {saving ? (
-                      <ActivityIndicator size="small" color="#0f1320" />
+                      <ActivityIndicator size="small" color={colors.bg} />
                     ) : (
                       <>
                         <Ionicons
                           name="checkmark-done-outline"
                           size={18}
-                          color="#0f1320"
+                          color={colors.bg}
                         />
                         <Text style={styles.primaryBtnText}>Save Changes</Text>
                       </>
@@ -532,7 +528,7 @@ export default function ProfileScreen() {
                   onPress={requestCancelEdit}
                   activeOpacity={0.82}
                 >
-                  <Ionicons name="close-outline" size={18} color={C.sub} />
+                  <Ionicons name="close-outline" size={18} color={colors.sub} />
                   <Text style={styles.ghostBtnText}>Cancel</Text>
                 </TouchableOpacity>
               </>
@@ -544,12 +540,12 @@ export default function ProfileScreen() {
                 activeOpacity={0.82}
               >
                 <LinearGradient
-                  colors={["#00d4aa", "#00b894"]}
+                  colors={[colors.accent, "#00b894"]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.primaryBtnGradient}
                 >
-                  <Ionicons name="pencil-outline" size={18} color="#0f1320" />
+                  <Ionicons name="pencil-outline" size={18} color={colors.bg} />
                   <Text style={styles.primaryBtnText}>Edit Profile</Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -563,7 +559,7 @@ export default function ProfileScreen() {
             activeOpacity={0.8}
             disabled={signingOut}
           >
-            <Ionicons name="log-out-outline" size={18} color={C.red} />
+            <Ionicons name="log-out-outline" size={18} color={colors.red} />
             <Text style={styles.signOutText}>
               {signingOut ? "Signing out…" : "Sign Out"}
             </Text>
@@ -604,249 +600,251 @@ export default function ProfileScreen() {
 }
 
 /* ─── Styles ─────────────────────────────────────────────────────── */
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
-  flex: { flex: 1 },
-  scroll: {
-    flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingTop: 28,
-  },
+function createStyles(colors: ThemeColors, fontScale: number) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: colors.bg },
+    flex: { flex: 1 },
+    scroll: {
+      flexGrow: 1,
+      paddingHorizontal: 20,
+      paddingTop: 28,
+    },
 
-  /* Hero */
-  heroSection: {
-    alignItems: "center",
-    marginBottom: 28,
-    position: "relative",
-  },
-  avatarGlow: {
-    position: "absolute",
-    top: 0,
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: "rgba(0,212,170,0.12)",
-    transform: [{ scaleX: 1.6 }],
-  },
-  avatarRing: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    padding: 3,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  avatarInner: {
-    width: 94,
-    height: 94,
-    borderRadius: 47,
-    backgroundColor: C.surface,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarInitials: {
-    color: C.accent,
-    fontSize: 34,
-    fontWeight: "800",
-    letterSpacing: -0.5,
-  },
-  heroName: {
-    color: C.text,
-    fontSize: 24,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-    marginBottom: 4,
-  },
-  heroEmail: {
-    color: C.sub,
-    fontSize: 14,
-    marginBottom: 14,
-  },
-  tagRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  tag: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "rgba(251,191,36,0.35)",
-    backgroundColor: "rgba(251,191,36,0.1)",
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-  },
-  tagText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
+    /* Hero */
+    heroSection: {
+      alignItems: "center",
+      marginBottom: 28,
+      position: "relative",
+    },
+    avatarGlow: {
+      position: "absolute",
+      top: 0,
+      width: 140,
+      height: 140,
+      borderRadius: 70,
+      backgroundColor: colors.accentSoft,
+      transform: [{ scaleX: 1.6 }],
+    },
+    avatarRing: {
+      width: 100,
+      height: 100,
+      borderRadius: 50,
+      padding: 3,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 16,
+    },
+    avatarInner: {
+      width: 94,
+      height: 94,
+      borderRadius: 47,
+      backgroundColor: colors.surface,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    avatarInitials: {
+      color: colors.accent,
+      fontSize: 34 * fontScale,
+      fontWeight: "800",
+      letterSpacing: -0.5,
+    },
+    heroName: {
+      color: colors.text,
+      fontSize: 24 * fontScale,
+      fontWeight: "800",
+      letterSpacing: -0.3,
+      marginBottom: 4,
+    },
+    heroEmail: {
+      color: colors.sub,
+      fontSize: 14 * fontScale,
+      marginBottom: 14,
+    },
+    tagRow: {
+      flexDirection: "row",
+      gap: 8,
+    },
+    tag: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: GOLD + "59",
+      backgroundColor: GOLD + "1a",
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+    },
+    tagText: {
+      fontSize: 12 * fontScale,
+      fontWeight: "700",
+    },
 
-  /* Banners */
-  errorBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: C.redDim,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.redBorder,
-    padding: 14,
-    marginBottom: 16,
-  },
-  errorBannerText: { color: C.red, fontSize: 14, flex: 1, fontWeight: "500" },
-  successBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: C.accentDim,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.accentBorder,
-    padding: 14,
-    marginBottom: 16,
-  },
-  successBannerText: {
-    color: C.accent,
-    fontSize: 14,
-    flex: 1,
-    fontWeight: "500",
-  },
+    /* Banners */
+    errorBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      backgroundColor: colors.red + "1a",
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.red + "4d",
+      padding: 14,
+      marginBottom: 16,
+    },
+    errorBannerText: { color: colors.red, fontSize: 14 * fontScale, flex: 1, fontWeight: "500" },
+    successBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      backgroundColor: colors.accentSoft,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.accentBorder,
+      padding: 14,
+      marginBottom: 16,
+    },
+    successBannerText: {
+      color: colors.accent,
+      fontSize: 14 * fontScale,
+      flex: 1,
+      fontWeight: "500",
+    },
 
-  /* Section label */
-  section: { marginBottom: 20 },
-  sectionLabel: {
-    color: C.sub,
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 10,
-  },
+    /* Section label */
+    section: { marginBottom: 20 },
+    sectionLabel: {
+      color: colors.sub,
+      fontSize: 11 * fontScale,
+      fontWeight: "700",
+      textTransform: "uppercase",
+      letterSpacing: 1,
+      marginBottom: 10,
+    },
 
-  /* Edit cards */
-  editCard: {
-    backgroundColor: C.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: C.cardBorder,
-    overflow: "hidden",
-    marginBottom: 16,
-  },
-  editCardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    paddingBottom: 10,
-    position: "relative",
-  },
-  editCardHeaderAccent: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 20,
-  },
-  editCardTitle: {
-    color: C.text,
-    fontSize: 17,
-    fontWeight: "700",
-  },
-  editCardSub: {
-    color: C.sub,
-    fontSize: 13,
-    paddingHorizontal: 18,
-    marginBottom: 12,
-    marginTop: -4,
-  },
+    /* Edit cards */
+    editCard: {
+      backgroundColor: colors.card,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: "hidden",
+      marginBottom: 16,
+    },
+    editCardHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 18,
+      paddingTop: 18,
+      paddingBottom: 10,
+      position: "relative",
+    },
+    editCardHeaderAccent: {
+      ...StyleSheet.absoluteFillObject,
+      borderRadius: 20,
+    },
+    editCardTitle: {
+      color: colors.text,
+      fontSize: 17 * fontScale,
+      fontWeight: "700",
+    },
+    editCardSub: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+      paddingHorizontal: 18,
+      marginBottom: 12,
+      marginTop: -4,
+    },
 
-  /* Fields */
-  fieldGroup: {
-    paddingHorizontal: 18,
-    marginBottom: 14,
-  },
-  fieldLabel: {
-    color: C.sub,
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: 8,
-  },
-  inputWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: C.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: C.cardBorder,
-    paddingHorizontal: 14,
-    height: 52,
-    gap: 10,
-  },
-  inputIcon: {},
-  input: {
-    flex: 1,
-    color: C.text,
-    fontSize: 15,
-    height: 52,
-  },
+    /* Fields */
+    fieldGroup: {
+      paddingHorizontal: 18,
+      marginBottom: 14,
+    },
+    fieldLabel: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      fontWeight: "600",
+      textTransform: "uppercase",
+      letterSpacing: 0.6,
+      marginBottom: 8,
+    },
+    inputWrap: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 14,
+      height: 52,
+      gap: 10,
+    },
+    inputIcon: {},
+    input: {
+      flex: 1,
+      color: colors.text,
+      fontSize: 15 * fontScale,
+      height: 52,
+    },
 
-  /* Actions */
-  actionsRow: {
-    gap: 10,
-    marginBottom: 12,
-  },
-  primaryBtn: {
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  primaryBtnGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    height: 54,
-  },
-  primaryBtnText: {
-    color: "#0f1320",
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  btnDisabled: { opacity: 0.55 },
+    /* Actions */
+    actionsRow: {
+      gap: 10,
+      marginBottom: 12,
+    },
+    primaryBtn: {
+      borderRadius: 16,
+      overflow: "hidden",
+    },
+    primaryBtnGradient: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      height: 54,
+    },
+    primaryBtnText: {
+      color: colors.bg,
+      fontSize: 16 * fontScale,
+      fontWeight: "800",
+    },
+    btnDisabled: { opacity: 0.55 },
 
-  ghostBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    height: 52,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: C.cardBorder,
-    backgroundColor: C.card,
-  },
-  ghostBtnText: {
-    color: C.sub,
-    fontSize: 15,
-    fontWeight: "600",
-  },
+    ghostBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      height: 52,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    ghostBtnText: {
+      color: colors.sub,
+      fontSize: 15 * fontScale,
+      fontWeight: "600",
+    },
 
-  /* Sign out */
-  signOutBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    height: 52,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: C.redBorder,
-    backgroundColor: C.redDim,
-    marginBottom: 4,
-  },
-  signOutText: {
-    color: C.red,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-});
+    /* Sign out */
+    signOutBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      height: 52,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.red + "4d",
+      backgroundColor: colors.red + "1a",
+      marginBottom: 4,
+    },
+    signOutText: {
+      color: colors.red,
+      fontSize: 15 * fontScale,
+      fontWeight: "700",
+    },
+  });
+}

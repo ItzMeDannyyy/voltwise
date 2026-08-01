@@ -11,18 +11,14 @@ import {
   UIManager,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useTheme } from "../context/ThemeContext";
+import { useThemedStyles } from "./themed";
+import type { ThemeColors } from "../constants/theme";
 
 // Enable LayoutAnimation on Android (no-op on iOS where it's always enabled).
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
-
-const C = {
-  card: "#242b3d",
-  text: "#ffffff",
-  sub: "#9ca3af",
-  border: "#2d3448",
-};
 
 interface CollapsibleProps {
   title: string | ReactNode;
@@ -35,6 +31,8 @@ export default function Collapsible({
   defaultOpen = false,
   children,
 }: CollapsibleProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [open, setOpen] = useState(defaultOpen);
   // Animated value drives the chevron rotation: 0 = closed, 1 = open.
   const chevronAnim = useRef(new Animated.Value(defaultOpen ? 1 : 0)).current;
@@ -75,7 +73,7 @@ export default function Collapsible({
           <View style={styles.headerContent}>{title}</View>
         )}
         <Animated.View style={{ transform: [{ rotate: chevronRotate }] }}>
-          <Ionicons name="chevron-down" size={16} color={C.sub} />
+          <Ionicons name="chevron-down" size={16} color={colors.sub} />
         </Animated.View>
       </TouchableOpacity>
 
@@ -84,24 +82,26 @@ export default function Collapsible({
   );
 }
 
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 2,
-    minHeight: 44,
-  },
-  headerText: {
-    color: C.sub,
-    fontSize: 13,
-    fontWeight: "600",
-    flex: 1,
-  },
-  headerContent: {
-    flex: 1,
-  },
-  body: {
-    marginTop: 8,
-  },
-});
+function createStyles(colors: ThemeColors, fontScale: number) {
+  return StyleSheet.create({
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: 2,
+      minHeight: 44,
+    },
+    headerText: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+      fontWeight: "600",
+      flex: 1,
+    },
+    headerContent: {
+      flex: 1,
+    },
+    body: {
+      marginTop: 8,
+    },
+  });
+}

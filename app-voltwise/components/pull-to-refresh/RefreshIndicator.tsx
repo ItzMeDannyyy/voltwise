@@ -12,6 +12,7 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
+import { useTheme } from "../../context/ThemeContext";
 
 const AnimatedIonicons = Animated.createAnimatedComponent(Ionicons);
 
@@ -33,9 +34,12 @@ export default function RefreshIndicator({
   pullDistance,
   triggerDistance,
   refreshing,
-  color = "#00d4aa",
-  background = "#242b3d",
+  color,
+  background,
 }: RefreshIndicatorProps) {
+  const { colors } = useTheme();
+  const resolvedColor = color ?? colors.accent;
+  const resolvedBackground = background ?? colors.card;
   const spin = useSharedValue(0);
 
   // Continuous spin while a refresh is in flight; stops (and resets) once done.
@@ -70,8 +74,8 @@ export default function RefreshIndicator({
   }));
 
   return (
-    <Animated.View style={[styles.wrap, { backgroundColor: background, height: triggerDistance }, wrapStyle]}>
-      <AnimatedIonicons name={refreshing ? "sync" : "arrow-down"} size={18} color={color} style={iconStyle} />
+    <Animated.View style={[styles.wrap, { backgroundColor: resolvedBackground, height: triggerDistance }, wrapStyle]}>
+      <AnimatedIonicons name={refreshing ? "sync" : "arrow-down"} size={18} color={resolvedColor} style={iconStyle} />
     </Animated.View>
   );
 }

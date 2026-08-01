@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
+  ScrollView,
   TouchableOpacity,
   StyleSheet,
   Dimensions,
@@ -19,8 +20,9 @@ import { LineChart } from "react-native-chart-kit";
 import { api, checkHealth, DashboardData, DashboardDevice, IotStatus, Reading } from "../../lib/api";
 import { useMqtt } from "../../context/MqttContext";
 import AppHeader from "../../components/AppHeader";
-import { PullToRefresh } from "../../components/pull-to-refresh";
-import { usePullToRefresh } from "../../hooks/usePullToRefresh";
+import { useTheme } from "../../context/ThemeContext";
+import { useThemedStyles } from "../../components/themed";
+import type { ThemeColors } from "../../constants/theme";
 
 // Enable LayoutAnimation on Android.
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -28,18 +30,6 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
-const C = {
-  bg: "#1a1f2e",
-  card: "#242b3d",
-  accent: "#00d4aa",
-  text: "#ffffff",
-  sub: "#9ca3af",
-  border: "#2d3448",
-  yellow: "#f59e0b",
-  red: "#ef4444",
-  amber: "#f97316",
-};
 
 // ---- Offline-first fallback for the PZEM-004T reading ----
 // Realistic values: 220 V mains, ~1.46 A, ~320 W, ~18.7 kWh, 60 Hz, 0.92 PF.
@@ -88,9 +78,11 @@ const MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct
 type PillStatus = "online" | "offline" | "degraded" | "unknown";
 
 function StatusPill({ label, status }: { label: string; status: PillStatus }) {
-  const dot  = status === "online" ? C.accent : status === "offline" ? C.red : status === "degraded" ? C.amber : C.sub;
-  const bg   = status === "online" ? "#0d2b22" : status === "offline" ? "#2b0d0d" : status === "degraded" ? "#2b1a0d" : C.card;
-  const clr  = status === "online" ? C.accent : status === "offline" ? C.red : status === "degraded" ? C.amber : C.sub;
+  const { colors } = useTheme();
+  const pillSt = useThemedStyles(createPillStyles);
+  const dot  = status === "online" ? colors.accent : status === "offline" ? colors.red : status === "degraded" ? colors.amber : colors.sub;
+  const bg   = status === "online" ? colors.accent + "26" : status === "offline" ? colors.red + "26" : status === "degraded" ? colors.amber + "26" : colors.card;
+  const clr  = status === "online" ? colors.accent : status === "offline" ? colors.red : status === "degraded" ? colors.amber : colors.sub;
   return (
     <View style={[pillSt.pill, { backgroundColor: bg }]}>
       <View style={[pillSt.dot, { backgroundColor: dot }]} />
@@ -99,11 +91,13 @@ function StatusPill({ label, status }: { label: string; status: PillStatus }) {
   );
 }
 
-const pillSt = StyleSheet.create({
-  pill: { flexDirection: "row", alignItems: "center", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, gap: 5 },
-  dot:  { width: 7, height: 7, borderRadius: 4 },
-  text: { fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
-});
+function createPillStyles(colors: ThemeColors, fontScale: number) {
+  return StyleSheet.create({
+    pill: { flexDirection: "row", alignItems: "center", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, gap: 5 },
+    dot:  { width: 7, height: 7, borderRadius: 4 },
+    text: { fontSize: 12 * fontScale, fontWeight: "700", letterSpacing: 0.5 },
+  });
+}
 
 type Period = "Day" | "Week" | "Month";
 
@@ -147,6 +141,8 @@ const RELAY_REASON_LABELS: Record<string, string> = {
 };
 
 export default function DashboardScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [currentKw, setCurrentKw]         = useState(3.24);
   const [period, setPeriod]               = useState<Period>("Day");
   const [dashboard, setDashboard]         = useState<DashboardData | null>(null);
@@ -184,26 +180,29 @@ export default function DashboardScreen() {
   // Animated value for chevron rotation.
   const chevronAnim     = useRef(new Animated.Value(1)).current;
 
-  // Fetch dashboard data — shared by the initial load and pull-to-refresh.
-  const fetchDashboard = useCallback(async () => {
-    const data = await api.get<DashboardData>(`/dashboard?period=${period}`);
-    setDashboard(data);
-    setCurrentKw(data.currentKw);
-    setIotOnline(data.iotOnline ?? false);
-    // Seed live metrics from the backend reading if present.
-    if (data.reading) {
-      const { timestamp: _ts, ...rest } = data.reading;
-      setLiveMetrics(rest);
-    }
-  }, [period]);
-
+  // Fetch dashboard data.
   useEffect(() => {
-    fetchDashboard().catch(() => {
-      // Offline-first: keep showing FALLBACK_READING values.
-    });
-  }, [fetchDashboard]);
-
-  const { refreshing, onRefresh } = usePullToRefresh(fetchDashboard);
+    let cancelled = false;
+    api
+      .get<DashboardData>(`/dashboard?period=${period}`)
+      .then((data) => {
+        if (cancelled) return;
+        setDashboard(data);
+        setCurrentKw(data.currentKw);
+        setIotOnline(data.iotOnline ?? false);
+        // Seed live metrics from the backend reading if present.
+        if (data.reading) {
+          const { timestamp: _ts, ...rest } = data.reading;
+          setLiveMetrics(rest);
+        }
+      })
+      .catch(() => {
+        // Offline-first: keep showing FALLBACK_READING values.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [period]);
 
   // Server health polling — immediate on mount, then every 15 seconds.
   useEffect(() => {
@@ -370,12 +369,9 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
-      <PullToRefresh
-        refreshing={refreshing}
-        onRefresh={onRefresh}
+      <ScrollView
         contentContainerStyle={styles.scroll}
-        indicatorColor={C.accent}
-        indicatorBackground={C.card}
+        showsVerticalScrollIndicator={false}
       >
         {/* Brand header — logo + interactive bell/profile */}
         <AppHeader />
@@ -416,7 +412,7 @@ export default function DashboardScreen() {
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Animated.View style={{ transform: [{ rotate: chevronRotate }] }}>
-                  <Ionicons name="chevron-down" size={20} color={C.sub} />
+                  <Ionicons name="chevron-down" size={20} color={colors.sub} />
                 </Animated.View>
               </TouchableOpacity>
             </View>
@@ -470,13 +466,13 @@ export default function DashboardScreen() {
           <View
             style={[
               styles.relayIconWrap,
-              { backgroundColor: relayOn ? "#0d2b22" : "#2b0d0d" },
+              { backgroundColor: relayOn ? colors.accent + "26" : colors.red + "26" },
             ]}
           >
             <Ionicons
               name="power"
               size={22}
-              color={relayOn ? C.accent : C.red}
+              color={relayOn ? colors.accent : colors.red}
             />
           </View>
           <View style={styles.relayTextWrap}>
@@ -493,8 +489,8 @@ export default function DashboardScreen() {
             value={relayOn}
             onValueChange={handleRelayToggle}
             disabled={relaySwitchDisabled}
-            trackColor={{ false: C.border, true: "#0d5c4a" }}
-            thumbColor={relayOn ? C.accent : C.sub}
+            trackColor={{ false: colors.border, true: colors.accent + "66" }}
+            thumbColor={relayOn ? colors.accent : colors.sub}
             accessibilityLabel="Master power relay"
           />
         </View>
@@ -502,7 +498,7 @@ export default function DashboardScreen() {
         {/* Device Cards */}
         {devices.length === 0 ? (
           <View style={styles.emptyStrip}>
-            <Ionicons name="flash-outline" size={16} color={C.sub} />
+            <Ionicons name="flash-outline" size={16} color={colors.sub} />
             <Text style={styles.emptyStripText}>
               No devices registered — add them in the Devices tab.
             </Text>
@@ -520,7 +516,7 @@ export default function DashboardScreen() {
                 <View
                   style={[
                     styles.statusDot,
-                    { backgroundColor: item.active ? C.accent : C.yellow },
+                    { backgroundColor: item.active ? colors.accent : colors.yellow },
                   ]}
                 />
                 <Text style={styles.deviceStatus}>
@@ -581,16 +577,16 @@ export default function DashboardScreen() {
               withHorizontalLines={true}
               fromZero
               chartConfig={{
-                backgroundColor: C.card,
-                backgroundGradientFrom: C.card,
-                backgroundGradientTo: C.card,
+                backgroundColor: colors.card,
+                backgroundGradientFrom: colors.card,
+                backgroundGradientTo: colors.card,
                 decimalPlaces: 1,
-                color: () => C.accent,
-                labelColor: () => C.sub,
+                color: () => colors.accent,
+                labelColor: () => colors.sub,
                 style: { borderRadius: 12 },
                 propsForDots: { r: "0" },
                 propsForBackgroundLines: {
-                  stroke: C.border,
+                  stroke: colors.border,
                   strokeDasharray: "4 4",
                 },
               }}
@@ -634,322 +630,324 @@ export default function DashboardScreen() {
         </View>
 
         <View style={{ height: 16 }} />
-      </PullToRefresh>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: C.bg,
-  },
-  scroll: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 12,
-  },
-  usageCard: {
-    backgroundColor: C.card,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-  },
-  usageCardTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
-  },
-  usageTopRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  usageLabel: {
-    color: C.sub,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  livePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#1a3d30",
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    gap: 5,
-  },
-  liveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: C.accent,
-  },
-  liveText: {
-    color: C.accent,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-  },
-  offlinePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#33384a",
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    gap: 5,
-  },
-  offlineDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: C.sub,
-  },
-  offlineText: {
-    color: C.sub,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-  },
-  chevronBtn: {
-    padding: 4,
-    alignItems: "center",
-    justifyContent: "center",
-    minWidth: 28,
-    minHeight: 28,
-  },
-  kwRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 6,
-    marginBottom: 8,
-  },
-  kwValue: {
-    color: C.text,
-    fontSize: 52,
-    fontWeight: "700",
-    lineHeight: 56,
-  },
-  kwUnit: {
-    color: C.text,
-    fontSize: 22,
-    fontWeight: "500",
-    marginBottom: 6,
-  },
-  totalToday: {
-    color: C.sub,
-    fontSize: 14,
-  },
-  // Metric grid: 3 columns.
-  metricGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: C.border,
-    paddingTop: 16,
-    gap: 0,
-  },
-  metricCell: {
-    width: "33.33%",
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    alignItems: "flex-start",
-  },
-  metricValue: {
-    color: C.text,
-    fontSize: 16,
-    fontWeight: "700",
-    lineHeight: 20,
-  },
-  metricUnit: {
-    color: C.sub,
-    fontSize: 12,
-    fontWeight: "400",
-  },
-  metricLabel: {
-    color: C.sub,
-    fontSize: 11,
-    marginTop: 3,
-  },
-  relayCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: C.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    gap: 12,
-  },
-  relayIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  relayTextWrap: {
-    flex: 1,
-  },
-  relayTitle: {
-    color: C.text,
-    fontSize: 15,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
-  relaySubtitle: {
-    color: C.sub,
-    fontSize: 12,
-  },
-  deviceList: {
-    gap: 10,
-    paddingRight: 4,
-    marginBottom: 24,
-  },
-  emptyStrip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: C.card,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 24,
-  },
-  emptyStripText: {
-    color: C.sub,
-    fontSize: 13,
-    flex: 1,
-  },
-  deviceCard: {
-    backgroundColor: C.card,
-    borderRadius: 14,
-    padding: 14,
-    width: 120,
-  },
-  deviceStatusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    marginBottom: 8,
-  },
-  statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  deviceStatus: {
-    color: C.sub,
-    fontSize: 12,
-  },
-  deviceName: {
-    color: C.text,
-    fontSize: 15,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  deviceWatts: {
-    color: C.text,
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    color: C.text,
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  periodSelector: {
-    flexDirection: "row",
-    backgroundColor: C.card,
-    borderRadius: 10,
-    padding: 3,
-  },
-  periodBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  periodBtnActive: {
-    backgroundColor: C.text,
-  },
-  periodLabel: {
-    color: C.sub,
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  periodLabelActive: {
-    color: C.bg,
-    fontWeight: "700",
-  },
-  chartCard: {
-    backgroundColor: C.card,
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  chart: {
-    borderRadius: 16,
-  },
-  consumersCard: {
-    backgroundColor: C.card,
-    borderRadius: 16,
-    padding: 16,
-    gap: 14,
-  },
-  consumerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  consumerDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  consumerName: {
-    color: C.text,
-    fontSize: 13,
-    width: 120,
-  },
-  consumerBarBg: {
-    flex: 1,
-    height: 6,
-    backgroundColor: C.border,
-    borderRadius: 3,
-    overflow: "hidden",
-  },
-  consumerBar: {
-    height: 6,
-    borderRadius: 3,
-  },
-  consumerRight: {
-    alignItems: "flex-end",
-    width: 60,
-  },
-  consumerPct: {
-    color: C.sub,
-    fontSize: 12,
-    textAlign: "right",
-  },
-  consumerCost: {
-    color: C.text,
-    fontSize: 11,
-    fontWeight: "600",
-    marginTop: 2,
-    textAlign: "right",
-  },
-});
+function createStyles(colors: ThemeColors, fontScale: number) {
+  return StyleSheet.create({
+    root: {
+      flex: 1,
+      backgroundColor: colors.bg,
+    },
+    scroll: {
+      paddingHorizontal: 16,
+      paddingTop: 8,
+    },
+    statusRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 12,
+    },
+    usageCard: {
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 20,
+      marginBottom: 16,
+    },
+    usageCardTop: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      marginBottom: 12,
+    },
+    usageTopRight: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    usageLabel: {
+      color: colors.sub,
+      fontSize: 14 * fontScale,
+      lineHeight: 20 * fontScale,
+    },
+    livePill: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.accentSoft,
+      borderRadius: 20,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      gap: 5,
+    },
+    liveDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+      backgroundColor: colors.accent,
+    },
+    liveText: {
+      color: colors.accent,
+      fontSize: 12 * fontScale,
+      fontWeight: "700",
+      letterSpacing: 0.5,
+    },
+    offlinePill: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surface,
+      borderRadius: 20,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      gap: 5,
+    },
+    offlineDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+      backgroundColor: colors.sub,
+    },
+    offlineText: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      fontWeight: "700",
+      letterSpacing: 0.5,
+    },
+    chevronBtn: {
+      padding: 4,
+      alignItems: "center",
+      justifyContent: "center",
+      minWidth: 28,
+      minHeight: 28,
+    },
+    kwRow: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      gap: 6,
+      marginBottom: 8,
+    },
+    kwValue: {
+      color: colors.text,
+      fontSize: 52 * fontScale,
+      fontWeight: "700",
+      lineHeight: 56 * fontScale,
+    },
+    kwUnit: {
+      color: colors.text,
+      fontSize: 22 * fontScale,
+      fontWeight: "500",
+      marginBottom: 6,
+    },
+    totalToday: {
+      color: colors.sub,
+      fontSize: 14 * fontScale,
+    },
+    // Metric grid: 3 columns.
+    metricGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      marginTop: 16,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      paddingTop: 16,
+      gap: 0,
+    },
+    metricCell: {
+      width: "33.33%",
+      paddingVertical: 8,
+      paddingHorizontal: 4,
+      alignItems: "flex-start",
+    },
+    metricValue: {
+      color: colors.text,
+      fontSize: 16 * fontScale,
+      fontWeight: "700",
+      lineHeight: 20 * fontScale,
+    },
+    metricUnit: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      fontWeight: "400",
+    },
+    metricLabel: {
+      color: colors.sub,
+      fontSize: 11 * fontScale,
+      marginTop: 3,
+    },
+    relayCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 16,
+      gap: 12,
+    },
+    relayIconWrap: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    relayTextWrap: {
+      flex: 1,
+    },
+    relayTitle: {
+      color: colors.text,
+      fontSize: 15 * fontScale,
+      fontWeight: "700",
+      marginBottom: 2,
+    },
+    relaySubtitle: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+    },
+    deviceList: {
+      gap: 10,
+      paddingRight: 4,
+      marginBottom: 24,
+    },
+    emptyStrip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      backgroundColor: colors.card,
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 24,
+    },
+    emptyStripText: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+      flex: 1,
+    },
+    deviceCard: {
+      backgroundColor: colors.card,
+      borderRadius: 14,
+      padding: 14,
+      width: 120,
+    },
+    deviceStatusRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      marginBottom: 8,
+    },
+    statusDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+    },
+    deviceStatus: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+    },
+    deviceName: {
+      color: colors.text,
+      fontSize: 15 * fontScale,
+      fontWeight: "600",
+      marginBottom: 4,
+    },
+    deviceWatts: {
+      color: colors.text,
+      fontSize: 18 * fontScale,
+      fontWeight: "700",
+    },
+    section: {
+      marginBottom: 24,
+    },
+    sectionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 12,
+    },
+    sectionTitle: {
+      color: colors.text,
+      fontSize: 18 * fontScale,
+      fontWeight: "700",
+    },
+    periodSelector: {
+      flexDirection: "row",
+      backgroundColor: colors.card,
+      borderRadius: 10,
+      padding: 3,
+    },
+    periodBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      borderRadius: 8,
+    },
+    periodBtnActive: {
+      backgroundColor: colors.text,
+    },
+    periodLabel: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+      fontWeight: "500",
+    },
+    periodLabelActive: {
+      color: colors.bg,
+      fontWeight: "700",
+    },
+    chartCard: {
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      overflow: "hidden",
+    },
+    chart: {
+      borderRadius: 16,
+    },
+    consumersCard: {
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 16,
+      gap: 14,
+    },
+    consumerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    consumerDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+    },
+    consumerName: {
+      color: colors.text,
+      fontSize: 13 * fontScale,
+      width: 120,
+    },
+    consumerBarBg: {
+      flex: 1,
+      height: 6,
+      backgroundColor: colors.border,
+      borderRadius: 3,
+      overflow: "hidden",
+    },
+    consumerBar: {
+      height: 6,
+      borderRadius: 3,
+    },
+    consumerRight: {
+      alignItems: "flex-end",
+      width: 60,
+    },
+    consumerPct: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      textAlign: "right",
+    },
+    consumerCost: {
+      color: colors.text,
+      fontSize: 11 * fontScale,
+      fontWeight: "600",
+      marginTop: 2,
+      textAlign: "right",
+    },
+  });
+}

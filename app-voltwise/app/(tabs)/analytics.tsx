@@ -19,20 +19,16 @@ import { api, AnalyticsData, MetricStat } from "../../lib/api";
 import Collapsible from "../../components/Collapsible";
 import { PullToRefresh } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
+import { useTheme } from "../../context/ThemeContext";
+import { useThemedStyles } from "../../components/themed";
+import type { ThemeColors } from "../../constants/theme";
 
-const C = {
-  bg: "#1a1f2e",
-  card: "#242b3d",
-  accent: "#00d4aa",
-  text: "#ffffff",
-  sub: "#9ca3af",
-  border: "#2d3448",
-  yellow: "#f59e0b",
-  red: "#ef4444",
-  blue: "#3b82f6",
-  purple: "#8b5cf6",
-  pink: "#ec4899",
-};
+// Decorative multi-series chart/legend colors with no equivalent semantic
+// theme token — kept as fixed accents rather than theme-derived.
+const CHART_BLUE = "#3b82f6";
+const CHART_PURPLE = "#8b5cf6";
+const CHART_PINK = "#ec4899";
+const CHART_GRAY = "#4b5563";
 
 const CIRCUMFERENCE = 502.655;
 const RADIUS = 80;
@@ -42,20 +38,24 @@ const STROKE_WIDTH = 24;
 
 // kwh/cost figures assume the same 87.4 kWh / ₱10.5 per kWh mock used by the
 // bill predictor fallback below, so the offline demo numbers stay consistent.
-const DONUT_SEGMENTS = [
-  { label: "Aircon", pct: 42, color: C.accent,    kwh: 36.71, cost: 385.46 },
-  { label: "Fridge", pct: 21, color: C.blue,      kwh: 18.35, cost: 192.68 },
-  { label: "Lights", pct: 14, color: C.yellow,    kwh: 12.24, cost: 128.52 },
-  { label: "Others", pct: 23, color: "#4b5563",   kwh: 20.10, cost: 211.05 },
-];
+function getDonutSegments(colors: ThemeColors) {
+  return [
+    { label: "Aircon", pct: 42, color: colors.accent, kwh: 36.71, cost: 385.46 },
+    { label: "Fridge", pct: 21, color: CHART_BLUE,     kwh: 18.35, cost: 192.68 },
+    { label: "Lights", pct: 14, color: colors.yellow,  kwh: 12.24, cost: 128.52 },
+    { label: "Others", pct: 23, color: CHART_GRAY,     kwh: 20.10, cost: 211.05 },
+  ];
+}
 
-const TOP_CONSUMERS = [
-  { id: "1", name: "Aircon",          pct: 42, color: C.accent, kwh: 36.71, cost: 385.46 },
-  { id: "2", name: "Fridge",          pct: 21, color: C.blue,   kwh: 18.35, cost: 192.68 },
-  { id: "3", name: "Lights",          pct: 14, color: C.yellow, kwh: 12.24, cost: 128.52 },
-  { id: "4", name: "Washing Machine", pct: 9,  color: C.purple, kwh: 7.87,  cost: 82.64  },
-  { id: "5", name: "Others",          pct: 5,  color: C.pink,   kwh: 4.37,  cost: 45.89  },
-];
+function getTopConsumers(colors: ThemeColors) {
+  return [
+    { id: "1", name: "Aircon",          pct: 42, color: colors.accent, kwh: 36.71, cost: 385.46 },
+    { id: "2", name: "Fridge",          pct: 21, color: CHART_BLUE,    kwh: 18.35, cost: 192.68 },
+    { id: "3", name: "Lights",          pct: 14, color: colors.yellow, kwh: 12.24, cost: 128.52 },
+    { id: "4", name: "Washing Machine", pct: 9,  color: CHART_PURPLE,  kwh: 7.87,  cost: 82.64  },
+    { id: "5", name: "Others",          pct: 5,  color: CHART_PINK,    kwh: 4.37,  cost: 45.89  },
+  ];
+}
 
 // ---- Offline-first fallback for PZEM-004T metrics ----
 // Avg/Min/Max are realistic 24-hour ranges; info strings match what the
@@ -134,16 +134,24 @@ type Period = "Day" | "Week" | "Month";
 const PERIODS: Period[] = ["Day", "Week", "Month"];
 
 // Accent colour per metric key for the label pill.
-const METRIC_ACCENT: Record<MetricStat["key"], string> = {
-  voltage:     C.accent,
-  current:     C.blue,
-  activePower: C.yellow,
-  energy:      C.purple,
-  frequency:   C.pink,
-  powerFactor: "#10b981",
-};
+function getMetricAccent(colors: ThemeColors): Record<MetricStat["key"], string> {
+  return {
+    voltage:     colors.accent,
+    current:     CHART_BLUE,
+    activePower: colors.yellow,
+    energy:      CHART_PURPLE,
+    frequency:   CHART_PINK,
+    powerFactor: colors.green,
+  };
+}
 
 export default function AnalyticsScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  const DONUT_SEGMENTS = getDonutSegments(colors);
+  const TOP_CONSUMERS = getTopConsumers(colors);
+  const METRIC_ACCENT = getMetricAccent(colors);
+
   const [period, setPeriod]     = useState<Period>("Day");
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -229,8 +237,8 @@ export default function AnalyticsScreen() {
         refreshing={refreshing}
         onRefresh={onRefresh}
         contentContainerStyle={styles.scroll}
-        indicatorColor={C.accent}
-        indicatorBackground={C.card}
+        indicatorColor={colors.accent}
+        indicatorBackground={colors.card}
       >
         <Text style={styles.heading}>Analytics</Text>
 
@@ -241,7 +249,7 @@ export default function AnalyticsScreen() {
             <Ionicons
               name="information-circle-outline"
               size={18}
-              color={C.sub}
+              color={colors.sub}
             />
           </View>
 
@@ -266,7 +274,7 @@ export default function AnalyticsScreen() {
               <Ionicons
                 name="create-outline"
                 size={14}
-                color={C.accent}
+                color={colors.accent}
                 style={{ marginLeft: 6 }}
               />
             </View>
@@ -312,7 +320,7 @@ export default function AnalyticsScreen() {
                 cy={CY}
                 r={RADIUS}
                 fill="none"
-                stroke={C.border}
+                stroke={colors.border}
                 strokeWidth={STROKE_WIDTH}
                 strokeDasharray={`${CIRCUMFERENCE} ${CIRCUMFERENCE}`}
                 strokeDashoffset={0}
@@ -377,7 +385,7 @@ export default function AnalyticsScreen() {
         <View style={[styles.card, styles.consumersCard]}>
           {topConsumers.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Ionicons name="alert-circle-outline" size={24} color={C.sub} style={{ marginBottom: 6 }} />
+              <Ionicons name="alert-circle-outline" size={24} color={colors.sub} style={{ marginBottom: 6 }} />
               <Text style={styles.emptyText}>No appliances connected or active at the moment.</Text>
             </View>
           ) : (
@@ -480,7 +488,7 @@ export default function AnalyticsScreen() {
           >
             <Pressable style={styles.modalCard} onPress={Keyboard.dismiss}>
               <View style={styles.modalIconWrap}>
-                <Ionicons name="calculator-outline" size={28} color={C.accent} />
+                <Ionicons name="calculator-outline" size={28} color={colors.accent} />
               </View>
 
               <Text style={styles.modalTitle}>Update Tariff Rate</Text>
@@ -499,7 +507,7 @@ export default function AnalyticsScreen() {
                     if (tariffError) setTariffError(null);
                   }}
                   placeholder="10.50"
-                  placeholderTextColor={C.sub}
+                  placeholderTextColor={colors.sub}
                   selectTextOnFocus
                   autoFocus
                   editable={!updatingTariff}
@@ -531,7 +539,7 @@ export default function AnalyticsScreen() {
                   disabled={updatingTariff}
                 >
                   {updatingTariff ? (
-                    <ActivityIndicator size="small" color="#1a1f2e" />
+                    <ActivityIndicator size="small" color={colors.bg} />
                   ) : (
                     <Text style={styles.modalSaveText}>Save</Text>
                   )}
@@ -545,417 +553,419 @@ export default function AnalyticsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: C.bg,
-  },
-  scroll: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 24,
-  },
-  heading: {
-    color: C.text,
-    fontSize: 28,
-    fontWeight: "700",
-    marginBottom: 20,
-  },
-  card: {
-    backgroundColor: C.card,
-    borderRadius: 16,
-    padding: 16,
-  },
-  billTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  billLabel: {
-    color: C.sub,
-    fontSize: 11,
-    fontWeight: "600",
-    letterSpacing: 1,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: C.border,
-    marginVertical: 12,
-  },
-  billRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  billRowLabel: {
-    color: C.sub,
-    fontSize: 13,
-  },
-  billRowValue: {
-    color: C.text,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  dashedValue: {
-    borderBottomWidth: 1,
-    borderBottomColor: C.sub,
-    borderStyle: "dashed",
-    paddingBottom: 1,
-  },
-  billEstRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-  },
-  billEstLabel: {
-    color: C.text,
-    fontSize: 15,
-    fontWeight: "700",
-    lineHeight: 22,
-  },
-  billAmountRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-  },
-  billCurrency: {
-    color: C.accent,
-    fontSize: 20,
-    marginBottom: 4,
-    marginRight: 2,
-  },
-  billAmount: {
-    color: C.accent,
-    fontSize: 36,
-    fontWeight: "800",
-    lineHeight: 40,
-  },
-  billFooter: {
-    color: C.sub,
-    fontSize: 11,
-    marginTop: 8,
-    lineHeight: 16,
-  },
-  sectionTitle: {
-    color: C.text,
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  donutCard: {
-    padding: 20,
-    alignItems: "center",
-  },
-  donutWrapper: {
-    width: 220,
-    height: 220,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  donutSvg: {
-    transform: [{ rotate: "-90deg" }],
-  },
-  donutCenter: {
-    position: "absolute",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  donutValue: {
-    color: C.text,
-    fontSize: 28,
-    fontWeight: "700",
-    lineHeight: 32,
-  },
-  donutUnit: {
-    color: C.sub,
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  donutTotal: {
-    color: C.sub,
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  legendGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginTop: 16,
-    width: "100%",
-  },
-  legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    width: "50%",
-    marginBottom: 8,
-    gap: 6,
-  },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  legendText: {
-    color: C.text,
-    fontSize: 13,
-  },
-  consumersHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  periodSelector: {
-    flexDirection: "row",
-    backgroundColor: C.card,
-    borderRadius: 10,
-    padding: 3,
-  },
-  periodBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  periodBtnActive: {
-    backgroundColor: C.text,
-  },
-  periodLabel: {
-    color: C.sub,
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  periodLabelActive: {
-    color: C.bg,
-    fontWeight: "700",
-  },
-  consumersCard: {
-    gap: 14,
-  },
-  consumerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  consumerName: {
-    color: C.text,
-    fontSize: 13,
-    width: 110,
-  },
-  consumerBarBg: {
-    flex: 1,
-    height: 6,
-    backgroundColor: C.border,
-    borderRadius: 3,
-    overflow: "hidden",
-  },
-  consumerBar: {
-    height: 6,
-    borderRadius: 3,
-  },
-  consumerRight: {
-    alignItems: "flex-end",
-    width: 68,
-  },
-  consumerPct: {
-    color: C.sub,
-    fontSize: 12,
-    textAlign: "right",
-  },
-  consumerCost: {
-    color: C.text,
-    fontSize: 11,
-    fontWeight: "600",
-    marginTop: 2,
-    textAlign: "right",
-  },
-  // ---- Sensor Metrics ----
-  metricCard: {
-    backgroundColor: C.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-  },
-  metricHeader: {
-    marginBottom: 12,
-  },
-  metricLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  metricAccentBar: {
-    width: 3,
-    height: 18,
-    borderRadius: 2,
-  },
-  metricName: {
-    color: C.text,
-    fontSize: 15,
-    fontWeight: "700",
-    flex: 1,
-  },
-  metricUnitBadge: {
-    color: C.sub,
-    fontSize: 12,
-    fontWeight: "600",
-    backgroundColor: C.bg,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    overflow: "hidden",
-  },
-  metricStatsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
-  },
-  metricStat: {
-    flex: 1,
-    alignItems: "center",
-  },
-  metricStatValue: {
-    color: C.text,
-    fontSize: 18,
-    fontWeight: "700",
-    lineHeight: 22,
-  },
-  metricStatLabel: {
-    color: C.sub,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  metricStatDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: C.border,
-  },
-  metricInfo: {
-    color: C.sub,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
-  },
-  modalCard: {
-    width: "100%",
-    maxWidth: 340,
-    backgroundColor: C.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: C.border,
-    padding: 24,
-    alignItems: "center",
-  },
-  modalIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "rgba(0,212,170,0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  modalTitle: {
-    color: C.text,
-    fontSize: 18,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 6,
-  },
-  modalMessage: {
-    color: C.sub,
-    fontSize: 13,
-    lineHeight: 18,
-    textAlign: "center",
-    marginBottom: 20,
-  },
-  inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: C.bg,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 54,
-    width: "100%",
-    marginBottom: 12,
-  },
-  currencyPrefix: {
-    color: C.accent,
-    fontSize: 18,
-    fontWeight: "700",
-    marginRight: 8,
-  },
-  tariffTextInput: {
-    flex: 1,
-    color: C.text,
-    fontSize: 18,
-    fontWeight: "600",
-    paddingVertical: 8,
-  },
-  unitSuffix: {
-    color: C.sub,
-    fontSize: 14,
-    fontWeight: "500",
-    marginLeft: 8,
-  },
-  errorText: {
-    color: C.red,
-    fontSize: 13,
-    fontWeight: "500",
-    marginBottom: 12,
-    textAlign: "center",
-  },
-  modalActions: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 8,
-    alignSelf: "stretch",
-  },
-  modalBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalCancelBtn: {
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: "transparent",
-  },
-  modalCancelText: {
-    color: C.sub,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  modalSaveBtn: {
-    backgroundColor: C.accent,
-  },
-  modalSaveText: {
-    color: "#1a1f2e",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  tariffValueContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  emptyContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 24,
-    gap: 4,
-  },
-  emptyText: {
-    color: C.sub,
-    fontSize: 13,
-    textAlign: "center",
-    lineHeight: 18,
-  },
-});
+function createStyles(colors: ThemeColors, fontScale: number) {
+  return StyleSheet.create({
+    root: {
+      flex: 1,
+      backgroundColor: colors.bg,
+    },
+    scroll: {
+      paddingHorizontal: 16,
+      paddingTop: 8,
+      paddingBottom: 24,
+    },
+    heading: {
+      color: colors.text,
+      fontSize: 28 * fontScale,
+      fontWeight: "700",
+      marginBottom: 20,
+    },
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 16,
+    },
+    billTopRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    billLabel: {
+      color: colors.sub,
+      fontSize: 11 * fontScale,
+      fontWeight: "600",
+      letterSpacing: 1,
+    },
+    divider: {
+      height: 1,
+      backgroundColor: colors.border,
+      marginVertical: 12,
+    },
+    billRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    billRowLabel: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+    },
+    billRowValue: {
+      color: colors.text,
+      fontSize: 13 * fontScale,
+      fontWeight: "600",
+    },
+    dashedValue: {
+      borderBottomWidth: 1,
+      borderBottomColor: colors.sub,
+      borderStyle: "dashed",
+      paddingBottom: 1,
+    },
+    billEstRow: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      justifyContent: "space-between",
+    },
+    billEstLabel: {
+      color: colors.text,
+      fontSize: 15 * fontScale,
+      fontWeight: "700",
+      lineHeight: 22 * fontScale,
+    },
+    billAmountRow: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+    },
+    billCurrency: {
+      color: colors.accent,
+      fontSize: 20 * fontScale,
+      marginBottom: 4,
+      marginRight: 2,
+    },
+    billAmount: {
+      color: colors.accent,
+      fontSize: 36 * fontScale,
+      fontWeight: "800",
+      lineHeight: 40 * fontScale,
+    },
+    billFooter: {
+      color: colors.sub,
+      fontSize: 11 * fontScale,
+      marginTop: 8,
+      lineHeight: 16 * fontScale,
+    },
+    sectionTitle: {
+      color: colors.text,
+      fontSize: 18 * fontScale,
+      fontWeight: "700",
+    },
+    donutCard: {
+      padding: 20,
+      alignItems: "center",
+    },
+    donutWrapper: {
+      width: 220,
+      height: 220,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    donutSvg: {
+      transform: [{ rotate: "-90deg" }],
+    },
+    donutCenter: {
+      position: "absolute",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    donutValue: {
+      color: colors.text,
+      fontSize: 28 * fontScale,
+      fontWeight: "700",
+      lineHeight: 32 * fontScale,
+    },
+    donutUnit: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      lineHeight: 16 * fontScale,
+    },
+    donutTotal: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      lineHeight: 16 * fontScale,
+    },
+    legendGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      marginTop: 16,
+      width: "100%",
+    },
+    legendItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      width: "50%",
+      marginBottom: 8,
+      gap: 6,
+    },
+    legendDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+    },
+    legendText: {
+      color: colors.text,
+      fontSize: 13 * fontScale,
+    },
+    consumersHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    periodSelector: {
+      flexDirection: "row",
+      backgroundColor: colors.card,
+      borderRadius: 10,
+      padding: 3,
+    },
+    periodBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      borderRadius: 8,
+    },
+    periodBtnActive: {
+      backgroundColor: colors.text,
+    },
+    periodLabel: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+      fontWeight: "500",
+    },
+    periodLabelActive: {
+      color: colors.bg,
+      fontWeight: "700",
+    },
+    consumersCard: {
+      gap: 14,
+    },
+    consumerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    consumerName: {
+      color: colors.text,
+      fontSize: 13 * fontScale,
+      width: 110,
+    },
+    consumerBarBg: {
+      flex: 1,
+      height: 6,
+      backgroundColor: colors.border,
+      borderRadius: 3,
+      overflow: "hidden",
+    },
+    consumerBar: {
+      height: 6,
+      borderRadius: 3,
+    },
+    consumerRight: {
+      alignItems: "flex-end",
+      width: 68,
+    },
+    consumerPct: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      textAlign: "right",
+    },
+    consumerCost: {
+      color: colors.text,
+      fontSize: 11 * fontScale,
+      fontWeight: "600",
+      marginTop: 2,
+      textAlign: "right",
+    },
+    // ---- Sensor Metrics ----
+    metricCard: {
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 12,
+    },
+    metricHeader: {
+      marginBottom: 12,
+    },
+    metricLabelRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    metricAccentBar: {
+      width: 3,
+      height: 18,
+      borderRadius: 2,
+    },
+    metricName: {
+      color: colors.text,
+      fontSize: 15 * fontScale,
+      fontWeight: "700",
+      flex: 1,
+    },
+    metricUnitBadge: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      fontWeight: "600",
+      backgroundColor: colors.bg,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 6,
+      overflow: "hidden",
+    },
+    metricStatsRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: 12,
+      paddingBottom: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    metricStat: {
+      flex: 1,
+      alignItems: "center",
+    },
+    metricStatValue: {
+      color: colors.text,
+      fontSize: 18 * fontScale,
+      fontWeight: "700",
+      lineHeight: 22 * fontScale,
+    },
+    metricStatLabel: {
+      color: colors.sub,
+      fontSize: 11 * fontScale,
+      marginTop: 2,
+    },
+    metricStatDivider: {
+      width: 1,
+      height: 32,
+      backgroundColor: colors.border,
+    },
+    metricInfo: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+      lineHeight: 20 * fontScale,
+    },
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 24,
+    },
+    modalCard: {
+      width: "100%",
+      maxWidth: 340,
+      backgroundColor: colors.card,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 24,
+      alignItems: "center",
+    },
+    modalIconWrap: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.accentSoft,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 16,
+    },
+    modalTitle: {
+      color: colors.text,
+      fontSize: 18 * fontScale,
+      fontWeight: "700",
+      textAlign: "center",
+      marginBottom: 6,
+    },
+    modalMessage: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+      lineHeight: 18 * fontScale,
+      textAlign: "center",
+      marginBottom: 20,
+    },
+    inputContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.bg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      height: 54,
+      width: "100%",
+      marginBottom: 12,
+    },
+    currencyPrefix: {
+      color: colors.accent,
+      fontSize: 18 * fontScale,
+      fontWeight: "700",
+      marginRight: 8,
+    },
+    tariffTextInput: {
+      flex: 1,
+      color: colors.text,
+      fontSize: 18 * fontScale,
+      fontWeight: "600",
+      paddingVertical: 8,
+    },
+    unitSuffix: {
+      color: colors.sub,
+      fontSize: 14 * fontScale,
+      fontWeight: "500",
+      marginLeft: 8,
+    },
+    errorText: {
+      color: colors.red,
+      fontSize: 13 * fontScale,
+      fontWeight: "500",
+      marginBottom: 12,
+      textAlign: "center",
+    },
+    modalActions: {
+      flexDirection: "row",
+      gap: 12,
+      marginTop: 8,
+      alignSelf: "stretch",
+    },
+    modalBtn: {
+      flex: 1,
+      height: 48,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    modalCancelBtn: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: "transparent",
+    },
+    modalCancelText: {
+      color: colors.sub,
+      fontSize: 15 * fontScale,
+      fontWeight: "700",
+    },
+    modalSaveBtn: {
+      backgroundColor: colors.accent,
+    },
+    modalSaveText: {
+      color: colors.bg,
+      fontSize: 15 * fontScale,
+      fontWeight: "700",
+    },
+    tariffValueContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    emptyContainer: {
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: 24,
+      gap: 4,
+    },
+    emptyText: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+      textAlign: "center",
+      lineHeight: 18 * fontScale,
+    },
+  });
+}

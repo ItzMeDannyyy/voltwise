@@ -15,18 +15,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../lib/api";
-
-const C = {
-  bg: "#1a1f2e",
-  card: "#242b3d",
-  accent: "#00d4aa",
-  text: "#ffffff",
-  sub: "#9ca3af",
-  border: "#2d3448",
-  red: "#ef4444",
-  inactive: "#6b7280",
-  green: "#22c55e",
-};
+import { useTheme } from "../../context/ThemeContext";
+import { useThemedStyles } from "../../components/themed";
+import type { ThemeColors } from "../../constants/theme";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -34,6 +25,8 @@ type Step = "email" | "reset";
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
 
   // Step state
   const [step, setStep] = useState<Step>("email");
@@ -181,7 +174,7 @@ export default function ForgotPasswordScreen() {
                 {/* Error banner */}
                 {error && (
                   <View style={styles.errorBanner}>
-                    <Ionicons name="warning-outline" size={16} color={C.red} />
+                    <Ionicons name="warning-outline" size={16} color={colors.red} />
                     <Text style={styles.errorBannerText}>{error}</Text>
                   </View>
                 )}
@@ -192,7 +185,7 @@ export default function ForgotPasswordScreen() {
                   <TextInput
                     style={[styles.input, emailError ? styles.inputError : null]}
                     placeholder="you@example.com"
-                    placeholderTextColor={C.inactive}
+                    placeholderTextColor={colors.inactive}
                     value={email}
                     onChangeText={(t) => {
                       setEmail(t);
@@ -217,7 +210,7 @@ export default function ForgotPasswordScreen() {
                   disabled={loading}
                 >
                   {loading ? (
-                    <ActivityIndicator size="small" color="#1a1f2e" />
+                    <ActivityIndicator size="small" color={colors.bg} />
                   ) : (
                     <Text style={styles.submitBtnText}>Continue</Text>
                   )}
@@ -227,7 +220,7 @@ export default function ForgotPasswordScreen() {
               <>
                 {/* Success state */}
                 <View style={styles.successIcon}>
-                  <Ionicons name="checkmark-circle" size={48} color={C.green} />
+                  <Ionicons name="checkmark-circle" size={48} color={colors.green} />
                 </View>
                 <Text style={styles.heading}>All done!</Text>
                 <Text style={styles.headingSub}>{successMessage}</Text>
@@ -251,7 +244,7 @@ export default function ForgotPasswordScreen() {
                 {/* Error banner */}
                 {error && (
                   <View style={styles.errorBanner}>
-                    <Ionicons name="warning-outline" size={16} color={C.red} />
+                    <Ionicons name="warning-outline" size={16} color={colors.red} />
                     <Text style={styles.errorBannerText}>{error}</Text>
                   </View>
                 )}
@@ -268,7 +261,7 @@ export default function ForgotPasswordScreen() {
                     <TextInput
                       style={styles.inputInner}
                       placeholder="Min. 6 characters"
-                      placeholderTextColor={C.inactive}
+                      placeholderTextColor={colors.inactive}
                       value={newPassword}
                       onChangeText={(t) => {
                         setNewPassword(t);
@@ -286,7 +279,7 @@ export default function ForgotPasswordScreen() {
                       <Ionicons
                         name={showNewPassword ? "eye-off-outline" : "eye-outline"}
                         size={20}
-                        color={C.inactive}
+                        color={colors.inactive}
                       />
                     </TouchableOpacity>
                   </View>
@@ -307,7 +300,7 @@ export default function ForgotPasswordScreen() {
                     <TextInput
                       style={styles.inputInner}
                       placeholder="Re-enter password"
-                      placeholderTextColor={C.inactive}
+                      placeholderTextColor={colors.inactive}
                       value={confirmPassword}
                       onChangeText={(t) => {
                         setConfirmPassword(t);
@@ -326,7 +319,7 @@ export default function ForgotPasswordScreen() {
                       <Ionicons
                         name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
                         size={20}
-                        color={C.inactive}
+                        color={colors.inactive}
                       />
                     </TouchableOpacity>
                   </View>
@@ -343,7 +336,7 @@ export default function ForgotPasswordScreen() {
                   disabled={loading}
                 >
                   {loading ? (
-                    <ActivityIndicator size="small" color="#1a1f2e" />
+                    <ActivityIndicator size="small" color={colors.bg} />
                   ) : (
                     <Text style={styles.submitBtnText}>Reset password</Text>
                   )}
@@ -369,143 +362,145 @@ export default function ForgotPasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: C.bg,
-  },
-  flex: {
-    flex: 1,
-  },
-  scroll: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 48,
-    paddingBottom: 32,
-    justifyContent: "center",
-  },
-  brandRow: {
-    alignItems: "center",
-    marginBottom: 40,
-  },
-  brandLogo: {
-    width: 240,
-    height: 96,
-  },
-  card: {
-    backgroundColor: C.card,
-    borderRadius: 20,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  heading: {
-    color: C.text,
-    fontSize: 24,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  headingSub: {
-    color: C.sub,
-    fontSize: 14,
-    marginBottom: 20,
-  },
-  emailHighlight: {
-    color: C.accent,
-    fontWeight: "600",
-  },
-  errorBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(239,68,68,0.12)",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(239,68,68,0.3)",
-    padding: 12,
-    marginBottom: 16,
-  },
-  errorBannerText: {
-    color: C.red,
-    fontSize: 14,
-    flex: 1,
-  },
-  successIcon: {
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  fieldGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    color: C.sub,
-    fontSize: 13,
-    fontWeight: "600",
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: C.bg,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 14,
-    height: 50,
-    color: C.text,
-    fontSize: 15,
-  },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: C.bg,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 14,
-    height: 50,
-  },
-  inputInner: {
-    flex: 1,
-    color: C.text,
-    fontSize: 15,
-    height: 50,
-  },
-  inputError: {
-    borderColor: C.red,
-  },
-  fieldError: {
-    color: C.red,
-    fontSize: 12,
-    marginTop: 4,
-  },
-  submitBtn: {
-    backgroundColor: C.accent,
-    borderRadius: 14,
-    height: 52,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 8,
-  },
-  submitBtnDisabled: {
-    opacity: 0.6,
-  },
-  submitBtnText: {
-    color: "#1a1f2e",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  switchRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 24,
-  },
-  switchText: {
-    color: C.sub,
-    fontSize: 14,
-  },
-  switchLink: {
-    color: C.accent,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-});
+function createStyles(colors: ThemeColors, fontScale: number) {
+  return StyleSheet.create({
+    root: {
+      flex: 1,
+      backgroundColor: colors.bg,
+    },
+    flex: {
+      flex: 1,
+    },
+    scroll: {
+      flexGrow: 1,
+      paddingHorizontal: 24,
+      paddingTop: 48,
+      paddingBottom: 32,
+      justifyContent: "center",
+    },
+    brandRow: {
+      alignItems: "center",
+      marginBottom: 40,
+    },
+    brandLogo: {
+      width: 240,
+      height: 96,
+    },
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: 20,
+      padding: 24,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    heading: {
+      color: colors.text,
+      fontSize: 24 * fontScale,
+      fontWeight: "700",
+      marginBottom: 4,
+    },
+    headingSub: {
+      color: colors.sub,
+      fontSize: 14 * fontScale,
+      marginBottom: 20,
+    },
+    emailHighlight: {
+      color: colors.accent,
+      fontWeight: "600",
+    },
+    errorBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      backgroundColor: colors.red + "1F",
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.red + "4D",
+      padding: 12,
+      marginBottom: 16,
+    },
+    errorBannerText: {
+      color: colors.red,
+      fontSize: 14 * fontScale,
+      flex: 1,
+    },
+    successIcon: {
+      alignItems: "center",
+      marginBottom: 12,
+    },
+    fieldGroup: {
+      marginBottom: 16,
+    },
+    label: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+      fontWeight: "600",
+      marginBottom: 6,
+    },
+    input: {
+      backgroundColor: colors.bg,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 14,
+      height: 50,
+      color: colors.text,
+      fontSize: 15 * fontScale,
+    },
+    inputRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.bg,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 14,
+      height: 50,
+    },
+    inputInner: {
+      flex: 1,
+      color: colors.text,
+      fontSize: 15 * fontScale,
+      height: 50,
+    },
+    inputError: {
+      borderColor: colors.red,
+    },
+    fieldError: {
+      color: colors.red,
+      fontSize: 12 * fontScale,
+      marginTop: 4,
+    },
+    submitBtn: {
+      backgroundColor: colors.accent,
+      borderRadius: 14,
+      height: 52,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 8,
+    },
+    submitBtnDisabled: {
+      opacity: 0.6,
+    },
+    submitBtnText: {
+      color: colors.bg,
+      fontSize: 16 * fontScale,
+      fontWeight: "700",
+    },
+    switchRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 24,
+    },
+    switchText: {
+      color: colors.sub,
+      fontSize: 14 * fontScale,
+    },
+    switchLink: {
+      color: colors.accent,
+      fontSize: 14 * fontScale,
+      fontWeight: "600",
+    },
+  });
+}
