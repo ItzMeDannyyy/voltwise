@@ -8,15 +8,9 @@ import {
   Pressable,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-
-const C = {
-  card: "#242b3d",
-  accent: "#00d4aa",
-  text: "#ffffff",
-  sub: "#9ca3af",
-  border: "#2d3448",
-  red: "#ef4444",
-};
+import { useTheme } from "../context/ThemeContext";
+import { useThemedStyles } from "./themed";
+import type { ThemeColors } from "../constants/theme";
 
 export interface ConfirmModalProps {
   visible: boolean;
@@ -43,8 +37,8 @@ export interface ConfirmModalProps {
 }
 
 /**
- * Reusable two-action confirmation dialog with the app's dark theme. Used for
- * the profile "Save changes?" prompt and the "Sign out" prompt.
+ * Reusable two-action confirmation dialog that follows the active theme. Used
+ * for the profile "Save changes?" prompt and the "Sign out" prompt.
  */
 export default function ConfirmModal({
   visible,
@@ -59,6 +53,8 @@ export default function ConfirmModal({
   onCancel,
   onDismiss,
 }: ConfirmModalProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const dismiss = onDismiss ?? onCancel;
 
   return (
@@ -76,10 +72,10 @@ export default function ConfirmModal({
             <View
               style={[
                 styles.iconWrap,
-                { backgroundColor: destructive ? "rgba(239,68,68,0.12)" : "rgba(0,212,170,0.12)" },
+                { backgroundColor: destructive ? colors.red + "1f" : colors.accentSoft },
               ]}
             >
-              <Ionicons name={icon} size={26} color={destructive ? C.red : C.accent} />
+              <Ionicons name={icon} size={26} color={destructive ? colors.red : colors.accent} />
             </View>
           )}
 
@@ -109,7 +105,7 @@ export default function ConfirmModal({
               {loading ? (
                 <ActivityIndicator
                   size="small"
-                  color={destructive ? "#ffffff" : "#1a1f2e"}
+                  color={destructive ? colors.white : colors.bg}
                 />
               ) : (
                 <Text
@@ -129,81 +125,83 @@ export default function ConfirmModal({
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 32,
-  },
-  card: {
-    width: "100%",
-    maxWidth: 360,
-    backgroundColor: C.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: C.border,
-    padding: 24,
-    alignItems: "center",
-  },
-  iconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 14,
-  },
-  title: {
-    color: C.text,
-    fontSize: 18,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 6,
-  },
-  message: {
-    color: C.sub,
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center",
-    marginBottom: 4,
-  },
-  actions: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 20,
-    alignSelf: "stretch",
-  },
-  btn: {
-    flex: 1,
-    height: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  cancelBtn: {
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: "transparent",
-  },
-  cancelText: {
-    color: C.sub,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  confirmBtn: {
-    backgroundColor: C.accent,
-  },
-  confirmBtnDestructive: {
-    backgroundColor: C.red,
-  },
-  confirmText: {
-    color: "#1a1f2e",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  confirmTextDestructive: {
-    color: "#ffffff",
-  },
-});
+function createStyles(colors: ThemeColors, fontScale: number) {
+  return StyleSheet.create({
+    backdrop: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 32,
+    },
+    card: {
+      width: "100%",
+      maxWidth: 360,
+      backgroundColor: colors.card,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 24,
+      alignItems: "center",
+    },
+    iconWrap: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 14,
+    },
+    title: {
+      color: colors.text,
+      fontSize: 18 * fontScale,
+      fontWeight: "700",
+      textAlign: "center",
+      marginBottom: 6,
+    },
+    message: {
+      color: colors.sub,
+      fontSize: 14 * fontScale,
+      lineHeight: 20 * fontScale,
+      textAlign: "center",
+      marginBottom: 4,
+    },
+    actions: {
+      flexDirection: "row",
+      gap: 12,
+      marginTop: 20,
+      alignSelf: "stretch",
+    },
+    btn: {
+      flex: 1,
+      height: 48,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    cancelBtn: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: "transparent",
+    },
+    cancelText: {
+      color: colors.sub,
+      fontSize: 15 * fontScale,
+      fontWeight: "700",
+    },
+    confirmBtn: {
+      backgroundColor: colors.accent,
+    },
+    confirmBtnDestructive: {
+      backgroundColor: colors.red,
+    },
+    confirmText: {
+      color: colors.bg,
+      fontSize: 15 * fontScale,
+      fontWeight: "700",
+    },
+    confirmTextDestructive: {
+      color: colors.white,
+    },
+  });
+}

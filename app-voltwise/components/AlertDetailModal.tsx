@@ -1,16 +1,8 @@
 import { Modal, View, Text, TouchableOpacity, ScrollView, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-
-const C = {
-  bg: "#1a1f2e",
-  card: "#242b3d",
-  accent: "#00d4aa",
-  text: "#ffffff",
-  sub: "#9ca3af",
-  border: "#2d3448",
-  yellow: "#f59e0b",
-  red: "#ef4444",
-};
+import { useTheme } from "../context/ThemeContext";
+import { useThemedStyles } from "./themed";
+import type { ThemeColors } from "../constants/theme";
 
 /**
  * Shape of an alert the detail modal can render. Kept structurally compatible
@@ -27,11 +19,11 @@ export interface AlertDetail {
   recommendation?: string;
 }
 
-function severityColor(type: AlertDetail["type"]): string {
+function severityColor(type: AlertDetail["type"], colors: ThemeColors): string {
   switch (type) {
-    case "critical": return C.red;
-    case "warning":  return C.yellow;
-    case "info":     return C.accent;
+    case "critical": return colors.red;
+    case "warning":  return colors.yellow;
+    case "info":     return colors.accent;
   }
 }
 
@@ -81,9 +73,12 @@ export function AlertDetailModal({
   /** Mark the alert as read (only shown while the alert is unread). */
   onMarkRead: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+
   if (!alert) return null;
 
-  const color = severityColor(alert.type);
+  const color = severityColor(alert.type, colors);
   const icon = severityIcon(alert.type);
 
   return (
@@ -119,13 +114,13 @@ export function AlertDetailModal({
                 <View
                   style={[
                     styles.statusPill,
-                    { backgroundColor: alert.read ? C.border : color },
+                    { backgroundColor: alert.read ? colors.border : color },
                   ]}
                 >
                   <Text
                     style={[
                       styles.statusPillText,
-                      { color: alert.read ? C.sub : "#fff" },
+                      { color: alert.read ? colors.sub : colors.white },
                     ]}
                   >
                     {alert.read ? "Read" : "Unread"}
@@ -133,12 +128,12 @@ export function AlertDetailModal({
                 </View>
               </View>
               <View style={styles.whenRow}>
-                <Ionicons name="time-outline" size={13} color={C.sub} />
+                <Ionicons name="time-outline" size={13} color={colors.sub} />
                 <Text style={styles.whenText}>{whenLabel(alert)}</Text>
               </View>
             </View>
             <TouchableOpacity onPress={onClose} hitSlop={10} style={styles.closeBtn}>
-              <Ionicons name="close" size={22} color={C.sub} />
+              <Ionicons name="close" size={22} color={colors.sub} />
             </TouchableOpacity>
           </View>
 
@@ -150,18 +145,18 @@ export function AlertDetailModal({
             contentContainerStyle={styles.bodyContent}
           >
             {/* What happened */}
-            <Section label="What happened">
+            <Section styles={styles} label="What happened">
               <Text style={styles.paragraph}>{alert.description}</Text>
             </Section>
 
             {/* Recommended action — only when the backend supplied one. */}
             {alert.recommendation && (
-              <Section label="Recommended action">
-                <View style={[styles.callout, { borderColor: C.accent + "55" }]}>
+              <Section styles={styles} label="Recommended action">
+                <View style={[styles.callout, { borderColor: colors.accent + "55" }]}>
                   <Ionicons
                     name="bulb-outline"
                     size={18}
-                    color={C.accent}
+                    color={colors.accent}
                     style={styles.calloutIcon}
                   />
                   <Text style={styles.calloutText}>{alert.recommendation}</Text>
@@ -170,7 +165,7 @@ export function AlertDetailModal({
             )}
 
             {/* Why this severity — helps the user gauge urgency. */}
-            <Section label={`Why this is a ${severityLabel(alert.type).toLowerCase()}`}>
+            <Section styles={styles} label={`Why this is a ${severityLabel(alert.type).toLowerCase()}`}>
               <Text style={styles.paragraph}>{severityMeaning(alert.type)}</Text>
             </Section>
           </ScrollView>
@@ -183,7 +178,7 @@ export function AlertDetailModal({
                 onPress={onMarkRead}
                 activeOpacity={0.85}
               >
-                <Ionicons name="checkmark-done" size={18} color={C.bg} />
+                <Ionicons name="checkmark-done" size={18} color={colors.bg} />
                 <Text style={styles.primaryBtnText}>Mark as read</Text>
               </TouchableOpacity>
             )}
@@ -202,7 +197,15 @@ export function AlertDetailModal({
 }
 
 /** A labelled block within the modal body. */
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
+function Section({
+  label,
+  children,
+  styles,
+}: {
+  label: string;
+  children: React.ReactNode;
+  styles: ReturnType<typeof createStyles>;
+}) {
   return (
     <View style={styles.section}>
       <Text style={styles.sectionLabel}>{label}</Text>
@@ -211,170 +214,172 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "flex-end",
-  },
-  sheet: {
-    backgroundColor: C.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 20,
-    maxHeight: "88%",
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    borderColor: C.border,
-  },
-  grabber: {
-    alignSelf: "center",
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: C.border,
-    marginBottom: 16,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  iconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  headerText: {
-    flex: 1,
-    gap: 6,
-  },
-  badgeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    flexWrap: "wrap",
-  },
-  severityPill: {
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  severityPillText: {
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0.4,
-  },
-  statusPill: {
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  statusPillText: {
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.4,
-  },
-  whenRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  whenText: {
-    color: C.sub,
-    fontSize: 13,
-  },
-  closeBtn: {
-    padding: 2,
-  },
-  title: {
-    color: C.text,
-    fontSize: 20,
-    fontWeight: "700",
-    lineHeight: 27,
-    marginTop: 16,
-  },
-  body: {
-    marginTop: 4,
-  },
-  bodyContent: {
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  section: {
-    marginBottom: 20,
-  },
-  sectionLabel: {
-    color: C.sub,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    marginBottom: 8,
-  },
-  paragraph: {
-    color: C.text,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  callout: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    backgroundColor: C.accent + "14",
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-  },
-  calloutIcon: {
-    marginTop: 1,
-    flexShrink: 0,
-  },
-  calloutText: {
-    flex: 1,
-    color: C.text,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  footer: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 8,
-  },
-  primaryBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: C.accent,
-    borderRadius: 14,
-    paddingVertical: 15,
-  },
-  primaryBtnText: {
-    color: C.bg,
-    fontSize: 15,
-    fontWeight: "800",
-  },
-  secondaryBtn: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: C.border,
-    borderRadius: 14,
-    paddingVertical: 15,
-  },
-  secondaryBtnFull: {
-    flex: 1,
-  },
-  secondaryBtnText: {
-    color: C.text,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-});
+function createStyles(colors: ThemeColors, fontScale: number) {
+  return StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: "flex-end",
+    },
+    sheet: {
+      backgroundColor: colors.card,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingHorizontal: 20,
+      paddingTop: 10,
+      paddingBottom: 20,
+      maxHeight: "88%",
+      borderWidth: 1,
+      borderBottomWidth: 0,
+      borderColor: colors.border,
+    },
+    grabber: {
+      alignSelf: "center",
+      width: 40,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: colors.border,
+      marginBottom: 16,
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 12,
+    },
+    iconCircle: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      alignItems: "center",
+      justifyContent: "center",
+      flexShrink: 0,
+    },
+    headerText: {
+      flex: 1,
+      gap: 6,
+    },
+    badgeRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      flexWrap: "wrap",
+    },
+    severityPill: {
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+    },
+    severityPillText: {
+      fontSize: 12 * fontScale,
+      fontWeight: "800",
+      letterSpacing: 0.4,
+    },
+    statusPill: {
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+    },
+    statusPillText: {
+      fontSize: 11 * fontScale,
+      fontWeight: "700",
+      letterSpacing: 0.4,
+    },
+    whenRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+    },
+    whenText: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+    },
+    closeBtn: {
+      padding: 2,
+    },
+    title: {
+      color: colors.text,
+      fontSize: 20 * fontScale,
+      fontWeight: "700",
+      lineHeight: 27 * fontScale,
+      marginTop: 16,
+    },
+    body: {
+      marginTop: 4,
+    },
+    bodyContent: {
+      paddingTop: 12,
+      paddingBottom: 8,
+    },
+    section: {
+      marginBottom: 20,
+    },
+    sectionLabel: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      fontWeight: "700",
+      letterSpacing: 1,
+      textTransform: "uppercase",
+      marginBottom: 8,
+    },
+    paragraph: {
+      color: colors.text,
+      fontSize: 15 * fontScale,
+      lineHeight: 22 * fontScale,
+    },
+    callout: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 10,
+      backgroundColor: colors.accent + "14",
+      borderWidth: 1,
+      borderRadius: 14,
+      padding: 14,
+    },
+    calloutIcon: {
+      marginTop: 1,
+      flexShrink: 0,
+    },
+    calloutText: {
+      flex: 1,
+      color: colors.text,
+      fontSize: 14 * fontScale,
+      lineHeight: 21 * fontScale,
+    },
+    footer: {
+      flexDirection: "row",
+      gap: 12,
+      marginTop: 8,
+    },
+    primaryBtn: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      backgroundColor: colors.accent,
+      borderRadius: 14,
+      paddingVertical: 15,
+    },
+    primaryBtnText: {
+      color: colors.bg,
+      fontSize: 15 * fontScale,
+      fontWeight: "800",
+    },
+    secondaryBtn: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.border,
+      borderRadius: 14,
+      paddingVertical: 15,
+    },
+    secondaryBtnFull: {
+      flex: 1,
+    },
+    secondaryBtnText: {
+      color: colors.text,
+      fontSize: 15 * fontScale,
+      fontWeight: "700",
+    },
+  });
+}

@@ -16,14 +16,9 @@ import ConfirmModal from "../../components/ConfirmModal";
 import { api, ApiAlert, ALERTS_CHANGED_EVENT, emitAlertsChanged } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { useMqtt } from "../../context/MqttContext";
-
-const COLORS = {
-  background: "#1a1f2e",
-  card: "#242b3d",
-  accent: "#00d4aa",
-  inactive: "#6b7280",
-  border: "#2d3448",
-};
+import { useTheme } from "../../context/ThemeContext";
+import { useThemedStyles } from "../../components/themed";
+import type { ThemeColors } from "../../constants/theme";
 
 function HapticTab(props: BottomTabBarButtonProps) {
   return (
@@ -41,6 +36,7 @@ function HapticTab(props: BottomTabBarButtonProps) {
 
 function AlertsBadge() {
   const [count, setCount] = useState(0);
+  const styles = useThemedStyles(createStyles);
 
   useEffect(() => {
     const load = () => {
@@ -107,6 +103,8 @@ function NewLoadPrompt() {
 
 export default function TabLayout() {
   const { isAuthenticated, isBootstrapping } = useAuth();
+  const { colors, fontScale } = useTheme();
+  const styles = useThemedStyles(createStyles);
 
   // Auth gate for the protected group: kick back to login on sign-out / 401
   // without requiring an app reload.
@@ -119,19 +117,19 @@ export default function TabLayout() {
       <Tabs
         screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: COLORS.accent,
-        tabBarInactiveTintColor: COLORS.inactive,
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.inactive,
         tabBarButton: HapticTab,
         tabBarStyle: {
-          backgroundColor: COLORS.card,
-          borderTopColor: COLORS.border,
+          backgroundColor: colors.card,
+          borderTopColor: colors.border,
           borderTopWidth: 1,
           height: Platform.OS === "ios" ? 84 : 64,
           paddingBottom: Platform.OS === "ios" ? 24 : 8,
           paddingTop: 8,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 11 * fontScale,
           fontWeight: "500",
           marginTop: 2,
         },
@@ -183,26 +181,28 @@ export default function TabLayout() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-  badge: {
-    position: "absolute",
-    top: -4,
-    right: -8,
-    backgroundColor: "#ef4444",
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 3,
-  },
-  badgeText: {
-    color: "#ffffff",
-    fontSize: 10,
-    fontWeight: "700",
-    lineHeight: 14,
-  },
-});
+function createStyles(colors: ThemeColors, fontScale: number) {
+  return StyleSheet.create({
+    root: {
+      flex: 1,
+    },
+    badge: {
+      position: "absolute",
+      top: -4,
+      right: -8,
+      backgroundColor: colors.red,
+      borderRadius: 8,
+      minWidth: 16,
+      height: 16,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 3,
+    },
+    badgeText: {
+      color: colors.white,
+      fontSize: 10 * fontScale,
+      fontWeight: "700",
+      lineHeight: 14,
+    },
+  });
+}

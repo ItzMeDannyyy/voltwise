@@ -1,12 +1,9 @@
 import { ActivityIndicator, Image, StyleSheet, View } from "react-native";
 import { Redirect } from "expo-router";
 import { useAuth } from "../context/AuthContext";
-
-const C = {
-  bg: "#1a1f2e",
-  accent: "#00d4aa",
-  sub: "#6b7280",
-};
+import { useTheme } from "../context/ThemeContext";
+import { useThemedStyles } from "../components/themed";
+import type { ThemeColors } from "../constants/theme";
 
 /**
  * Entry point for the app.
@@ -20,6 +17,8 @@ const C = {
  */
 export default function Index() {
   const { isBootstrapping, isAuthenticated } = useAuth();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
 
   if (isBootstrapping) {
     return (
@@ -29,7 +28,7 @@ export default function Index() {
           style={styles.logo}
           resizeMode="contain"
         />
-        <ActivityIndicator size="large" color={C.accent} style={styles.spinner} />
+        <ActivityIndicator size="large" color={colors.accent} style={styles.spinner} />
       </View>
     );
   }
@@ -41,19 +40,21 @@ export default function Index() {
   return <Redirect href="/(tabs)/dashboard" />;
 }
 
-const styles = StyleSheet.create({
-  splash: {
-    flex: 1,
-    backgroundColor: C.bg,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 24,
-  },
-  logo: {
-    width: 150,
-    height: 170,
-  },
-  spinner: {
-    marginTop: 8,
-  },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    splash: {
+      flex: 1,
+      backgroundColor: colors.bg,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 24,
+    },
+    logo: {
+      width: 150,
+      height: 170,
+    },
+    spinner: {
+      marginTop: 8,
+    },
+  });
+}

@@ -14,17 +14,9 @@ import {
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, ApiAlert, ALERTS_CHANGED_EVENT } from "../lib/api";
-
-const C = {
-  bg: "#1a1f2e",
-  card: "#242b3d",
-  accent: "#00d4aa",
-  text: "#ffffff",
-  sub: "#9ca3af",
-  border: "#2d3448",
-  yellow: "#f59e0b",
-  red: "#ef4444",
-};
+import { useTheme } from "../context/ThemeContext";
+import { useThemedStyles } from "./themed";
+import type { ThemeColors } from "../constants/theme";
 
 // The dropdown shows up to 5 banners at full height, then scrolls. These
 // constants translate that "5 visible" rule into a concrete max height.
@@ -33,15 +25,15 @@ const BANNER_GAP = 8;
 const MAX_VISIBLE = 5;
 const LIST_MAX_HEIGHT = BANNER_HEIGHT * MAX_VISIBLE + BANNER_GAP * (MAX_VISIBLE - 1);
 
-function severityColor(type: ApiAlert["type"]): string {
+function severityColor(type: ApiAlert["type"], colors: ThemeColors): string {
   switch (type) {
     case "critical":
-      return C.red;
+      return colors.red;
     case "warning":
-      return C.yellow;
+      return colors.yellow;
     case "info":
     default:
-      return C.accent;
+      return colors.accent;
   }
 }
 
@@ -69,6 +61,8 @@ function severityIcon(type: ApiAlert["type"]): keyof typeof Ionicons.glyphMap {
  */
 export default function AppHeader() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [alerts, setAlerts] = useState<ApiAlert[]>([]);
   const [open, setOpen] = useState(false);
   // Anchor coordinates measured from the bell so the bubble hangs under it.
@@ -129,7 +123,7 @@ export default function AppHeader() {
           }
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="notifications-outline" size={26} color={C.text} />
+          <Ionicons name="notifications-outline" size={26} color={colors.text} />
           {unread > 0 && (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{unread > 99 ? "99+" : unread}</Text>
@@ -145,7 +139,7 @@ export default function AppHeader() {
           accessibilityLabel="Open settings"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="settings-outline" size={24} color={C.text} />
+          <Ionicons name="settings-outline" size={24} color={colors.text} />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -155,7 +149,7 @@ export default function AppHeader() {
           accessibilityRole="button"
           accessibilityLabel="Open profile"
         >
-          <Ionicons name="person-outline" size={22} color={C.text} />
+          <Ionicons name="person-outline" size={22} color={colors.text} />
         </TouchableOpacity>
       </View>
 
@@ -186,7 +180,7 @@ export default function AppHeader() {
 
             {alerts.length === 0 ? (
               <View style={styles.empty}>
-                <Ionicons name="notifications-off-outline" size={24} color={C.sub} />
+                <Ionicons name="notifications-off-outline" size={24} color={colors.sub} />
                 <Text style={styles.emptyText}>You&apos;re all caught up</Text>
               </View>
             ) : (
@@ -196,7 +190,7 @@ export default function AppHeader() {
                 contentContainerStyle={styles.list}
               >
                 {alerts.map((a) => {
-                  const color = severityColor(a.type);
+                  const color = severityColor(a.type, colors);
                   return (
                     <TouchableOpacity
                       key={a.id}
@@ -228,7 +222,7 @@ export default function AppHeader() {
               activeOpacity={0.7}
             >
               <Text style={styles.footerText}>View all alerts</Text>
-              <Ionicons name="chevron-forward" size={14} color={C.accent} />
+              <Ionicons name="chevron-forward" size={14} color={colors.accent} />
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -237,174 +231,176 @@ export default function AppHeader() {
   );
 }
 
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 20,
-  },
-  logo: {
-    width: 240,
-    height: 72,
-    marginLeft: -20,
-  },
-  icons: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  iconBtn: {
-    padding: 4,
-  },
-  badge: {
-    position: "absolute",
-    top: -2,
-    right: -2,
-    backgroundColor: C.red,
-    borderRadius: 9,
-    minWidth: 18,
-    height: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 4,
-    borderWidth: 2,
-    borderColor: "#1a1f2e",
-  },
-  badgeText: {
-    color: "#ffffff",
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: C.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  backdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
-  },
-  bubble: {
-    position: "absolute",
-    width: 320,
-    maxWidth: Dimensions.get("window").width - 24,
-    backgroundColor: C.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  pointer: {
-    position: "absolute",
-    top: -7,
-    right: 18,
-    width: 14,
-    height: 14,
-    backgroundColor: C.card,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderColor: C.border,
-    transform: [{ rotate: "45deg" }],
-  },
-  bubbleHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 10,
-  },
-  bubbleTitle: {
-    color: C.text,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  headerCount: {
-    backgroundColor: C.red + "26",
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  headerCountText: {
-    color: C.red,
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  list: {
-    gap: BANNER_GAP,
-  },
-  banner: {
-    height: BANNER_HEIGHT,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: C.bg,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 10,
-  },
-  bannerUnread: {
-    borderColor: C.accent + "66",
-  },
-  bannerIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  bannerBody: {
-    flex: 1,
-  },
-  bannerTitle: {
-    color: C.text,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  bannerDesc: {
-    color: C.sub,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  bannerTime: {
-    color: C.sub,
-    fontSize: 11,
-    alignSelf: "flex-start",
-    marginTop: 2,
-  },
-  empty: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 28,
-    gap: 8,
-  },
-  emptyText: {
-    color: C.sub,
-    fontSize: 13,
-  },
-  footer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-    paddingVertical: 12,
-    marginTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: C.border,
-  },
-  footerText: {
-    color: C.accent,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-});
+function createStyles(colors: ThemeColors, fontScale: number) {
+  return StyleSheet.create({
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 20,
+    },
+    logo: {
+      width: 240,
+      height: 72,
+      marginLeft: -20,
+    },
+    icons: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+    },
+    iconBtn: {
+      padding: 4,
+    },
+    badge: {
+      position: "absolute",
+      top: -2,
+      right: -2,
+      backgroundColor: colors.red,
+      borderRadius: 9,
+      minWidth: 18,
+      height: 18,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 4,
+      borderWidth: 2,
+      borderColor: colors.bg,
+    },
+    badgeText: {
+      color: colors.white,
+      fontSize: 10 * fontScale,
+      fontWeight: "700",
+    },
+    avatar: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.card,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    backdrop: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+    },
+    bubble: {
+      position: "absolute",
+      width: 320,
+      maxWidth: Dimensions.get("window").width - 24,
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 12,
+      paddingTop: 12,
+      paddingBottom: 4,
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.35,
+      shadowRadius: 16,
+      elevation: 12,
+    },
+    pointer: {
+      position: "absolute",
+      top: -7,
+      right: 18,
+      width: 14,
+      height: 14,
+      backgroundColor: colors.card,
+      borderTopWidth: 1,
+      borderLeftWidth: 1,
+      borderColor: colors.border,
+      transform: [{ rotate: "45deg" }],
+    },
+    bubbleHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 10,
+    },
+    bubbleTitle: {
+      color: colors.text,
+      fontSize: 15 * fontScale,
+      fontWeight: "700",
+    },
+    headerCount: {
+      backgroundColor: colors.red + "26",
+      borderRadius: 10,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+    },
+    headerCountText: {
+      color: colors.red,
+      fontSize: 11 * fontScale,
+      fontWeight: "700",
+    },
+    list: {
+      gap: BANNER_GAP,
+    },
+    banner: {
+      height: BANNER_HEIGHT,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      backgroundColor: colors.bg,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 10,
+    },
+    bannerUnread: {
+      borderColor: colors.accent + "66",
+    },
+    bannerIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    bannerBody: {
+      flex: 1,
+    },
+    bannerTitle: {
+      color: colors.text,
+      fontSize: 13 * fontScale,
+      fontWeight: "600",
+    },
+    bannerDesc: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      marginTop: 2,
+    },
+    bannerTime: {
+      color: colors.sub,
+      fontSize: 11 * fontScale,
+      alignSelf: "flex-start",
+      marginTop: 2,
+    },
+    empty: {
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: 28,
+      gap: 8,
+    },
+    emptyText: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+    },
+    footer: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+      paddingVertical: 12,
+      marginTop: 4,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    footerText: {
+      color: colors.accent,
+      fontSize: 13 * fontScale,
+      fontWeight: "600",
+    },
+  });
+}
