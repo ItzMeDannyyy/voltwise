@@ -43,6 +43,7 @@ const GROUPS: SettingGroup[] = [
         icon: "speedometer-outline",
         title: "Units & Tariff",
         subtitle: "Energy units and electricity rate",
+        href: "/units-settings",
       },
     ],
   },

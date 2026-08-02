@@ -24,6 +24,7 @@ import { api, ApiDevice, ApiDeviceReading, resolveAssetUrl } from "../../lib/api
 import { PullToRefresh, PullToRefreshList } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useTheme } from "../../context/ThemeContext";
+import { useUnits } from "../../context/UnitsContext";
 import { useThemedStyles } from "../../components/themed";
 import type { ThemeColors } from "../../constants/theme";
 
@@ -53,10 +54,6 @@ function getStatusColors(colors: ThemeColors): Record<DeviceStatus, string> {
   };
 }
 
-function formatWatts(watts: number): string {
-  return watts >= 1000 ? `${(watts / 1000).toFixed(1)}kW` : `${watts}W`;
-}
-
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -64,6 +61,7 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 export default function DevicesScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const { formatPower, formatEnergy, formatCostOf } = useUnits();
   const STATUS_COLORS = getStatusColors(colors);
 
   const [devices, setDevices] = useState<Device[]>([]);
@@ -359,9 +357,11 @@ export default function DevicesScreen() {
             { label: "Current", value: `${reading.current?.toFixed(2) ?? "—"} A` },
             { label: "Frequency", value: `${reading.frequency?.toFixed(1) ?? "—"} Hz` },
             { label: "Power Factor", value: reading.powerFactor?.toFixed(2) ?? "—" },
-            { label: "kWh Today", value: `${reading.todayKwh.toFixed(3)} kWh` },
-            { label: "Watts Live", value: `${reading.watts.toFixed(0)} W` },
-            { label: "Cost Today", value: `₱${reading.costToday.toFixed(2)}` },
+            { label: "Energy Today", value: formatEnergy(reading.todayKwh, 3) },
+            { label: "Power Live", value: formatPower(reading.watts) },
+            // Priced locally from kWh so the figure tracks the tariff the user
+            // set, not whichever rate the server had when it answered.
+            { label: "Cost Today", value: formatCostOf(reading.todayKwh) },
           ]
         : [];
 
@@ -390,7 +390,7 @@ export default function DevicesScreen() {
               </View>
             </View>
             <View style={styles.bannerCardRight}>
-              <Text style={styles.watts}>{formatWatts(device.watts)}</Text>
+              <Text style={styles.watts}>{formatPower(device.watts)}</Text>
               <Switch
                 value={device.enabled}
                 onValueChange={(val) => handleToggle(device.id, val)}
@@ -462,7 +462,7 @@ export default function DevicesScreen() {
                 {device.status}
               </Text>
             </View>
-            <Text style={styles.watts}>{formatWatts(device.watts)}</Text>
+            <Text style={styles.watts}>{formatPower(device.watts)}</Text>
           </View>
         </View>
       </View>
