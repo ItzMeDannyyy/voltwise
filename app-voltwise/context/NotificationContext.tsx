@@ -86,6 +86,8 @@ interface NotificationContextValue {
   setHaptics: (value: boolean) => void;
   setNewLoadPrompt: (value: boolean) => void;
   setQuietHours: (patch: Partial<QuietHours>) => void;
+  /** Restores every preference to its default, live and persisted. */
+  resetPrefs: () => void;
 
   /** Master + severity — for badges and lists. Quiet hours does NOT apply. */
   isAlertVisible: (alert: Pick<ApiAlert, "type">) => boolean;
@@ -235,6 +237,19 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     });
   }, []);
 
+  /**
+   * Restores every preference at once. Exists for the Data & Export reset,
+   * which has to put the live app back to its defaults — clearing storage alone
+   * would leave the running provider on the old values until the next launch.
+   * Does not touch the notified-alert high-water mark: that is engine
+   * bookkeeping rather than a preference, and it is cleared at the storage
+   * level by lib/local-data.ts.
+   */
+  const resetPrefs = useCallback(() => {
+    setPrefsState(DEFAULT_NOTIFICATION_PREFS);
+    saveNotificationPrefs(DEFAULT_NOTIFICATION_PREFS).catch(() => {});
+  }, []);
+
   // ---- The banner engine ----
 
   const present = useCallback(async (alert: ApiAlert) => {
@@ -373,6 +388,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       setHaptics,
       setNewLoadPrompt,
       setQuietHours,
+      resetPrefs,
       isAlertVisible,
       shouldNotify,
     }),
@@ -387,6 +403,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       setHaptics,
       setNewLoadPrompt,
       setQuietHours,
+      resetPrefs,
       isAlertVisible,
       shouldNotify,
     ]

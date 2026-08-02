@@ -60,6 +60,11 @@ interface UnitsContextValue {
   setCurrency: (code: string) => Promise<boolean>;
   /** Persists locally, then pushes to the backend. Resolves false if the push failed. */
   setRatePerKwh: (rate: number) => Promise<boolean>;
+  /**
+   * Restores the display units only. The rate and currency are account data and
+   * survive — see resetDisplayUnits below.
+   */
+  resetDisplayUnits: () => void;
 
   // Formatters bound to the current preferences.
   formatPower: (watts: number) => string;
@@ -173,6 +178,22 @@ export function UnitsProvider({ children }: { children: React.ReactNode }) {
     [update, pushTariff, prefs.ratePerKwh]
   );
 
+  /**
+   * Puts the display half back to its defaults for the Data & Export reset.
+   *
+   * Stops at the split this provider is built around: powerUnit and energyUnit
+   * are this device's opinion and are safe to discard, while ratePerKwh and the
+   * currency are the account's. Resetting those would push a new Tariff row to
+   * the server, so a user who reset their theme would find their electricity
+   * rate silently back at 10.5 — on every device they own.
+   */
+  const resetDisplayUnits = useCallback(() => {
+    update({
+      powerUnit: DEFAULT_UNIT_PREFS.powerUnit,
+      energyUnit: DEFAULT_UNIT_PREFS.energyUnit,
+    });
+  }, [update]);
+
   // ---- Bound formatters ----
 
   const value = useMemo<UnitsContextValue>(
@@ -184,6 +205,7 @@ export function UnitsProvider({ children }: { children: React.ReactNode }) {
       setEnergyUnit,
       setCurrency,
       setRatePerKwh,
+      resetDisplayUnits,
       formatPower: (watts) => formatPowerRule(watts, prefs),
       formatEnergy: (kwh, decimals) => formatEnergyRule(kwh, prefs, decimals),
       formatCost: (amount) => formatCostRule(amount, prefs),
@@ -193,7 +215,15 @@ export function UnitsProvider({ children }: { children: React.ReactNode }) {
       powerParts: (watts) => powerPartsRule(watts, prefs),
       energyParts: (kwh, decimals) => energyPartsRule(kwh, prefs, decimals),
     }),
-    [prefs, isReady, setPowerUnit, setEnergyUnit, setCurrency, setRatePerKwh]
+    [
+      prefs,
+      isReady,
+      setPowerUnit,
+      setEnergyUnit,
+      setCurrency,
+      setRatePerKwh,
+      resetDisplayUnits,
+    ]
   );
 
   return <UnitsContext.Provider value={value}>{children}</UnitsContext.Provider>;
