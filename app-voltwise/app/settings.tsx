@@ -1,5 +1,6 @@
 import { View, Text, ScrollView, StyleSheet, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter, type Href } from "expo-router";
 import { ScreenContainer, useThemedStyles } from "../components/themed";
 import { useTheme } from "../context/ThemeContext";
 import {
@@ -19,6 +20,8 @@ type SettingItem = {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle: string;
+  /** Present means the row is live and navigates; absent means "Soon". */
+  href?: Href;
 };
 
 type SettingGroup = {
@@ -33,7 +36,8 @@ const GROUPS: SettingGroup[] = [
       {
         icon: "notifications-outline",
         title: "Notifications",
-        subtitle: "Choose which alerts push to your device",
+        subtitle: "Choose which alerts reach your device",
+        href: "/notification-settings",
       },
       {
         icon: "speedometer-outline",
@@ -117,6 +121,7 @@ function SegmentedControl<T extends string>({
 export default function SettingsScreen() {
   const { colors, mode, setMode, fontSize, setFontSize } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const router = useRouter();
 
   return (
     <ScreenContainer edges={["bottom"]}>
@@ -161,8 +166,8 @@ export default function SettingsScreen() {
         <View style={styles.banner}>
           <Ionicons name="construct-outline" size={18} color={colors.accent} />
           <Text style={styles.bannerText}>
-            The rest of Settings is on the way. These controls are placeholders and
-            will be wired up in an upcoming release.
+            Most of the rest of Settings is on the way. Rows marked &ldquo;Soon&rdquo; are
+            placeholders and will be wired up in an upcoming release.
           </Text>
         </View>
 
@@ -170,26 +175,41 @@ export default function SettingsScreen() {
           <View key={group.heading} style={styles.group}>
             <Text style={styles.groupHeading}>{group.heading}</Text>
             <View style={styles.card}>
-              {group.items.map((item, idx) => (
-                <View
-                  key={item.title}
-                  style={[
-                    styles.row,
-                    idx < group.items.length - 1 && styles.rowDivider,
-                  ]}
-                >
-                  <View style={styles.rowIcon}>
-                    <Ionicons name={item.icon} size={20} color={colors.sub} />
+              {group.items.map((item, idx) => {
+                const divider = idx < group.items.length - 1 && styles.rowDivider;
+                const body = (
+                  <>
+                    <View style={styles.rowIcon}>
+                      <Ionicons name={item.icon} size={20} color={colors.sub} />
+                    </View>
+                    <View style={styles.rowBody}>
+                      <Text style={styles.rowTitle}>{item.title}</Text>
+                      <Text style={styles.rowSubtitle}>{item.subtitle}</Text>
+                    </View>
+                  </>
+                );
+
+                // Live rows navigate; the rest keep the dimmed "Soon" treatment.
+                return item.href ? (
+                  <Pressable
+                    key={item.title}
+                    style={[styles.row, divider]}
+                    onPress={() => router.push(item.href!)}
+                    accessibilityRole="button"
+                    accessibilityLabel={item.title}
+                  >
+                    {body}
+                    <Ionicons name="chevron-forward" size={18} color={colors.sub} />
+                  </Pressable>
+                ) : (
+                  <View key={item.title} style={[styles.row, styles.rowDisabled, divider]}>
+                    {body}
+                    <View style={styles.soonBadge}>
+                      <Text style={styles.soonBadgeText}>Soon</Text>
+                    </View>
                   </View>
-                  <View style={styles.rowBody}>
-                    <Text style={styles.rowTitle}>{item.title}</Text>
-                    <Text style={styles.rowSubtitle}>{item.subtitle}</Text>
-                  </View>
-                  <View style={styles.soonBadge}>
-                    <Text style={styles.soonBadgeText}>Soon</Text>
-                  </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           </View>
         ))}
@@ -248,6 +268,9 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       gap: 14,
       paddingHorizontal: 16,
       paddingVertical: 16,
+    },
+    // Only the not-yet-built rows are dimmed; live rows render at full opacity.
+    rowDisabled: {
       opacity: 0.65,
     },
     rowDivider: {

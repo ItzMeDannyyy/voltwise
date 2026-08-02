@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
+import * as Haptics from "expo-haptics";
+import { useNotifications } from "../context/NotificationContext";
 import { useTheme } from "../context/ThemeContext";
 import { useThemedStyles } from "./themed";
 import type { ThemeColors } from "../constants/theme";
@@ -68,6 +70,7 @@ export function AnomalyModal({
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const { prefs } = useNotifications();
   const prevTitle     = useRef<string | null>(null);
   const prevCountdown = useRef(countdown);
 
@@ -78,11 +81,16 @@ export function AnomalyModal({
     const newAlert     = prevTitle.current !== alert.title;
     const newCountdown = prevCountdown.current !== countdown;
 
-    if (newAlert || newCountdown) playSound("beep");
+    if (newAlert || newCountdown) {
+      if (prefs.sound) playSound("beep");
+      if (prefs.haptics && newAlert) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      }
+    }
 
     prevTitle.current     = alert.title;
     prevCountdown.current = countdown;
-  }, [alert, countdown, powerOff]);
+  }, [alert, countdown, powerOff, prefs.sound, prefs.haptics]);
 
   // Clear refs when modal closes.
   useEffect(() => {
@@ -94,8 +102,8 @@ export function AnomalyModal({
 
   // Descending power-off tone.
   useEffect(() => {
-    if (powerOff) playSound("poweroff");
-  }, [powerOff]);
+    if (powerOff && prefs.sound) playSound("poweroff");
+  }, [powerOff, prefs.sound]);
 
   if (!alert) return null;
   const color = severityColor(alert.type, colors);
