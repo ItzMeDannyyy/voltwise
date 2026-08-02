@@ -33,14 +33,16 @@ export default function PullToRefreshList<ItemT>({
   });
 
   return (
-    <GestureDetector gesture={composedGesture}>
-      <View style={[styles.root, wrapperStyle]}>
-        <RefreshIndicator
-          pullDistance={pullDistance}
-          triggerDistance={TRIGGER_DISTANCE}
-          refreshing={refreshing}
-          color={indicatorColor}
-        />
+    <View style={[styles.root, wrapperStyle]}>
+      <RefreshIndicator
+        pullDistance={pullDistance}
+        triggerDistance={TRIGGER_DISTANCE}
+        refreshing={refreshing}
+        color={indicatorColor}
+      />
+      {/* Wraps the list itself, not the container — see the note in
+          PullToRefresh.tsx: Gesture.Native() must bind to the scrollable. */}
+      <GestureDetector gesture={composedGesture}>
         <Animated.FlatList<ItemT>
           {...flatListProps}
           onScroll={scrollHandler}
@@ -49,8 +51,8 @@ export default function PullToRefreshList<ItemT>({
           bounces={Platform.OS === "ios" ? false : undefined}
           overScrollMode={Platform.OS === "android" ? "never" : undefined}
         />
-      </View>
-    </GestureDetector>
+      </GestureDetector>
+    </View>
   );
 }
 
