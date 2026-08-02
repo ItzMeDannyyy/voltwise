@@ -102,6 +102,8 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  put: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
@@ -261,6 +263,13 @@ export interface IotStatus {
     powerFactor?: number;
   } | null;
   lastTelemetryAt: string | null;
+}
+
+/** GET/PUT /api/analytics/tariff — the user's currently effective rate plan. */
+export interface TariffInfo {
+  ratePerKwh: number;
+  /** A display symbol ("₱", "$"), not an ISO code. */
+  currency: string;
 }
 
 export interface AnalyticsData {

@@ -21,6 +21,7 @@ import AppHeader from "../../components/AppHeader";
 import { PullToRefresh } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useTheme } from "../../context/ThemeContext";
+import { useUnits } from "../../context/UnitsContext";
 import { useThemedStyles } from "../../components/themed";
 import type { ThemeColors } from "../../constants/theme";
 
@@ -150,6 +151,7 @@ const RELAY_REASON_LABELS: Record<string, string> = {
 export default function DashboardScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const { formatPower, formatEnergy, formatCostOf, powerParts, energyParts } = useUnits();
   const [currentKw, setCurrentKw]         = useState(3.24);
   const [period, setPeriod]               = useState<Period>("Day");
   const [dashboard, setDashboard]         = useState<DashboardData | null>(null);
@@ -476,11 +478,12 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.kwRow}>
-            <Text style={styles.kwValue}>{currentKw.toFixed(2)}</Text>
-            <Text style={styles.kwUnit}>kW</Text>
+            {/* currentKw is kW; the formatter works in watts. */}
+            <Text style={styles.kwValue}>{powerParts(currentKw * 1000).value}</Text>
+            <Text style={styles.kwUnit}>{powerParts(currentKw * 1000).unit}</Text>
           </View>
           <Text style={styles.totalToday}>
-            Total today: {totalToday.toFixed(1)} kWh
+            Total today: {formatEnergy(totalToday, 1)}
           </Text>
 
           {/* Collapsible metric grid — 3 columns x 2 rows */}
@@ -503,12 +506,19 @@ export default function DashboardScreen() {
             >
               {METRIC_DEFS.map((def) => {
                 const raw = liveMetrics[def.key];
-                const display = raw.toFixed(def.decimals);
+                // Active power and energy follow the unit preferences; the
+                // other four (V, A, Hz, PF) have no alternative unit to pick.
+                const parts =
+                  def.key === "activePower"
+                    ? powerParts(raw)
+                    : def.key === "energy"
+                      ? energyParts(raw, def.decimals)
+                      : { value: raw.toFixed(def.decimals), unit: def.unit };
                 return (
                   <View key={def.key} style={styles.metricCell}>
                     <Text style={styles.metricValue}>
-                      {display}
-                      <Text style={styles.metricUnit}> {def.unit}</Text>
+                      {parts.value}
+                      <Text style={styles.metricUnit}> {parts.unit}</Text>
                     </Text>
                     <Text style={styles.metricLabel}>{def.label}</Text>
                   </View>
@@ -617,11 +627,7 @@ export default function DashboardScreen() {
                 </Text>
               </View>
               <Text style={styles.deviceName}>{item.name}</Text>
-              <Text style={styles.deviceWatts}>
-                {item.watts >= 1000
-                  ? `${(item.watts / 1000).toFixed(1).replace(".0", "")}kW`
-                  : `${item.watts}W`}
-              </Text>
+              <Text style={styles.deviceWatts}>{formatPower(item.watts)}</Text>
             </View>
           )}
         />
@@ -715,7 +721,9 @@ export default function DashboardScreen() {
                 </View>
                 <View style={styles.consumerRight}>
                   <Text style={styles.consumerPct}>{item.pct}%</Text>
-                  <Text style={styles.consumerCost}>₱{item.cost.toFixed(2)}</Text>
+                  {/* Priced from kWh at the user's own tariff rather than the
+                      API's cost field, so a rate change shows up immediately. */}
+                  <Text style={styles.consumerCost}>{formatCostOf(item.kwh)}</Text>
                 </View>
               </View>
             ))}

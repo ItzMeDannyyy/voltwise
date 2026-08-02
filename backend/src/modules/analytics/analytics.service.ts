@@ -377,6 +377,18 @@ export const getAnalyticsData = async (
   };
 };
 
+// Documentation only: Reads the authenticated user's currently effective rate plan.
+// Exists so the mobile app's Units & Tariff settings screen can show the live rate
+// without pulling the full analytics payload (readings aggregation, breakdown,
+// metrics) just to read two scalars.
+// Accepts userId (number).
+// Returns a Promise resolving to { ratePerKwh: number, currency: string }.
+export const getTariff = async (
+  userId: number
+): Promise<{ ratePerKwh: number; currency: string }> => {
+  return getLatestTariff(userId);
+};
+
 // Documentation only: Creates a new tariff record for the authenticated user.
 // Also updates the current open billing period's tariff rate if one is active.
 // Accepts userId (number), ratePerKwh (number), and optional currency (string).

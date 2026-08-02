@@ -20,6 +20,15 @@ import Collapsible from "../../components/Collapsible";
 import { PullToRefresh } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useTheme } from "../../context/ThemeContext";
+import { useUnits } from "../../context/UnitsContext";
+import {
+  energyIn,
+  parseRate,
+  powerIn,
+  resolvePowerUnit,
+  MAX_RATE_PER_KWH,
+  MIN_RATE_PER_KWH,
+} from "../../lib/unit-prefs";
 import { useThemedStyles } from "../../components/themed";
 import type { ThemeColors } from "../../constants/theme";
 
@@ -36,8 +45,10 @@ const CX = 110;
 const CY = 110;
 const STROKE_WIDTH = 24;
 
-// kwh/cost figures assume the same 87.4 kWh / ₱10.5 per kWh mock used by the
-// bill predictor fallback below, so the offline demo numbers stay consistent.
+// kWh figures split the same 87.4 kWh the bill predictor fallback below uses,
+// so the offline demo numbers stay consistent. The cost fields are vestigial —
+// every cost shown is derived from kwh at the user's own tariff — but they are
+// kept so these literals still satisfy the ConsumerSlice shape.
 function getDonutSegments(colors: ThemeColors) {
   return [
     { label: "Aircon", pct: 42, color: colors.accent, kwh: 36.71, cost: 385.46 },
@@ -148,6 +159,7 @@ function getMetricAccent(colors: ThemeColors): Record<MetricStat["key"], string>
 export default function AnalyticsScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const { prefs, currency, setRatePerKwh, costOf, formatCostOf, energyParts } = useUnits();
   const DONUT_SEGMENTS = getDonutSegments(colors);
   const TOP_CONSUMERS = getTopConsumers(colors);
   const METRIC_ACCENT = getMetricAccent(colors);
@@ -182,45 +194,34 @@ export default function AnalyticsScreen() {
   const topConsumers = analytics !== null ? analytics.topConsumers : TOP_CONSUMERS;
   const totalKwh     = analytics?.totalKwh     ?? 87.4;
   const metrics      = analytics?.metrics      ?? FALLBACK_METRICS;
+  // The rate and currency are no longer read off this payload — they come from
+  // the shared unit preferences, which are the same values the backend computed
+  // with (see context/UnitsContext.tsx) and stay right even offline.
   const bill = analytics?.billPredictor ?? {
-    tariff: 10.5,
-    currency: "₱",
     accumulatedKwh: 87.4,
-    estimatedBill: 917.7,
     cycleStart: "Jun 1, 2026",
   };
 
   const handleSaveTariff = async () => {
-    const rate = parseFloat(tariffInput);
-    if (isNaN(rate) || rate <= 0) {
-      setTariffError("Please enter a valid rate greater than 0.");
+    const rate = parseRate(tariffInput);
+    if (rate === null) {
+      setTariffError(`Enter a rate between ${MIN_RATE_PER_KWH} and ${MAX_RATE_PER_KWH}.`);
       return;
     }
 
     setUpdatingTariff(true);
     setTariffError(null);
 
-    try {
-      await api.put("/analytics/tariff", { ratePerKwh: rate });
-      setTariffModalVisible(false);
-      setRefreshTrigger((prev) => prev + 1);
-    } catch (err: any) {
-      console.warn("Backend update failed, updating local state for offline demo:", err);
-      // Fallback for offline mode: update local analytics state
-      if (analytics) {
-        setAnalytics({
-          ...analytics,
-          billPredictor: {
-            ...analytics.billPredictor,
-            tariff: rate,
-            estimatedBill: parseFloat((rate * analytics.billPredictor.accumulatedKwh).toFixed(2)),
-          },
-        });
-      }
-      setTariffModalVisible(false);
-    } finally {
-      setUpdatingTariff(false);
-    }
+    // Saving through the shared context keeps this editor and the Units &
+    // Tariff settings screen on one code path; it applies the rate locally
+    // whether or not the push reaches the server, so the figures below update
+    // either way.
+    await setRatePerKwh(rate);
+
+    setUpdatingTariff(false);
+    setTariffModalVisible(false);
+    // Refetch so the server-side breakdown reflects the new rate as well.
+    setRefreshTrigger((prev) => prev + 1);
   };
 
   let cumulative = 0;
@@ -257,7 +258,7 @@ export default function AnalyticsScreen() {
           <TouchableOpacity
             style={styles.billRow}
             onPress={() => {
-              setTariffInput(bill.tariff.toString());
+              setTariffInput(prefs.ratePerKwh.toFixed(2));
               setTariffError(null);
               setTariffModalVisible(true);
             }}
@@ -268,7 +269,7 @@ export default function AnalyticsScreen() {
             <Text style={styles.billRowLabel}>Tariff</Text>
             <View style={styles.tariffValueContainer}>
               <Text style={[styles.billRowValue, styles.dashedValue]}>
-                {bill.currency} {bill.tariff.toFixed(2)} /kWh
+                {currency.symbol} {prefs.ratePerKwh.toFixed(2)} /kWh
               </Text>
               <Ionicons
                 name="create-outline"
@@ -282,16 +283,19 @@ export default function AnalyticsScreen() {
           <View style={[styles.billRow, { marginTop: 10 }]}>
             <Text style={styles.billRowLabel}>Rate Accumulated</Text>
             <Text style={styles.billRowValue}>
-              {bill.accumulatedKwh.toFixed(1)} kWh
+              {energyParts(bill.accumulatedKwh, 1).value}{" "}
+              {energyParts(bill.accumulatedKwh, 1).unit}
             </Text>
           </View>
 
           <View style={[styles.billEstRow, { marginTop: 16 }]}>
             <Text style={styles.billEstLabel}>{"Est.\nBill"}</Text>
             <View style={styles.billAmountRow}>
-              <Text style={styles.billCurrency}>{bill.currency}</Text>
+              <Text style={styles.billCurrency}>{currency.symbol}</Text>
+              {/* Priced from the accumulated kWh at the user's own rate, so the
+                  estimate moves the moment the tariff is edited. */}
               <Text style={styles.billAmount}>
-                {bill.estimatedBill.toFixed(2)}
+                {costOf(bill.accumulatedKwh).toFixed(2)}
               </Text>
             </View>
           </View>
@@ -340,8 +344,8 @@ export default function AnalyticsScreen() {
               ))}
             </Svg>
             <View style={styles.donutCenter} pointerEvents="none">
-              <Text style={styles.donutValue}>{totalKwh.toFixed(1)}</Text>
-              <Text style={styles.donutUnit}>kWh</Text>
+              <Text style={styles.donutValue}>{energyParts(totalKwh, 1).value}</Text>
+              <Text style={styles.donutUnit}>{energyParts(totalKwh, 1).unit}</Text>
               <Text style={styles.donutTotal}>Total</Text>
             </View>
           </View>
@@ -351,7 +355,7 @@ export default function AnalyticsScreen() {
               <View key={seg.label} style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: seg.color }]} />
                 <Text style={styles.legendText}>
-                  {seg.label} {seg.pct}% · {bill.currency}{seg.cost.toFixed(2)}
+                  {seg.label} {seg.pct}% · {formatCostOf(seg.kwh)}
                 </Text>
               </View>
             ))}
@@ -401,9 +405,7 @@ export default function AnalyticsScreen() {
                 </View>
                 <View style={styles.consumerRight}>
                   <Text style={styles.consumerPct}>{item.pct}%</Text>
-                  <Text style={styles.consumerCost}>
-                    {bill.currency}{item.cost.toFixed(2)}
-                  </Text>
+                  <Text style={styles.consumerCost}>{formatCostOf(item.kwh)}</Text>
                 </View>
               </View>
             ))
@@ -417,6 +419,22 @@ export default function AnalyticsScreen() {
 
         {metrics.map((metric) => {
           const accent = METRIC_ACCENT[metric.key];
+          // Active power and energy follow the unit preferences; the other four
+          // (V, A, Hz, PF) keep the unit the backend labelled them with. The
+          // unit is resolved once from the average so the avg/min/max trio is
+          // rendered in the same unit as the badge above it.
+          const powerUnit = resolvePowerUnit(metric.avg, prefs);
+          const unitBadge =
+            metric.key === "activePower"
+              ? powerUnit
+              : metric.key === "energy"
+                ? prefs.energyUnit
+                : metric.unit;
+          const stat = (value: number) => {
+            if (metric.key === "activePower") return powerIn(value, powerUnit);
+            if (metric.key === "energy") return energyIn(value, prefs.energyUnit, 2);
+            return value.toFixed(metric.unit === "PF" || metric.unit === "A" ? 2 : 1);
+          };
           return (
             <View key={metric.key} style={styles.metricCard}>
               {/* Header row: label + avg/min/max */}
@@ -424,7 +442,7 @@ export default function AnalyticsScreen() {
                 <View style={styles.metricLabelRow}>
                   <View style={[styles.metricAccentBar, { backgroundColor: accent }]} />
                   <Text style={styles.metricName}>{metric.label}</Text>
-                  <Text style={styles.metricUnitBadge}>{metric.unit}</Text>
+                  <Text style={styles.metricUnitBadge}>{unitBadge}</Text>
                 </View>
               </View>
 
@@ -432,21 +450,21 @@ export default function AnalyticsScreen() {
               <View style={styles.metricStatsRow}>
                 <View style={styles.metricStat}>
                   <Text style={[styles.metricStatValue, { color: accent }]}>
-                    {metric.avg.toFixed(metric.unit === "PF" ? 2 : metric.unit === "A" ? 2 : 1)}
+                    {stat(metric.avg)}
                   </Text>
                   <Text style={styles.metricStatLabel}>Avg</Text>
                 </View>
                 <View style={styles.metricStatDivider} />
                 <View style={styles.metricStat}>
                   <Text style={styles.metricStatValue}>
-                    {metric.min.toFixed(metric.unit === "PF" ? 2 : metric.unit === "A" ? 2 : 1)}
+                    {stat(metric.min)}
                   </Text>
                   <Text style={styles.metricStatLabel}>Min</Text>
                 </View>
                 <View style={styles.metricStatDivider} />
                 <View style={styles.metricStat}>
                   <Text style={styles.metricStatValue}>
-                    {metric.max.toFixed(metric.unit === "PF" ? 2 : metric.unit === "A" ? 2 : 1)}
+                    {stat(metric.max)}
                   </Text>
                   <Text style={styles.metricStatLabel}>Max</Text>
                 </View>
@@ -496,7 +514,7 @@ export default function AnalyticsScreen() {
               </Text>
 
               <View style={styles.inputContainer}>
-                <Text style={styles.currencyPrefix}>{bill.currency}</Text>
+                <Text style={styles.currencyPrefix}>{currency.symbol}</Text>
                 <TextInput
                   style={styles.tariffTextInput}
                   keyboardType="decimal-pad"

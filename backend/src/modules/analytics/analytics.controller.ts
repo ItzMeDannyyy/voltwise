@@ -43,6 +43,22 @@ export const getAnalytics = async (
   }
 };
 
+// Documentation only: Handles GET /api/analytics/tariff.
+// Reads the authenticated user's id from req.user and returns the currently
+// effective rate plan. Used by the mobile app's Units & Tariff settings screen.
+export const getTariff = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const tariff = await analyticsService.getTariff(req.user!.id);
+    res.status(200).json({ success: true, data: tariff });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Documentation only: Handles PUT /api/analytics/tariff.
 // Validates that ratePerKwh is a positive number and optional currency is present.
 // Delegates to the analytics service and returns the newly created tariff.
@@ -59,6 +75,20 @@ export const updateTariff = async (
       res.status(400).json({
         success: false,
         message: "Invalid tariff rate. ratePerKwh is required and must be a positive number.",
+      });
+      return;
+    }
+
+    // The currency is a display symbol ("₱", "$"), not a code — reject anything
+    // long enough to suggest the caller sent something else entirely, since it
+    // is persisted verbatim and rendered in front of every cost figure.
+    if (
+      currency !== undefined &&
+      (typeof currency !== "string" || currency.trim().length === 0 || currency.length > 4)
+    ) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid currency. Expected a symbol of 1-4 characters.",
       });
       return;
     }

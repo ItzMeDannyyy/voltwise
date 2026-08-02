@@ -5,6 +5,7 @@ import { AuthProvider } from "../context/AuthContext";
 import { MqttProvider } from "../context/MqttContext";
 import { NotificationProvider } from "../context/NotificationContext";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
+import { UnitsProvider } from "../context/UnitsContext";
 
 function RootLayoutNav() {
   const { colors, colorScheme } = useTheme();
@@ -42,6 +43,18 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen
+          name="units-settings"
+          options={{
+            headerShown: true,
+            title: "Units & Tariff",
+            headerStyle: { backgroundColor: colors.bg },
+            headerTintColor: colors.text,
+            headerTitleStyle: { fontWeight: "700", fontSize: 18 },
+            headerBackTitle: "",
+            presentation: "card",
+          }}
+        />
+        <Stack.Screen
           name="notification-settings"
           options={{
             headerShown: true,
@@ -65,12 +78,15 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
         <AuthProvider>
-          <MqttProvider>
-            {/* Innermost: the banner engine gates its /alerts fetch on auth. */}
-            <NotificationProvider>
-              <RootLayoutNav />
-            </NotificationProvider>
-          </MqttProvider>
+          {/* Below auth: the tariff it pulls is per-account. */}
+          <UnitsProvider>
+            <MqttProvider>
+              {/* Innermost: the banner engine gates its /alerts fetch on auth. */}
+              <NotificationProvider>
+                <RootLayoutNav />
+              </NotificationProvider>
+            </MqttProvider>
+          </UnitsProvider>
         </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
