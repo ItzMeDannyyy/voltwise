@@ -54,6 +54,7 @@ const GROUPS: SettingGroup[] = [
         icon: "hardware-chip-outline",
         title: "Sensor & IoT",
         subtitle: "Pair sensors and manage the MQTT bridge",
+        href: "/iot-settings",
       },
       {
         icon: "cloud-download-outline",

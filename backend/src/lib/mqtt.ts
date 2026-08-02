@@ -31,6 +31,10 @@ export interface TelemetryPayload {
 
 // Last-known device state, fed by retained status/relay messages + telemetry.
 export interface IotState {
+  // The UID this backend ingests from (MQTT_DEVICE_UID). Reported so the app
+  // can tell the user when its own pairing points at a different board — the
+  // dashboard would then show live readings that are never being stored.
+  deviceUid: string;
   brokerConnected: boolean;
   deviceOnline: boolean;
   relay: RelayState | null;
@@ -38,7 +42,9 @@ export interface IotState {
   lastTelemetryAt: string | null;
 }
 
-const state: IotState = {
+// deviceUid is resolved from env on every read rather than captured here, so
+// the snapshot can never report a UID the topic helpers are no longer using.
+const state: Omit<IotState, "deviceUid"> = {
   brokerConnected: false,
   deviceOnline: false,
   relay: null,
@@ -297,7 +303,7 @@ export const publishRelayCommand = (on: boolean): void => {
 
 // Documentation only: Returns a snapshot of the last-known IoT state for the
 // status endpoint. Copied so callers can't mutate module state.
-export const getIotState = (): IotState => ({ ...state });
+export const getIotState = (): IotState => ({ deviceUid: deviceUid(), ...state });
 
 // Documentation only: Cleanly disconnects the MQTT client on shutdown.
 export const closeMqtt = (): void => {

@@ -188,6 +188,15 @@ All three tiers share one topic contract, keyed by a device UID (default
   live dashboard telemetry and relay state; the dashboard's Master Power card
   toggles the relay optimistically via the REST endpoint and reconciles when
   the firmware confirms on `relay/state`.
+- **Pairing:** the app's UID is not fixed to the build. Settings → Sensor & IoT
+  (`app/iot-settings.tsx`) re-pairs the install to another board, persisted
+  device-locally via `lib/iot-storage.ts`; the provider tears down and rebuilds
+  the device subscription on change. A standing subscription to
+  `voltwise/+/status` lists every board on the broker (retained statuses make
+  discovery passive). The backend keeps ingesting from its own
+  `MQTT_DEVICE_UID`, which `GET /api/iot/status` reports as `deviceUid` so the
+  screen can warn when the two disagree. Topic building, UID validation and the
+  live/stale/offline verdict live in `lib/iot-prefs.ts`.
 - **Firmware semantics:** a remote OFF latches power off; a remote ON clears
   the latch and suppresses the auto-shutdown countdown until current drops
   once (`remoteOverride`). The over-power cutoff is never overridable.

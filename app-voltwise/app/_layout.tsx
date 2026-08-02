@@ -55,6 +55,18 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen
+          name="iot-settings"
+          options={{
+            headerShown: true,
+            title: "Sensor & IoT",
+            headerStyle: { backgroundColor: colors.bg },
+            headerTintColor: colors.text,
+            headerTitleStyle: { fontWeight: "700", fontSize: 18 },
+            headerBackTitle: "",
+            presentation: "card",
+          }}
+        />
+        <Stack.Screen
           name="notification-settings"
           options={{
             headerShown: true,

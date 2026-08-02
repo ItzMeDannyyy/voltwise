@@ -229,6 +229,15 @@ describe("handleMessage (device state tracking) + getStatus", () => {
     }
   });
 
+  it("reports the ingest device UID, following MQTT_DEVICE_UID", () => {
+    expect(iotService.getStatus().deviceUid).toBe("esp32-01");
+
+    // Read per call, not captured at import — the app compares this against
+    // its own pairing, so a stale value would produce a false mismatch warning.
+    process.env.MQTT_DEVICE_UID = "esp32-lab-02";
+    expect(iotService.getStatus().deviceUid).toBe("esp32-lab-02");
+  });
+
   it("flips deviceOnline to false when the LWT publishes 'offline'", async () => {
     await mqttLib.handleMessage(STATUS_TOPIC, Buffer.from("online"));
     expect(mqttLib.getIotState().deviceOnline).toBe(true);
