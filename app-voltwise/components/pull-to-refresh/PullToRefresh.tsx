@@ -35,14 +35,18 @@ export default function PullToRefresh({
   });
 
   return (
-    <GestureDetector gesture={composedGesture}>
-      <View style={[styles.root, style]}>
-        <RefreshIndicator
-          pullDistance={pullDistance}
-          triggerDistance={TRIGGER_DISTANCE}
-          refreshing={refreshing}
-          color={indicatorColor}
-        />
+    <View style={[styles.root, style]}>
+      <RefreshIndicator
+        pullDistance={pullDistance}
+        triggerDistance={TRIGGER_DISTANCE}
+        refreshing={refreshing}
+        color={indicatorColor}
+      />
+      {/* The detector must wrap the ScrollView itself: composedGesture contains
+          a Gesture.Native(), which has to bind to the actual scrollable. On a
+          plain wrapper View it binds to that View instead and swallows the
+          touches, leaving the pull working but the scroll dead. */}
+      <GestureDetector gesture={composedGesture}>
         <Animated.ScrollView
           onScroll={scrollHandler}
           scrollEventThrottle={16}
@@ -54,8 +58,8 @@ export default function PullToRefresh({
         >
           {children}
         </Animated.ScrollView>
-      </View>
-    </GestureDetector>
+      </GestureDetector>
+    </View>
   );
 }
 

@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
   StyleSheet,
   Dimensions,
@@ -11,7 +10,6 @@ import {
   Easing,
   LayoutAnimation,
   Platform,
-  Switch,
   UIManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -20,6 +18,8 @@ import { LineChart } from "react-native-chart-kit";
 import { api, checkHealth, DashboardData, DashboardDevice, IotStatus, Reading } from "../../lib/api";
 import { useMqtt } from "../../context/MqttContext";
 import AppHeader from "../../components/AppHeader";
+import { PullToRefresh } from "../../components/pull-to-refresh";
+import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useTheme } from "../../context/ThemeContext";
 import { useThemedStyles } from "../../components/themed";
 import type { ThemeColors } from "../../constants/theme";
@@ -132,6 +132,13 @@ const TELEMETRY_FRESH_MS = 10_000;
 //   "off"  — nothing live; readings freeze
 type LiveSource = "mqtt" | "sim" | "off";
 
+// Reachability of the ESP32 as the UI reports it:
+//   "live"    — fresh MQTT telemetry; relay commands will land
+//   "sim"     — backend claims it's up but nothing is arriving over MQTT
+//   "unknown" — still resolving on first load
+//   "offline" — the device is not there
+type IotState = "live" | "sim" | "unknown" | "offline";
+
 // Human-readable explanations for the firmware's relay/state reason codes.
 const RELAY_REASON_LABELS: Record<string, string> = {
   boot: "On since device start",
@@ -180,29 +187,36 @@ export default function DashboardScreen() {
   // Animated value for chevron rotation.
   const chevronAnim     = useRef(new Animated.Value(1)).current;
 
-  // Fetch dashboard data.
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get<DashboardData>(`/dashboard?period=${period}`)
-      .then((data) => {
-        if (cancelled) return;
-        setDashboard(data);
-        setCurrentKw(data.currentKw);
-        setIotOnline(data.iotOnline ?? false);
-        // Seed live metrics from the backend reading if present.
-        if (data.reading) {
-          const { timestamp: _ts, ...rest } = data.reading;
-          setLiveMetrics(rest);
-        }
-      })
-      .catch(() => {
-        // Offline-first: keep showing FALLBACK_READING values.
-      });
-    return () => {
-      cancelled = true;
-    };
+  // Fetch dashboard data — shared by the period effect below and pull-to-refresh.
+  const fetchDashboard = useCallback(async () => {
+    const data = await api.get<DashboardData>(`/dashboard?period=${period}`);
+    setDashboard(data);
+    setCurrentKw(data.currentKw);
+    setIotOnline(data.iotOnline ?? false);
+    // Seed live metrics from the backend reading if present.
+    if (data.reading) {
+      const { timestamp: _ts, ...rest } = data.reading;
+      setLiveMetrics(rest);
+    }
   }, [period]);
+
+  // Refetch whenever the selected period changes.
+  useEffect(() => {
+    fetchDashboard().catch(() => {
+      // Offline-first: keep showing FALLBACK_READING values.
+    });
+  }, [fetchDashboard]);
+
+  // A pull refreshes the data and re-checks liveness in one go — allSettled so
+  // one failing call never hides the other's result.
+  const refreshDashboard = useCallback(async () => {
+    await Promise.allSettled([
+      fetchDashboard(),
+      checkHealth().then(setServerOnline),
+    ]);
+  }, [fetchDashboard]);
+
+  const { refreshing, onRefresh } = usePullToRefresh(refreshDashboard);
 
   // Server health polling — immediate on mount, then every 15 seconds.
   useEffect(() => {
@@ -336,6 +350,20 @@ export default function DashboardScreen() {
     outputRange: ["0deg", "180deg"],
   });
 
+  // Single reachability judgement, shared by the status pill and the Master
+  // Power card so the two can never contradict each other. Real telemetry
+  // beats the backend's opinion; the simulation is shown honestly as degraded.
+  const iotState: IotState =
+    liveSource === "mqtt"
+      ? "live"
+      : liveSource === "sim"
+        ? "sim"
+        : iotOnline === null && telemetryAt === null
+          ? "unknown"
+          : "offline";
+  // Only a live MQTT feed means commands can actually reach the firmware.
+  const iotReachable = iotState === "live";
+
   // Master relay display state: the optimistic value wins while a command is
   // in flight; before any relay/state message arrives assume ON (firmware
   // boots with relays energized).
@@ -343,18 +371,42 @@ export default function DashboardScreen() {
   const relayReasonLabel = relayOn
     ? "Power is flowing to your loads"
     : RELAY_REASON_LABELS[relayState?.reason ?? ""] ?? "Power is off";
-  // The switch only works when the device is reachable and no command is
+  // The button only works when the device is reachable and no command is
   // already pending confirmation.
-  const relaySwitchDisabled = relayPending || liveSource !== "mqtt";
+  const relayControlDisabled = relayPending || !iotReachable;
+  // Button caption: the current relay state, or the reason it can't be used.
+  const relayButtonLabel = !iotReachable
+    ? iotState === "unknown"
+      ? "..."
+      : "OFFLINE"
+    : relayOn
+      ? "ON"
+      : "CLOSE";
 
-  // IoT pill: real telemetry beats the backend's opinion; the simulation is
-  // shown honestly as a degraded state.
+  // Unreachable device: say so plainly, and qualify the shown state as a
+  // last-known value rather than something the user can act on.
+  const relaySubtitle = iotReachable
+    ? relayPending
+      ? "Waiting for device confirmation..."
+      : relayReasonLabel
+    : iotState === "unknown"
+      ? "Checking device..."
+      : `${iotState === "offline" ? "Device offline" : "No live link to device"}${
+          relayState ? ` — last known: ${relayState.on ? "on" : "off"}` : ""
+        } · control unavailable`;
+  // Grey the whole control out when it can't be trusted or used.
+  const relayTint = !iotReachable
+    ? colors.sub
+    : relayOn
+      ? colors.accent
+      : colors.red;
+
   const iotPill: { label: string; status: PillStatus } =
-    liveSource === "mqtt"
+    iotState === "live"
       ? { label: "IoT Live", status: "online" }
-      : liveSource === "sim"
+      : iotState === "sim"
         ? { label: "IoT Sim", status: "degraded" }
-        : iotOnline === null && telemetryAt === null
+        : iotState === "unknown"
           ? { label: "IoT...", status: "unknown" }
           : { label: "IoT Offline", status: "offline" };
 
@@ -369,13 +421,18 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Brand header — logo + interactive bell/profile */}
+      {/* Brand header — logo + interactive bell/profile. Sits outside the
+          scroller so it stays pinned while the content pulls down. */}
+      <View style={styles.headerBar}>
         <AppHeader />
+      </View>
 
+      <PullToRefresh
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        contentContainerStyle={styles.scroll}
+        indicatorColor={colors.accent}
+      >
         {/* Status Row */}
         <View style={styles.statusRow}>
           <StatusPill
@@ -466,33 +523,69 @@ export default function DashboardScreen() {
           <View
             style={[
               styles.relayIconWrap,
-              { backgroundColor: relayOn ? colors.accent + "26" : colors.red + "26" },
+              { backgroundColor: relayTint + "26" },
             ]}
           >
             <Ionicons
-              name="power"
+              name={iotReachable ? "flash" : "cloud-offline"}
               size={22}
-              color={relayOn ? colors.accent : colors.red}
+              color={relayTint}
             />
           </View>
           <View style={styles.relayTextWrap}>
-            <Text style={styles.relayTitle}>Master Power</Text>
-            <Text style={styles.relaySubtitle}>
-              {relayPending
-                ? "Waiting for device confirmation..."
-                : liveSource !== "mqtt"
-                  ? "Device offline — control unavailable"
-                  : relayReasonLabel}
-            </Text>
+            <View style={styles.relayTitleRow}>
+              <Text style={styles.relayTitle}>Master Power</Text>
+              {iotState === "offline" || iotState === "sim" ? (
+                <View
+                  style={[
+                    styles.relayBadge,
+                    {
+                      backgroundColor:
+                        (iotState === "offline" ? colors.red : colors.amber) + "26",
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.relayBadgeText,
+                      { color: iotState === "offline" ? colors.red : colors.amber },
+                    ]}
+                  >
+                    {iotState === "offline" ? "OFFLINE" : "NO LINK"}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={styles.relaySubtitle}>{relaySubtitle}</Text>
           </View>
-          <Switch
-            value={relayOn}
-            onValueChange={handleRelayToggle}
-            disabled={relaySwitchDisabled}
-            trackColor={{ false: colors.border, true: colors.accent + "66" }}
-            thumbColor={relayOn ? colors.accent : colors.sub}
+          {/* Tap-to-toggle power button: green/ON, red/CLOSE, grey when the
+              device is unreachable (and then inert). */}
+          <TouchableOpacity
+            onPress={() => handleRelayToggle(!relayOn)}
+            disabled={relayControlDisabled}
+            activeOpacity={0.7}
+            style={[
+              styles.relayButton,
+              {
+                backgroundColor: relayTint + "1F",
+                borderColor: relayTint,
+                opacity: relayControlDisabled ? 0.5 : 1,
+              },
+            ]}
+            accessibilityRole="button"
             accessibilityLabel="Master power relay"
-          />
+            accessibilityState={{ disabled: relayControlDisabled }}
+            accessibilityHint={
+              iotReachable
+                ? `Turns the master relay ${relayOn ? "off" : "on"}`
+                : "Unavailable — the IoT device is offline"
+            }
+          >
+            <Ionicons name="power" size={24} color={relayTint} />
+            <Text style={[styles.relayButtonLabel, { color: relayTint }]}>
+              {relayButtonLabel}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Device Cards */}
@@ -630,7 +723,7 @@ export default function DashboardScreen() {
         </View>
 
         <View style={{ height: 16 }} />
-      </ScrollView>
+      </PullToRefresh>
     </SafeAreaView>
   );
 }
@@ -641,9 +734,14 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       flex: 1,
       backgroundColor: colors.bg,
     },
-    scroll: {
+    // The header carries the top padding now that it lives outside the
+    // scroller; its own marginBottom supplies the gap to the status row.
+    headerBar: {
       paddingHorizontal: 16,
       paddingTop: 8,
+    },
+    scroll: {
+      paddingHorizontal: 16,
     },
     statusRow: {
       flexDirection: "row",
@@ -795,11 +893,40 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     relayTextWrap: {
       flex: 1,
     },
+    relayTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 2,
+    },
     relayTitle: {
       color: colors.text,
       fontSize: 15 * fontScale,
       fontWeight: "700",
-      marginBottom: 2,
+    },
+    relayBadge: {
+      borderRadius: 20,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+    },
+    relayBadgeText: {
+      fontSize: 10 * fontScale,
+      fontWeight: "700",
+      letterSpacing: 0.5,
+    },
+    relayButton: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      borderWidth: 2,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 1,
+    },
+    relayButtonLabel: {
+      fontSize: 10 * fontScale,
+      fontWeight: "800",
+      letterSpacing: 0.6,
     },
     relaySubtitle: {
       color: colors.sub,
