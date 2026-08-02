@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider } from "../context/AuthContext";
 import { MqttProvider } from "../context/MqttContext";
+import { NotificationProvider } from "../context/NotificationContext";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
 
 function RootLayoutNav() {
@@ -40,6 +41,18 @@ function RootLayoutNav() {
             presentation: "card",
           }}
         />
+        <Stack.Screen
+          name="notification-settings"
+          options={{
+            headerShown: true,
+            title: "Notifications",
+            headerStyle: { backgroundColor: colors.bg },
+            headerTintColor: colors.text,
+            headerTitleStyle: { fontWeight: "700", fontSize: 18 },
+            headerBackTitle: "",
+            presentation: "card",
+          }}
+        />
       </Stack>
     </>
   );
@@ -53,7 +66,10 @@ export default function RootLayout() {
       <ThemeProvider>
         <AuthProvider>
           <MqttProvider>
-            <RootLayoutNav />
+            {/* Innermost: the banner engine gates its /alerts fetch on auth. */}
+            <NotificationProvider>
+              <RootLayoutNav />
+            </NotificationProvider>
           </MqttProvider>
         </AuthProvider>
       </ThemeProvider>

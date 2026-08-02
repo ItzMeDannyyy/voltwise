@@ -14,6 +14,7 @@ import {
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, ApiAlert, ALERTS_CHANGED_EVENT } from "../lib/api";
+import { useNotifications } from "../context/NotificationContext";
 import { useTheme } from "../context/ThemeContext";
 import { useThemedStyles } from "./themed";
 import type { ThemeColors } from "../constants/theme";
@@ -68,8 +69,11 @@ export default function AppHeader() {
   // Anchor coordinates measured from the bell so the bubble hangs under it.
   const [anchor, setAnchor] = useState({ top: 72, right: 16 });
   const bellRef = useRef<View>(null);
+  const { isAlertVisible } = useNotifications();
 
-  const unread = alerts.filter((a) => !a.read).length;
+  // Muted severities disappear from both the badge and the dropdown list.
+  const visibleAlerts = alerts.filter(isAlertVisible);
+  const unread = visibleAlerts.filter((a) => !a.read).length;
 
   // Keep the bell badge + dropdown contents in sync with the alert event bus.
   useEffect(() => {
@@ -178,7 +182,7 @@ export default function AppHeader() {
               )}
             </View>
 
-            {alerts.length === 0 ? (
+            {visibleAlerts.length === 0 ? (
               <View style={styles.empty}>
                 <Ionicons name="notifications-off-outline" size={24} color={colors.sub} />
                 <Text style={styles.emptyText}>You&apos;re all caught up</Text>
@@ -186,10 +190,10 @@ export default function AppHeader() {
             ) : (
               <ScrollView
                 style={{ maxHeight: LIST_MAX_HEIGHT }}
-                showsVerticalScrollIndicator={alerts.length > MAX_VISIBLE}
+                showsVerticalScrollIndicator={visibleAlerts.length > MAX_VISIBLE}
                 contentContainerStyle={styles.list}
               >
-                {alerts.map((a) => {
+                {visibleAlerts.map((a) => {
                   const color = severityColor(a.type, colors);
                   return (
                     <TouchableOpacity

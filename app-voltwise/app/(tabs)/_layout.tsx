@@ -16,6 +16,7 @@ import ConfirmModal from "../../components/ConfirmModal";
 import { api, ApiAlert, ALERTS_CHANGED_EVENT, emitAlertsChanged } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { useMqtt } from "../../context/MqttContext";
+import { useNotifications } from "../../context/NotificationContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useThemedStyles } from "../../components/themed";
 import type { ThemeColors } from "../../constants/theme";
@@ -37,18 +38,21 @@ function HapticTab(props: BottomTabBarButtonProps) {
 function AlertsBadge() {
   const [count, setCount] = useState(0);
   const styles = useThemedStyles(createStyles);
+  // isAlertVisible, not shouldNotify: quiet hours silences interruptions but
+  // must never blank the badge — that would hide alerts rather than mute them.
+  const { isAlertVisible } = useNotifications();
 
   useEffect(() => {
     const load = () => {
       api
         .get<ApiAlert[]>("/alerts")
-        .then((data) => setCount(data.filter((a) => !a.read).length))
+        .then((data) => setCount(data.filter((a) => !a.read && isAlertVisible(a)).length))
         .catch(() => {});
     };
     load();
     const sub = DeviceEventEmitter.addListener(ALERTS_CHANGED_EVENT, load);
     return () => sub.remove();
-  }, []);
+  }, [isAlertVisible]);
 
   if (count <= 0) return null;
 
@@ -67,14 +71,17 @@ function AlertsBadge() {
  */
 function NewLoadPrompt() {
   const { lastEvent } = useMqtt();
+  const { prefs } = useNotifications();
   const router = useRouter();
   // receivedAt of the event the user already dealt with (one event = one prompt).
   const [handledAt, setHandledAt] = useState<number | null>(null);
 
   const isNewLoad = lastEvent?.type === "new_load";
-  const visible = isNewLoad && lastEvent.receivedAt !== handledAt;
+  const visible = prefs.newLoadPrompt && isNewLoad && lastEvent.receivedAt !== handledAt;
 
   // The detector also stored an INFO alert — refresh the tab badge right away.
+  // Stays unconditional even when the prompt is muted: this event also drives
+  // the alert list and the notification engine's diff.
   useEffect(() => {
     if (isNewLoad) emitAlertsChanged();
   }, [isNewLoad, lastEvent?.receivedAt]);
