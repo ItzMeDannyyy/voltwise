@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LineChart } from "react-native-chart-kit";
 import { api, checkHealth, DashboardData, DashboardDevice, IotStatus, Reading } from "../../lib/api";
 import { useMqtt } from "../../context/MqttContext";
+import { RELAY_REASON_LABELS } from "../../lib/iot-prefs";
 import AppHeader from "../../components/AppHeader";
 import { PullToRefresh } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
@@ -139,14 +140,6 @@ type LiveSource = "mqtt" | "sim" | "off";
 //   "unknown" — still resolving on first load
 //   "offline" — the device is not there
 type IotState = "live" | "sim" | "unknown" | "offline";
-
-// Human-readable explanations for the firmware's relay/state reason codes.
-const RELAY_REASON_LABELS: Record<string, string> = {
-  boot: "On since device start",
-  remote: "Switched remotely",
-  overpower: "Safety cutoff — power limit exceeded",
-  countdown: "Auto shutdown countdown finished",
-};
 
 export default function DashboardScreen() {
   const { colors } = useTheme();

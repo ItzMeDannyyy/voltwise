@@ -251,6 +251,8 @@ export interface RelayState {
 
 /** Response of POST /api/iot/relay and GET /api/iot/status. */
 export interface IotStatus {
+  /** The sensor the backend ingests from — not necessarily the app's pairing. */
+  deviceUid: string;
   online: boolean;
   brokerConnected: boolean;
   relay: RelayState | null;

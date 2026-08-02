@@ -12,6 +12,9 @@ export interface RelayCommandDto {
 
 // Response of both POST /api/iot/relay and GET /api/iot/status.
 export interface IotStatusDto {
+  // The device UID this backend ingests from (MQTT_DEVICE_UID). The app pairs
+  // itself independently, so it compares the two and warns on a mismatch.
+  deviceUid: string;
   // True when the device is publishing telemetry (retained "online" alone is
   // not trusted — see the stale-retained guard in iot.service.ts).
   online: boolean;

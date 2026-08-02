@@ -21,6 +21,7 @@ export const getStatus = (): IotStatusDto => {
     Date.now() - new Date(state.lastTelemetryAt).getTime() < TELEMETRY_FRESH_MS;
 
   return {
+    deviceUid: state.deviceUid,
     online: state.deviceOnline && telemetryFresh,
     brokerConnected: state.brokerConnected,
     relay: state.relay,
