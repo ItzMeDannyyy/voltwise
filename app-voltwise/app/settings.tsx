@@ -59,7 +59,8 @@ const GROUPS: SettingGroup[] = [
       {
         icon: "cloud-download-outline",
         title: "Data & Export",
-        subtitle: "Download readings and clear local cache",
+        subtitle: "Download your data and reset this device",
+        href: "/data-settings",
       },
     ],
   },

@@ -49,8 +49,14 @@ export const API_BASE_URL =
 // (catches a stale .env that needs `npx expo start --clear`).
 console.log("[VoltWise] API_BASE_URL =", API_BASE_URL);
 
-/** Backend wraps every payload as { success, data } — this unwraps it. */
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Performs the request and returns the raw Response, having already turned a
+ * transport failure or a non-2xx status into a thrown Error with a useful
+ * message. Split out from request() so that endpoints whose body is a file
+ * rather than JSON (the exports) get identical auth, 401 handling and error
+ * reporting without being forced through JSON.parse.
+ */
+async function rawRequest(path: string, init?: RequestInit): Promise<Response> {
   // Merge auth header when a token is available.
   const authHeaders: Record<string, string> = _authToken
     ? { Authorization: `Bearer ${_authToken}` }
@@ -86,6 +92,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     // Surface the backend's own message (e.g. "Invalid credentials") when present.
+    // Errors always come back as JSON, even from the file endpoints.
     const serverMessage = await res
       .json()
       .then((body) => (body && typeof body === "object" ? body.message : null))
@@ -93,6 +100,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(serverMessage ?? `Request failed (${res.status}) for ${path}`);
   }
 
+  return res;
+}
+
+/** Backend wraps every payload as { success, data } — this unwraps it. */
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await rawRequest(path, init);
   const json = await res.json();
   // Tolerate both the { success, data } envelope and a raw payload.
   return (json && typeof json === "object" && "data" in json ? json.data : json) as T;
@@ -110,6 +123,12 @@ export const api = {
   /** Multipart POST (e.g. device photo upload) — pass a ready-built FormData. */
   upload: <T>(path: string, form: FormData) =>
     request<T>(path, { method: "POST", body: form }),
+  /**
+   * GET whose body is a file, not an envelope (the /export downloads). Returns
+   * the body verbatim — no unwrapping, no JSON.parse — so a CSV arrives as a
+   * CSV and a JSON export keeps the exact bytes that will be written to disk.
+   */
+  getText: async (path: string): Promise<string> => (await rawRequest(path)).text(),
 };
 
 /**
@@ -272,6 +291,26 @@ export interface TariffInfo {
   ratePerKwh: number;
   /** A display symbol ("₱", "$"), not an ISO code. */
   currency: string;
+}
+
+/** One dataset's slice of GET /api/export/summary. */
+export interface ExportDatasetSummary {
+  /** Rows the selected range matches, before the server's row cap. */
+  count: number;
+  /** True when a download would be clipped to the most recent `maxRows`. */
+  truncated: boolean;
+}
+
+/** GET /api/export/summary?range=… — what a download would contain. */
+export interface ExportSummary {
+  range: string;
+  maxRows: number;
+  readings: ExportDatasetSummary;
+  /** The device inventory ignores the range — it is a list, not a log. */
+  devices: ExportDatasetSummary;
+  alerts: ExportDatasetSummary;
+  firstReadingAt: string | null;
+  lastReadingAt: string | null;
 }
 
 export interface AnalyticsData {

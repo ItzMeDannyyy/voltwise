@@ -11,6 +11,7 @@ import dashboardRouter from "../modules/dashboard/dashboard.routes.ts";
 import alertsRouter from "../modules/alerts/alerts.routes.ts";
 import analyticsRouter from "../modules/analytics/analytics.routes.ts";
 import iotRouter from "../modules/iot/iot.routes.ts";
+import exportRouter from "../modules/export/export.routes.ts";
 import { requireAuth } from "../middleware/auth.middleware.ts";
 
 const appRouter = Router();
@@ -26,5 +27,6 @@ appRouter.use("/dashboard", requireAuth, dashboardRouter);
 appRouter.use("/alerts", requireAuth, alertsRouter);
 appRouter.use("/analytics", requireAuth, analyticsRouter);
 appRouter.use("/iot", requireAuth, iotRouter);
+appRouter.use("/export", requireAuth, exportRouter);
 
 export default appRouter;

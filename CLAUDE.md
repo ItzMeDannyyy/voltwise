@@ -27,7 +27,7 @@ voltwise/
 │   ├── src/         # index.ts, routes/, lib/prisma.ts, configs/, modules/<feature>/
 │   └── test/        # Jest unit tests (ESM + ts-jest)
 ├── app-voltwise/    # Expo React Native app (expo-router)
-│   ├── app/         # (auth) login/register · (tabs) dashboard/devices/alerts/analytics · profile · settings
+│   ├── app/         # (auth) login/register · (tabs) dashboard/devices/alerts/analytics · profile · settings + its sub-screens
 │   ├── components/  # DemoFab, AnomalyModal, AlertDetailModal, ConfirmModal, AppHeader
 │   ├── context/     # AuthContext, MqttContext
 │   └── lib/         # api.ts (typed client + shared types), auth-storage.ts
@@ -84,7 +84,17 @@ All routes are prefixed with `/api`:
 | `/alerts`    | alerts    | Alert management; `POST /` creates alerts                                     |
 | `/analytics` | analytics | Bill prediction, kWh breakdown, metrics                                       |
 | `/iot`       | iot       | `POST /relay` master relay command; `GET /status` last-known device state    |
+| `/export`    | export    | `GET /summary` row counts per dataset; `GET /:dataset` CSV/JSON download      |
 | `/health`    | —         | `GET /api/health` liveness check                                              |
+
+The `export` module is the one place that does **not** wrap its success body in
+`{ success, data }` — the response *is* the file (`text/csv` with a UTF-8 BOM, or
+a JSON document). Errors still use the envelope. Row counts come from
+`GET /export/summary?range=…` rather than response headers on the download, since
+`Content-Disposition` and custom headers are not exposed to a cross-origin fetch;
+that is also how the app learns a download would be clipped at `MAX_EXPORT_ROWS`
+(20 000) before starting it. CSV serialization lives in `src/lib/csv.ts` and
+guards against spreadsheet formula injection in user-authored strings.
 
 ## Mobile app (`app-voltwise/`)
 
@@ -211,6 +221,18 @@ All three tiers share one topic contract, keyed by a device UID (default
 ### DemoFab
 
 `components/DemoFab.tsx` is a floating action button (flask icon, bottom-right) that POSTs preset alert payloads to `/api/alerts` to exercise the full alert flow during demos. It opens `AnomalyModal` locally before the API call resolves so the UX is instant.
+
+### Device-local storage
+
+Preferences that belong to the phone rather than the account live in
+`lib/*-storage.ts` (SecureStore on native, localStorage on web) — theme, units,
+notifications, sensor pairing. `lib/local-data.ts` is the **inventory of every
+one of those keys**, and Settings → Data & Export resets them through it. A new
+storage key must be added there too, or it will silently survive a reset
+forever. The JWT is deliberately excluded (clearing it is signing out) and
+nothing in that module touches the server. Note the ownership split
+`context/UnitsContext.tsx` documents: the tariff and currency are account data,
+so a device reset restores the display units but leaves the rate alone.
 
 ## Known issue
 
