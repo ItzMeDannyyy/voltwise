@@ -33,7 +33,13 @@
           "resizeMode": "contain"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow VoltWise to unlock with Face ID."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

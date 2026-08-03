@@ -9,6 +9,7 @@ import {
 import { DeviceEventEmitter } from "react-native";
 import {
   api,
+  clientDescriptor,
   setAuthToken,
   AUTH_UNAUTHORIZED_EVENT,
   AuthUser,
@@ -118,9 +119,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(
     async (email: string, password: string) => {
+      // `client` names this device in the account's session list — see
+      // Settings → Privacy & Security.
       const { token: t, user: u } = await api.post<AuthResponse>("/auth/login", {
         email,
         password,
+        client: clientDescriptor(),
       });
       await saveToken(t);
       applyToken(t);
@@ -136,6 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         lastName,
         email,
         password,
+        client: clientDescriptor(),
       });
       await saveToken(t);
       applyToken(t);

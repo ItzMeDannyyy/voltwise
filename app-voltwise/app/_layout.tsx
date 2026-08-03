@@ -1,6 +1,8 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import AppLockOverlay from "../components/AppLockOverlay";
+import { AppLockProvider } from "../context/AppLockContext";
 import { AuthProvider } from "../context/AuthContext";
 import { MqttProvider } from "../context/MqttContext";
 import { NotificationProvider } from "../context/NotificationContext";
@@ -90,7 +92,23 @@ function RootLayoutNav() {
             presentation: "card",
           }}
         />
+        <Stack.Screen
+          name="privacy-settings"
+          options={{
+            headerShown: true,
+            title: "Privacy & Security",
+            headerStyle: { backgroundColor: colors.bg },
+            headerTintColor: colors.text,
+            headerTitleStyle: { fontWeight: "700", fontSize: 18 },
+            headerBackTitle: "",
+            presentation: "card",
+          }}
+        />
       </Stack>
+
+      {/* Sits above the navigator so a lock covers whatever screen the user
+          left, without unwinding where they were. */}
+      <AppLockOverlay />
     </>
   );
 }
@@ -102,15 +120,18 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
         <AuthProvider>
-          {/* Below auth: the tariff it pulls is per-account. */}
-          <UnitsProvider>
-            <MqttProvider>
-              {/* Innermost: the banner engine gates its /alerts fetch on auth. */}
-              <NotificationProvider>
-                <RootLayoutNav />
-              </NotificationProvider>
-            </MqttProvider>
-          </UnitsProvider>
+          {/* Below auth: the lock only applies to a signed-in app. */}
+          <AppLockProvider>
+            {/* Below auth: the tariff it pulls is per-account. */}
+            <UnitsProvider>
+              <MqttProvider>
+                {/* Innermost: the banner engine gates its /alerts fetch on auth. */}
+                <NotificationProvider>
+                  <RootLayoutNav />
+                </NotificationProvider>
+              </MqttProvider>
+            </UnitsProvider>
+          </AppLockProvider>
         </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>

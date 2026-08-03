@@ -6,13 +6,34 @@
 
 import type { Request, Response, NextFunction } from "express";
 import * as authService from "./auth.service.ts";
+import type { ClientHints } from "../../lib/sessions.ts";
 import type {
   RegisterDto,
   LoginDto,
+  ClientDescriptorDto,
   UpdateProfileDto,
   ForgotPasswordDto,
   ResetPasswordDto,
 } from "./auth";
+
+// Documentation only: Collects everything known about the caller's device at
+// sign-in time — what the client said about itself in the body, plus the
+// User-Agent and source IP the request arrived with — into the ClientHints the
+// session layer stores. None of it is validated here on purpose: describeClient
+// in lib/sessions.ts sanitises and falls back, and these values only ever
+// become a label in the user's own device list.
+// Accepts the Express request.
+// Returns a ClientHints object.
+const clientHintsFrom = (req: Request): ClientHints => {
+  const { client } = req.body as { client?: ClientDescriptorDto };
+
+  return {
+    label: client?.label,
+    platform: client?.platform,
+    userAgent: req.headers["user-agent"],
+    ipAddress: req.ip,
+  };
+};
 
 // Documentation only: Handles POST /api/auth/register.
 // Validates presence of firstName, lastName, email, and password from the request body.
@@ -72,7 +93,10 @@ export const register = async (
       password,
     };
 
-    const authResult = await authService.registerUser(registerDto);
+    const authResult = await authService.registerUser(
+      registerDto,
+      clientHintsFrom(req)
+    );
     res.status(201).json({ success: true, data: authResult });
   } catch (error) {
     next(error);
@@ -114,7 +138,7 @@ export const login = async (
       password,
     };
 
-    const authResult = await authService.loginUser(loginDto);
+    const authResult = await authService.loginUser(loginDto, clientHintsFrom(req));
     res.status(200).json({ success: true, data: authResult });
   } catch (error) {
     next(error);
@@ -245,7 +269,13 @@ export const updateMe = async (
     if (currentPassword !== undefined) updateDto.currentPassword = currentPassword;
     if (newPassword !== undefined) updateDto.newPassword = newPassword;
 
-    const updatedProfile = await authService.updateProfile(userId, updateDto);
+    // req.sessionId is the caller's own session — passing it keeps a password
+    // change from signing out the device that made it.
+    const updatedProfile = await authService.updateProfile(
+      userId,
+      updateDto,
+      req.sessionId ?? null
+    );
     res.status(200).json({ success: true, data: updatedProfile });
   } catch (error) {
     next(error);

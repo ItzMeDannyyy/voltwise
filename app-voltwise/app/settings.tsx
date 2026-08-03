@@ -65,13 +65,19 @@ const GROUPS: SettingGroup[] = [
     ],
   },
   {
-    heading: "About",
+    heading: "Account",
     items: [
       {
         icon: "shield-checkmark-outline",
         title: "Privacy & Security",
-        subtitle: "Sessions, permissions, and account safety",
+        subtitle: "App lock, signed-in devices, and account safety",
+        href: "/privacy-settings",
       },
+    ],
+  },
+  {
+    heading: "About",
+    items: [
       {
         icon: "information-circle-outline",
         title: "About VoltWise",
@@ -169,8 +175,8 @@ export default function SettingsScreen() {
         <View style={styles.banner}>
           <Ionicons name="construct-outline" size={18} color={colors.accent} />
           <Text style={styles.bannerText}>
-            Most of the rest of Settings is on the way. Rows marked &ldquo;Soon&rdquo; are
-            placeholders and will be wired up in an upcoming release.
+            Rows marked &ldquo;Soon&rdquo; are placeholders and will be wired up in an
+            upcoming release. Everything else here is live.
           </Text>
         </View>
 

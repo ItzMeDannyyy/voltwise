@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import ConfirmModal from "../components/ConfirmModal";
 import { PullToRefresh } from "../components/pull-to-refresh";
 import { ScreenContainer, useThemedStyles } from "../components/themed";
+import { useAppLock } from "../context/AppLockContext";
 import { useMqtt } from "../context/MqttContext";
 import { useNotifications } from "../context/NotificationContext";
 import { useTheme } from "../context/ThemeContext";
@@ -70,6 +71,7 @@ export default function DataSettingsScreen() {
   const { resetDisplayUnits } = useUnits();
   const { resetPrefs: resetNotificationPrefs } = useNotifications();
   const { setDeviceUid } = useMqtt();
+  const { resetAppLock } = useAppLock();
 
   // ---- Export choices ----
   const [dataset, setDataset] = useState<ExportDataset>("readings");
@@ -232,6 +234,7 @@ export default function DataSettingsScreen() {
       setFontSize("medium");
       resetDisplayUnits();
       resetNotificationPrefs();
+      resetAppLock();
       await setDeviceUid(DEFAULT_DEVICE_UID);
       // setDeviceUid persists as it applies; clearing after it means a later
       // change to EXPO_PUBLIC_MQTT_DEVICE_UID is picked up rather than shadowed.
@@ -251,6 +254,7 @@ export default function DataSettingsScreen() {
     setFontSize,
     resetDisplayUnits,
     resetNotificationPrefs,
+    resetAppLock,
     setDeviceUid,
     refreshLocal,
   ]);
@@ -491,7 +495,7 @@ export default function DataSettingsScreen() {
                 <Text style={styles.rowSubtitle}>
                   {storedKeyCount === 0
                     ? "Everything is already at its defaults"
-                    : "Theme, units, notifications and sensor pairing go back to defaults"}
+                    : "Theme, units, notifications, sensor pairing and the app lock go back to defaults"}
                 </Text>
               </View>
             </Pressable>
@@ -538,7 +542,7 @@ export default function DataSettingsScreen() {
         icon="refresh-outline"
         destructive
         title="Reset settings on this device?"
-        message="Theme, text size, unit choices, notification preferences and the sensor pairing go back to their defaults. Your account, its data and your electricity rate are untouched, and you stay signed in."
+        message="Theme, text size, unit choices, notification preferences, the sensor pairing and the app lock go back to their defaults. Your account, its data and your electricity rate are untouched, and you stay signed in."
         confirmText="Reset"
         cancelText="Cancel"
         onConfirm={() => void handleReset()}

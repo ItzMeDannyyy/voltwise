@@ -28,8 +28,8 @@ voltwise/
 │   └── test/        # Jest unit tests (ESM + ts-jest)
 ├── app-voltwise/    # Expo React Native app (expo-router)
 │   ├── app/         # (auth) login/register · (tabs) dashboard/devices/alerts/analytics · profile · settings + its sub-screens
-│   ├── components/  # DemoFab, AnomalyModal, AlertDetailModal, ConfirmModal, AppHeader
-│   ├── context/     # AuthContext, MqttContext
+│   ├── components/  # DemoFab, AnomalyModal, AlertDetailModal, ConfirmModal, DeleteAccountModal, AppLockOverlay, AppHeader
+│   ├── context/     # AuthContext, MqttContext, AppLockContext
 │   └── lib/         # api.ts (typed client + shared types), auth-storage.ts
 ├── iot-voltwise/    # PlatformIO ESP32 firmware (PZEM-004T v3.0 + 2-channel relay + MQTT)
 ├── ml-voltwise/     # FastAPI KMeans service (scaffold: app/main.py, train.py are empty stubs)
@@ -85,6 +85,7 @@ All routes are prefixed with `/api`:
 | `/analytics` | analytics | Bill prediction, kWh breakdown, metrics                                       |
 | `/iot`       | iot       | `POST /relay` master relay command; `GET /status` last-known device state    |
 | `/export`    | export    | `GET /summary` row counts per dataset; `GET /:dataset` CSV/JSON download      |
+| `/security`  | security  | `GET /overview` sessions + account safety; session revoke; account deletion   |
 | `/health`    | —         | `GET /api/health` liveness check                                              |
 
 The `export` module is the one place that does **not** wrap its success body in
@@ -147,7 +148,9 @@ design is in `docs/voltwise_kmeans_fastapi_guide.md` and
 ### Authentication (JWT + middleware)
 
 Auth is real. The `auth` module hashes passwords with bcrypt and issues a JWT
-(`src/lib/jwt.ts`, 7-day expiry, signed with `JWT_SECRET_KEY`). `POST /auth/register`
+(`src/lib/jwt.ts`, 7-day expiry, signed with `JWT_SECRET_KEY`). Every token also
+carries a `sid` claim naming a `Session` row, which is what makes it revocable —
+see "Sessions" below. `POST /auth/register`
 and `POST /auth/login` return `{ token, user }`; `GET /auth/me` and `PATCH /auth/me`
 (profile edit) are protected. The `requireAuth` middleware (`src/middleware/auth.middleware.ts`)
 guards `/devices`, `/dashboard`, `/alerts`, `/analytics` — each derives `userId` from
@@ -162,6 +165,44 @@ the `app/(auth)` login/register screens and `app/profile.tsx`.
 
 The seed (`npm run seed`) creates a loginable demo account with the rich demo dataset:
 **`demo@voltwise.app` / `password123`**.
+
+### Sessions (revocable tokens)
+
+Each sign-in creates a `Session` row and embeds its id in the JWT as `sid`.
+`requireAuth` loads that row on every protected request (`src/lib/sessions.ts` —
+the only place session lifecycle belongs) and rejects a token whose session is
+missing, revoked, expired or owned by a different user. That DB read is the
+price of being able to end a session *before* its seven days are up; `lastSeenAt`
+is refreshed at most once a minute so polling clients don't turn every GET into
+a write.
+
+Consequences worth remembering:
+
+- **A token minted before this existed no longer works.** `verifyToken` throws
+  for a payload with no `sid`, which the middleware turns into a 401 and the app
+  turns into a sign-out. That is deliberate: an unrevocable token would be a
+  permanent hole in "sign out everywhere".
+- **Changing a password revokes every other session** (`auth.service.ts`), and a
+  password *reset* revokes all of them. The caller's own session survives a
+  change so nobody is ejected by their own action — the controller passes
+  `req.sessionId` to identify it.
+- `POST /login` and `/register` accept an optional `client: { label, platform }`
+  used only to label the device in the list; it is sanitised in
+  `describeClient` and falls back to a User-Agent parse.
+- The `security` module reads and revokes sessions, and deletes accounts
+  (password re-checked, everything cascades from `User`). Both revoke endpoints
+  return a fresh overview so the client never has to re-fetch into a race.
+
+### App lock (device-local)
+
+`context/AppLockContext.tsx` gates the signed-in app behind biometrics or the
+device passcode (expo-local-authentication; Android/iOS only). Two rules keep it
+from becoming a trap: it never engages while signed out, and it never engages
+when the device cannot verify anyone — if the owner removes their fingerprints
+the preference stays on but goes dormant, and Privacy & Security says so. The
+timing rule (`lib/applock-prefs.ts::shouldLockOnResume`) is pure so it can be
+reasoned about separately from the AppState plumbing; `components/AppLockOverlay.tsx`
+renders above the navigator and always offers sign-out as an escape hatch.
 
 ### EnergyReading dual-use
 
@@ -226,7 +267,7 @@ All three tiers share one topic contract, keyed by a device UID (default
 
 Preferences that belong to the phone rather than the account live in
 `lib/*-storage.ts` (SecureStore on native, localStorage on web) — theme, units,
-notifications, sensor pairing. `lib/local-data.ts` is the **inventory of every
+notifications, sensor pairing, app lock. `lib/local-data.ts` is the **inventory of every
 one of those keys**, and Settings → Data & Export resets them through it. A new
 storage key must be added there too, or it will silently survive a reset
 forever. The JWT is deliberately excluded (clearing it is signing out) and
