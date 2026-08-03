@@ -104,6 +104,18 @@ function RootLayoutNav() {
             presentation: "card",
           }}
         />
+        <Stack.Screen
+          name="about"
+          options={{
+            headerShown: true,
+            title: "About VoltWise",
+            headerStyle: { backgroundColor: colors.bg },
+            headerTintColor: colors.text,
+            headerTitleStyle: { fontWeight: "700", fontSize: 18 },
+            headerBackTitle: "",
+            presentation: "card",
+          }}
+        />
       </Stack>
 
       {/* Sits above the navigator so a lock covers whatever screen the user

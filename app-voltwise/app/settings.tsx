@@ -11,17 +11,12 @@ import {
   ThemeMode,
 } from "../constants/theme";
 
-/**
- * A settings entry that is scaffolded but not wired up yet. Each row shows an
- * icon, a title/subtitle and a "Soon" badge; the whole screen is intentionally
- * non-interactive until the underlying features land.
- */
+/** One navigable settings row: an icon, a title/subtitle, and where it goes. */
 type SettingItem = {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle: string;
-  /** Present means the row is live and navigates; absent means "Soon". */
-  href?: Href;
+  href: Href;
 };
 
 type SettingGroup = {
@@ -81,7 +76,8 @@ const GROUPS: SettingGroup[] = [
       {
         icon: "information-circle-outline",
         title: "About VoltWise",
-        subtitle: "Version, licenses, and support",
+        subtitle: "Version, system status, licences and support",
+        href: "/about",
       },
     ],
   },
@@ -171,54 +167,28 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Coming-soon banner */}
-        <View style={styles.banner}>
-          <Ionicons name="construct-outline" size={18} color={colors.accent} />
-          <Text style={styles.bannerText}>
-            Rows marked &ldquo;Soon&rdquo; are placeholders and will be wired up in an
-            upcoming release. Everything else here is live.
-          </Text>
-        </View>
-
         {GROUPS.map((group) => (
           <View key={group.heading} style={styles.group}>
             <Text style={styles.groupHeading}>{group.heading}</Text>
             <View style={styles.card}>
-              {group.items.map((item, idx) => {
-                const divider = idx < group.items.length - 1 && styles.rowDivider;
-                const body = (
-                  <>
-                    <View style={styles.rowIcon}>
-                      <Ionicons name={item.icon} size={20} color={colors.sub} />
-                    </View>
-                    <View style={styles.rowBody}>
-                      <Text style={styles.rowTitle}>{item.title}</Text>
-                      <Text style={styles.rowSubtitle}>{item.subtitle}</Text>
-                    </View>
-                  </>
-                );
-
-                // Live rows navigate; the rest keep the dimmed "Soon" treatment.
-                return item.href ? (
-                  <Pressable
-                    key={item.title}
-                    style={[styles.row, divider]}
-                    onPress={() => router.push(item.href!)}
-                    accessibilityRole="button"
-                    accessibilityLabel={item.title}
-                  >
-                    {body}
-                    <Ionicons name="chevron-forward" size={18} color={colors.sub} />
-                  </Pressable>
-                ) : (
-                  <View key={item.title} style={[styles.row, styles.rowDisabled, divider]}>
-                    {body}
-                    <View style={styles.soonBadge}>
-                      <Text style={styles.soonBadgeText}>Soon</Text>
-                    </View>
+              {group.items.map((item, idx) => (
+                <Pressable
+                  key={item.title}
+                  style={[styles.row, idx < group.items.length - 1 && styles.rowDivider]}
+                  onPress={() => router.push(item.href)}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.title}
+                >
+                  <View style={styles.rowIcon}>
+                    <Ionicons name={item.icon} size={20} color={colors.sub} />
                   </View>
-                );
-              })}
+                  <View style={styles.rowBody}>
+                    <Text style={styles.rowTitle}>{item.title}</Text>
+                    <Text style={styles.rowSubtitle}>{item.subtitle}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.sub} />
+                </Pressable>
+              ))}
             </View>
           </View>
         ))}
@@ -234,23 +204,6 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     scroll: {
       paddingHorizontal: 20,
       paddingTop: 20,
-    },
-    banner: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-      backgroundColor: colors.accentSoft,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: colors.accentBorder,
-      padding: 14,
-      marginBottom: 24,
-    },
-    bannerText: {
-      color: colors.accent,
-      fontSize: 13 * fontScale,
-      lineHeight: 18 * fontScale,
-      flex: 1,
     },
     group: {
       marginBottom: 24,
@@ -278,10 +231,6 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       paddingHorizontal: 16,
       paddingVertical: 16,
     },
-    // Only the not-yet-built rows are dimmed; live rows render at full opacity.
-    rowDisabled: {
-      opacity: 0.65,
-    },
     rowDivider: {
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
@@ -307,17 +256,6 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       color: colors.sub,
       fontSize: 12 * fontScale,
       lineHeight: 16 * fontScale,
-    },
-    soonBadge: {
-      backgroundColor: colors.border,
-      borderRadius: 10,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-    },
-    soonBadgeText: {
-      color: colors.sub,
-      fontSize: 11 * fontScale,
-      fontWeight: "700",
     },
     appearanceRow: {
       paddingHorizontal: 16,
