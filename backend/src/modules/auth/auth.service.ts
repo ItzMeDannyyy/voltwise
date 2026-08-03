@@ -7,6 +7,11 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "../../lib/prisma.ts";
 import { signToken, signResetToken, verifyResetToken } from "../../lib/jwt.ts";
+import {
+  createSession,
+  revokeOtherSessions,
+  type ClientHints,
+} from "../../lib/sessions.ts";
 import { AppError } from "../../lib/AppError.ts";
 import type {
   RegisterDto,
@@ -70,11 +75,16 @@ const formatUserForResponse = (user: {
 // a signed JWT together with the sanitized user profile.
 // Runs the password strength policy first (throws AppError 400 if it fails).
 // Throws AppError 409 if a user with the given email already exists.
-// Accepts a RegisterDto { firstName, lastName, email, password }.
+// Accepts a RegisterDto { firstName, lastName, email, password } and the
+// ClientHints describing the device signing up, which become the first row in
+// that account's session list.
 // Sets `name` to "<firstName> <lastName>" so that existing name-based display
 // in the app keeps working without changes on the frontend.
 // Returns a Promise resolving to AuthResponseDto { token, user }.
-export const registerUser = async (dto: RegisterDto): Promise<AuthResponseDto> => {
+export const registerUser = async (
+  dto: RegisterDto,
+  client: ClientHints = {}
+): Promise<AuthResponseDto> => {
   // Run the password strength check before touching the DB.
   // This ensures we never persist a user whose password would later be
   // rejected if we run the same check on another code path.
@@ -112,7 +122,8 @@ export const registerUser = async (dto: RegisterDto): Promise<AuthResponseDto> =
     },
   });
 
-  const token = signToken({ id: newUser.id, email: newUser.email });
+  const sessionId = await createSession(newUser.id, client);
+  const token = signToken({ id: newUser.id, email: newUser.email, sid: sessionId });
   const userDto = formatUserForResponse(newUser);
 
   return { token, user: userDto };
@@ -123,9 +134,13 @@ export const registerUser = async (dto: RegisterDto): Promise<AuthResponseDto> =
 // Throws AppError 401 if no user exists with the given email, or if the password
 // does not match the stored hash. The error message is intentionally vague
 // ("Invalid credentials") to avoid revealing which field was wrong.
-// Accepts a LoginDto { email, password }.
+// Accepts a LoginDto { email, password } and the ClientHints describing the
+// device signing in, which open a new session listed under Privacy & Security.
 // Returns a Promise resolving to AuthResponseDto { token, user }.
-export const loginUser = async (dto: LoginDto): Promise<AuthResponseDto> => {
+export const loginUser = async (
+  dto: LoginDto,
+  client: ClientHints = {}
+): Promise<AuthResponseDto> => {
   const user = await prisma.user.findUnique({
     where: { email: dto.email },
   });
@@ -148,7 +163,8 @@ export const loginUser = async (dto: LoginDto): Promise<AuthResponseDto> => {
     throw new AppError(401, "Invalid credentials");
   }
 
-  const token = signToken({ id: user.id, email: user.email });
+  const sessionId = await createSession(user.id, client);
+  const token = signToken({ id: user.id, email: user.email, sid: sessionId });
   const userDto = formatUserForResponse(user);
 
   return { token, user: userDto };
@@ -175,11 +191,18 @@ export const getProfile = async (userId: number): Promise<AuthUserResponseDto> =
 // Email change: if the new email is already in use by another account, throws 409.
 // Password change: requires currentPassword to be provided and to match the stored
 // hash; throws AppError 400 if currentPassword is absent or 401 if it is wrong.
-// Accepts userId (number) and a partial UpdateProfileDto.
+// A successful password change also revokes every other session on the account.
+// Whoever knew the old password should not stay signed in on a device the owner
+// cannot see, and that is precisely the situation a password change is usually
+// reacting to. The caller's own session is kept so changing a password does not
+// eject the person who just changed it — pass currentSessionId (req.sessionId)
+// to identify it; omit it and every session including the caller's is revoked.
+// Accepts userId (number), a partial UpdateProfileDto, and currentSessionId.
 // Returns a Promise resolving to the updated AuthUserResponseDto.
 export const updateProfile = async (
   userId: number,
-  dto: UpdateProfileDto
+  dto: UpdateProfileDto,
+  currentSessionId: string | null = null
 ): Promise<AuthUserResponseDto> => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -243,9 +266,16 @@ export const updateProfile = async (
       ...(dto.currency !== undefined && { currency: dto.currency }),
       ...(newHashedPassword !== undefined && {
         passwordHash: newHashedPassword,
+        passwordChangedAt: new Date(),
       }),
     },
   });
+
+  // Only after the new hash is committed — revoking first would sign other
+  // devices out on behalf of an update that then failed.
+  if (newHashedPassword !== undefined) {
+    await revokeOtherSessions(userId, currentSessionId);
+  }
 
   return formatUserForResponse(updatedUser);
 };
@@ -308,8 +338,13 @@ export const resetPassword = async (
 
   await prisma.user.update({
     where: { id: verifiedPayload.id },
-    data: { passwordHash: newPasswordHash },
+    data: { passwordHash: newPasswordHash, passwordChangedAt: new Date() },
   });
+
+  // A reset is the "I have lost control of this account" path, so every session
+  // goes — there is no caller session to preserve here, since the person is not
+  // signed in. The response already tells them to sign in again.
+  await revokeOtherSessions(verifiedPayload.id, null);
 
   return { message: "Your password has been reset. Please sign in." };
 };

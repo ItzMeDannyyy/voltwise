@@ -1,4 +1,5 @@
-import { DeviceEventEmitter } from "react-native";
+import { DeviceEventEmitter, Platform } from "react-native";
+import Constants from "expo-constants";
 
 /** Fired whenever alerts change (created or marked read) so views can refresh. */
 export const ALERTS_CHANGED_EVENT = "voltwise:alertsChanged";
@@ -36,6 +37,35 @@ export interface AuthUser {
 export interface AuthResponse {
   token: string;
   user: AuthUser;
+}
+
+/** How this install names itself in the account's list of signed-in devices. */
+export interface ClientDescriptor {
+  label: string;
+  platform: string;
+}
+
+/**
+ * Describes this device for the session the server is about to open. Sent with
+ * register and login only — it is a display label, so the backend sanitises it
+ * and falls back to the User-Agent if it is missing or useless.
+ *
+ * Constants.deviceName is the user's own name for their phone ("Danny's S23"),
+ * which is far more recognisable in a device list than a model number. It is
+ * undefined on some platforms, hence the plain-OS fallback.
+ */
+export function clientDescriptor(): ClientDescriptor {
+  const platform = Platform.OS === "android" || Platform.OS === "ios" ? Platform.OS : "web";
+  const deviceName = Constants.deviceName?.trim();
+
+  if (deviceName) return { label: deviceName, platform };
+
+  // On web the backend's User-Agent parse ("Chrome on Windows") beats anything
+  // guessable here, so leave the label for it to fill in.
+  return {
+    label: platform === "android" ? "Android device" : platform === "ios" ? "iPhone" : "",
+    platform,
+  };
 }
 
 /**
@@ -119,7 +149,16 @@ export const api = {
     request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
-  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  /**
+   * DELETE, optionally with a body. Account deletion re-checks the password,
+   * and a password does not belong in a query string where it would be logged
+   * by every proxy on the way.
+   */
+  delete: <T>(path: string, body?: unknown) =>
+    request<T>(path, {
+      method: "DELETE",
+      body: body ? JSON.stringify(body) : undefined,
+    }),
   /** Multipart POST (e.g. device photo upload) — pass a ready-built FormData. */
   upload: <T>(path: string, form: FormData) =>
     request<T>(path, { method: "POST", body: form }),
@@ -311,6 +350,42 @@ export interface ExportSummary {
   alerts: ExportDatasetSummary;
   firstReadingAt: string | null;
   lastReadingAt: string | null;
+}
+
+/** One signed-in device in GET /api/security/overview. */
+export interface ApiSession {
+  id: string;
+  label: string;
+  /** "android" | "ios" | "web" | "unknown" — picks the row icon. */
+  platform: string;
+  ipAddress: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  /** True for the session this app is using. Never offered a revoke button. */
+  current: boolean;
+}
+
+/** Account-safety facts shown above the session list. */
+export interface SecurityAccount {
+  email: string;
+  memberSince: string;
+  /** Null when the password has never been changed since registering. */
+  passwordChangedAt: string | null;
+  hasPassword: boolean;
+}
+
+/** GET /api/security/overview, and the body of both revoke endpoints. */
+export interface SecurityOverview {
+  account: SecurityAccount;
+  currentSessionId: string;
+  sessions: ApiSession[];
+}
+
+/** DELETE /api/security/sessions/:id and POST /sessions/revoke-others. */
+export interface RevokeResult {
+  revokedCount: number;
+  overview: SecurityOverview;
 }
 
 export interface AnalyticsData {

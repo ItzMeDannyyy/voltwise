@@ -34,12 +34,44 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // When the password was last replaced. Null for accounts that have never
+  // changed it since registering — the Privacy & Security screen falls back to
+  // createdAt in that case.
+  passwordChangedAt DateTime?
+
   rooms          Room[]
   devices        Device[]
   alerts         Alert[]
   tariffs        Tariff[]
   billingPeriods BillingPeriod[]
   energyReadings EnergyReading[]
+  sessions       Session[]
+}
+
+// One row per sign-in. The session id travels in the JWT as `sid`, and
+// requireAuth refuses a token whose session is missing, revoked or expired —
+// that is what makes "sign out this device" and "sign out everywhere else" real
+// rather than a client-side gesture. Rows are kept after revocation so the
+// Privacy & Security screen can still explain what happened to a session.
+model Session {
+  id         String    @id @default(uuid())
+  userId     Int
+  // Human-readable device label ("Pixel 7", "Chrome on Windows"). Supplied by
+  // the client at sign-in; derived from the User-Agent when it isn't.
+  label      String
+  // "android" | "ios" | "web" | "unknown".
+  platform   String    @default("unknown")
+  ipAddress  String?
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  // Mirrors the JWT's own expiry so an abandoned session stops being listed
+  // even though nobody ever revoked it.
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, lastSeenAt])
 }
 
 model Tariff {

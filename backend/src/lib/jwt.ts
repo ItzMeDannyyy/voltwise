@@ -10,10 +10,19 @@ import jwt from "jsonwebtoken";
 export interface JwtPayload {
   id: number;
   email: string;
+  // The Session row this token belongs to. requireAuth looks the session up on
+  // every request, which is what allows a token to be revoked before it expires
+  // ("sign out this device" / "sign out everywhere else").
+  sid: string;
 }
 
 // How long an issued token remains valid before the client must log in again.
 const TOKEN_EXPIRY = "7d";
+
+// The same window in milliseconds, so a Session row can be given an expiresAt
+// that matches the token it was issued alongside. Keeping both derived from one
+// constant stops the DB and the JWT from disagreeing about when a session ended.
+export const TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Documentation only: Reads JWT_SECRET_KEY from the environment.
 // Throws an Error if the variable is missing so that a misconfigured deployment
@@ -32,9 +41,9 @@ const getJwtSecret = (): string => {
   return secret;
 };
 
-// Documentation only: Creates a signed JWT containing the user's id and email.
-// The token expires after 7 days and is signed with JWT_SECRET_KEY.
-// Accepts a payload object with id (number) and email (string).
+// Documentation only: Creates a signed JWT containing the user's id, email and
+// session id. The token expires after 7 days and is signed with JWT_SECRET_KEY.
+// Accepts a payload object with id (number), email (string) and sid (string).
 // Returns the signed token string.
 export const signToken = (payload: JwtPayload): string => {
   const secret = getJwtSecret();
@@ -45,14 +54,22 @@ export const signToken = (payload: JwtPayload): string => {
 // Documentation only: Verifies a JWT string and extracts the embedded payload.
 // Throws a JsonWebTokenError if the token is malformed, has been tampered with,
 // or has expired — the caller (auth middleware) converts these into 401 responses.
+// Also throws for a token carrying no `sid`: those were issued before sessions
+// existed and cannot be revoked, so they are treated as authentication failures
+// rather than silently trusted. The holder simply signs in again, which is what
+// the app already does with any 401.
 // Accepts the raw token string (without the "Bearer " prefix).
-// Returns the decoded JwtPayload { id, email }.
+// Returns the decoded JwtPayload { id, email, sid }.
 export const verifyToken = (token: string): JwtPayload => {
   const secret = getJwtSecret();
 
-  const decoded = jwt.verify(token, secret) as JwtPayload;
+  const decoded = jwt.verify(token, secret) as Partial<JwtPayload>;
 
-  return { id: decoded.id, email: decoded.email };
+  if (typeof decoded.sid !== "string" || decoded.sid === "") {
+    throw new Error("token carries no session id");
+  }
+
+  return { id: decoded.id as number, email: decoded.email as string, sid: decoded.sid };
 };
 
 // ─── Password-reset token helpers ─────────────────────────────────────────────

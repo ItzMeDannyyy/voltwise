@@ -5,6 +5,17 @@
 
 // ─── Inbound Request DTOs ──────────────────────────────────────────────────────
 
+// Optional self-description a client may send with register/login so the
+// session it opens is recognisable in the Privacy & Security device list.
+// Purely cosmetic and entirely untrusted — the server falls back to the
+// User-Agent, and nothing is ever authorised on the strength of these values.
+export interface ClientDescriptorDto {
+  // Device name, e.g. "Pixel 7".
+  label?: string;
+  // "android" | "ios" | "web"; anything else is stored as "unknown".
+  platform?: string;
+}
+
 // Request body for POST /api/auth/register.
 // firstName and lastName are required and will be combined into name for
 // backwards-compatible display. password must satisfy the strong-password policy
@@ -14,12 +25,14 @@ export interface RegisterDto {
   lastName: string;
   email: string;
   password: string;
+  client?: ClientDescriptorDto;
 }
 
 // Request body for POST /api/auth/login.
 export interface LoginDto {
   email: string;
   password: string;
+  client?: ClientDescriptorDto;
 }
 
 // Request body for PATCH /api/auth/me.

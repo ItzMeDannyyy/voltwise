@@ -14,6 +14,10 @@ declare global {
         // The email address extracted from the verified JWT payload.
         email: string;
       };
+      // The Session row this request authenticated against, also set by
+      // requireAuth. The security module uses it to mark the caller's own
+      // session as "this device" and to keep it alive when revoking the others.
+      sessionId?: string;
     }
   }
 }
