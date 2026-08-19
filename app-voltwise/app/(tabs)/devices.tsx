@@ -25,12 +25,15 @@ import { PullToRefresh, PullToRefreshList } from "../../components/pull-to-refre
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useTheme } from "../../context/ThemeContext";
 import { useUnits } from "../../context/UnitsContext";
+import { useMqtt } from "../../context/MqttContext";
+import { linkHealth } from "../../lib/iot-prefs";
+import ConfirmModal from "../../components/ConfirmModal";
 import { useThemedStyles } from "../../components/themed";
 import type { ThemeColors } from "../../constants/theme";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type DeviceStatus = "ACTIVE" | "IDLE" | "OFF";
+type DeviceStatus = "ACTIVE" | "IDLE" | "OFF" | "UNPOWERED";
 type ViewMode = "banner" | "photo";
 
 interface Device {
@@ -51,10 +54,20 @@ function getStatusColors(colors: ThemeColors): Record<DeviceStatus, string> {
     ACTIVE: colors.accent,
     IDLE: colors.yellow,
     OFF: colors.red,
+    // Not the same fact as OFF: the feed is dead, so the appliance's own
+    // switch position is unobservable. Muted rather than alarming — nothing is
+    // wrong with the device itself.
+    UNPOWERED: colors.sub,
   };
 }
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
+
+// Shown on every card and in the blocked-toggle dialog, so the two can never
+// drift apart.
+const MASTER_OFF_LABEL = "Master power is offline";
+const MASTER_OFF_MESSAGE =
+  "The master relay has cut power to the whole home, so nothing downstream can be switched on. Turn Master Power back on from the Dashboard first.";
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -73,12 +86,30 @@ export default function DevicesScreen() {
   const [liveReadings, setLiveReadings] = useState<Partial<Record<string, ApiDeviceReading | null>>>({});
   const [loadingReadings, setLoadingReadings] = useState<Partial<Record<string, boolean>>>({});
   const [modalVisible, setModalVisible] = useState(false);
+  const [masterNoticeVisible, setMasterNoticeVisible] = useState(false);
   const [formName, setFormName] = useState("");
   const [formRoom, setFormRoom] = useState("");
   const [formWatts, setFormWatts] = useState("");
   const [formCategory, setFormCategory] = useState("");
   const [formPhotoUri, setFormPhotoUri] = useState<string | null>(null);
   const [formEnabled, setFormEnabled] = useState(true);
+
+  const { relayState, connected, configured, deviceOnline, telemetryAt } = useMqtt();
+
+  // Mirrors the backend rule in devices.controller.ts: power counts as
+  // available only on positive evidence — a live link AND a closed relay.
+  // linkHealth is the shared verdict the sensor screens already use, so this
+  // screen cannot form its own opinion about reachability and drift from them.
+  const powerAvailable =
+    linkHealth({
+      configured,
+      appConnected: connected,
+      deviceOnline,
+      telemetryAt,
+      now: Date.now(),
+    }) === "live" && relayState?.on === true;
+
+  const masterPowerOff = !powerAvailable;
 
   const originalsRef = useRef<Record<string, { status: DeviceStatus; watts: number }>>({});
   const accordionHeightsRef = useRef<Partial<Record<string, number>>>({});
@@ -107,9 +138,14 @@ export default function DevicesScreen() {
 
   // ── Load devices ──────────────────────────────────────────────────────────
 
-  // Fetch the device list — shared by the initial load and pull-to-refresh.
-  const fetchDevices = useCallback(async () => {
-    const data = await api.get<ApiDevice[]>("/devices");
+  // Fetch the device list. Pull-to-refresh goes through the reconcile endpoint
+  // instead of a plain GET so the server re-derives each device's status from
+  // the master relay position before answering; the initial load stays a pure
+  // read.
+  const fetchDevices = useCallback(async (reconcile = false) => {
+    const data = reconcile
+      ? await api.post<ApiDevice[]>("/devices/reconcile-power")
+      : await api.get<ApiDevice[]>("/devices");
     // An empty list is real data (fresh account) — render the empty state,
     // don't fall back to anything.
     const list = data ?? [];
@@ -125,7 +161,9 @@ export default function DevicesScreen() {
       .finally(() => setLoadingDevices(false));
   }, [fetchDevices]);
 
-  const { refreshing, onRefresh } = usePullToRefresh(fetchDevices);
+  // Stable identity so usePullToRefresh doesn't rebuild onRefresh every render.
+  const refreshDevices = useCallback(() => fetchDevices(true), [fetchDevices]);
+  const { refreshing, onRefresh } = usePullToRefresh(refreshDevices);
 
   // ── Filtered list ─────────────────────────────────────────────────────────
 
@@ -137,7 +175,14 @@ export default function DevicesScreen() {
 
   // ── Toggle on/off ─────────────────────────────────────────────────────────
 
+  // With the master relay open there is no power downstream, so switching a
+  // device on would be a lie the hardware can't honour. Explain instead of
+  // silently doing nothing.
   function handleToggle(id: string, value: boolean) {
+    if (masterPowerOff) {
+      setMasterNoticeVisible(true);
+      return;
+    }
     setDevices((prev) =>
       prev.map((d) => {
         if (d.id !== id) return d;
@@ -159,6 +204,20 @@ export default function DevicesScreen() {
         setDevices((prev) => prev.map((d) => (d.id === id ? updated : d)));
       })
       .catch(() => {});
+  }
+
+  // ── Master-power display override ─────────────────────────────────────────
+
+  // While master power is off nothing downstream can be drawing current,
+  // whatever each device's stored `enabled` flag says. This is *display only* —
+  // the flag itself is deliberately left untouched in the database so every
+  // device comes back exactly as the user left it once power returns.
+  function effectiveStatus(device: Device): DeviceStatus {
+    return masterPowerOff ? "UNPOWERED" : device.status;
+  }
+
+  function effectiveWatts(device: Device): number {
+    return masterPowerOff ? 0 : device.watts;
   }
 
   // ── Live reading fetch ────────────────────────────────────────────────────
@@ -347,6 +406,8 @@ export default function DevicesScreen() {
 
   function renderBannerCard(device: Device) {
     const isExpanded = expandedId === device.id;
+    const status = effectiveStatus(device);
+    const watts = effectiveWatts(device);
     const reading = liveReadings[device.id];
     const isLoading = loadingReadings[device.id] ?? false;
 
@@ -373,7 +434,7 @@ export default function DevicesScreen() {
         style={styles.bannerCard}
       >
         {/* Left status bar */}
-        <View style={[styles.statusBar, { backgroundColor: STATUS_COLORS[device.status] }]} />
+        <View style={[styles.statusBar, { backgroundColor: STATUS_COLORS[status] }]} />
 
         <View style={styles.bannerCardContent}>
           {/* Top row: info + controls */}
@@ -383,21 +444,42 @@ export default function DevicesScreen() {
                 {device.name}
               </Text>
               <Text style={styles.deviceRoom}>{device.room}</Text>
-              <View style={[styles.statusPill, { backgroundColor: STATUS_COLORS[device.status] + "22" }]}>
-                <Text style={[styles.statusPillText, { color: STATUS_COLORS[device.status] }]}>
-                  {device.status}
+              <View style={[styles.statusPill, { backgroundColor: STATUS_COLORS[status] + "22" }]}>
+                <Text style={[styles.statusPillText, { color: STATUS_COLORS[status] }]}>
+                  {status}
                 </Text>
               </View>
             </View>
             <View style={styles.bannerCardRight}>
-              <Text style={styles.watts}>{formatPower(device.watts)}</Text>
-              <Switch
-                value={device.enabled}
-                onValueChange={(val) => handleToggle(device.id, val)}
-                trackColor={{ false: colors.border, true: colors.accent }}
-                thumbColor={colors.text}
-                ios_backgroundColor={colors.border}
-              />
+              <Text style={styles.watts}>{formatPower(watts)}</Text>
+              {/* A disabled Switch swallows the tap without firing
+                  onValueChange, so the explanation would never appear. Keep it
+                  disabled for correct affordance and put a transparent target
+                  over it to catch the tap. */}
+              <View>
+                <Switch
+                  value={masterPowerOff ? false : device.enabled}
+                  onValueChange={(val) => handleToggle(device.id, val)}
+                  disabled={masterPowerOff}
+                  trackColor={{ false: colors.border, true: colors.accent }}
+                  thumbColor={colors.text}
+                  ios_backgroundColor={colors.border}
+                />
+                {masterPowerOff && (
+                  <TouchableOpacity
+                    style={StyleSheet.absoluteFill}
+                    activeOpacity={1}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${MASTER_OFF_LABEL} — cannot switch on ${device.name}`}
+                    onPress={() => setMasterNoticeVisible(true)}
+                  />
+                )}
+              </View>
+              {masterPowerOff && (
+                <Text style={styles.masterOffText} numberOfLines={2}>
+                  {MASTER_OFF_LABEL}
+                </Text>
+              )}
             </View>
           </View>
 
@@ -442,6 +524,7 @@ export default function DevicesScreen() {
   // ── Render: photo card ────────────────────────────────────────────────────
 
   function renderPhotoCard({ item: device }: { item: Device }) {
+    const status = effectiveStatus(device);
     return (
       <View style={styles.photoCard}>
         {device.imageUri ? (
@@ -457,12 +540,12 @@ export default function DevicesScreen() {
           </Text>
           <Text style={styles.deviceRoom}>{device.room}</Text>
           <View style={styles.photoCardMeta}>
-            <View style={[styles.statusPill, { backgroundColor: STATUS_COLORS[device.status] + "22" }]}>
-              <Text style={[styles.statusPillText, { color: STATUS_COLORS[device.status] }]}>
-                {device.status}
+            <View style={[styles.statusPill, { backgroundColor: STATUS_COLORS[status] + "22" }]}>
+              <Text style={[styles.statusPillText, { color: STATUS_COLORS[status] }]}>
+                {status}
               </Text>
             </View>
-            <Text style={styles.watts}>{formatPower(device.watts)}</Text>
+            <Text style={styles.watts}>{formatPower(effectiveWatts(device))}</Text>
           </View>
         </View>
       </View>
@@ -702,6 +785,18 @@ export default function DevicesScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Shown when a device toggle is tapped while the master relay is open. */}
+      <ConfirmModal
+        visible={masterNoticeVisible}
+        singleAction
+        icon="flash-off-outline"
+        title={MASTER_OFF_LABEL}
+        message={MASTER_OFF_MESSAGE}
+        confirmText="Okay, close"
+        onConfirm={() => setMasterNoticeVisible(false)}
+        onCancel={() => setMasterNoticeVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -861,6 +956,16 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     bannerCardRight: {
       alignItems: "flex-end",
       gap: 8,
+    },
+    // Sits under the (disabled) switch. Capped and right-aligned so the wrapped
+    // label never squeezes the device name column next to it.
+    masterOffText: {
+      color: colors.red,
+      fontSize: 10 * fontScale,
+      fontWeight: "600",
+      textAlign: "right",
+      maxWidth: 96,
+      marginTop: -2,
     },
     watts: {
       color: colors.text,

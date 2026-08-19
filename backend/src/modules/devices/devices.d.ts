@@ -10,7 +10,7 @@ export interface DeviceResponseDto {
   room: string;
   category: string | null;
   imageUri: string | null;
-  status: "ACTIVE" | "IDLE" | "OFF";
+  status: "ACTIVE" | "IDLE" | "OFF" | "UNPOWERED";
   watts: number;
   enabled: boolean;
 }

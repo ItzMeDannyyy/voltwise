@@ -14,6 +14,11 @@ devicesRouter.get("/", devicesController.getAllDevices);
 // POST /api/devices — creates a new device, find-or-creating the room by name.
 devicesRouter.post("/", devicesController.createDevice);
 
+// POST /api/devices/reconcile-power — re-derives every device's status from the
+// master relay position and returns the refreshed list. Declared before the
+// "/:id" routes so the literal path always wins the match.
+devicesRouter.post("/reconcile-power", devicesController.reconcilePowerState);
+
 // PATCH /api/devices/:id — partially updates a device's fields.
 devicesRouter.patch("/:id", devicesController.updateDevice);
 

@@ -260,6 +260,14 @@ export interface DashboardData {
   totalTodayKwh: number;
   devices: DashboardDevice[];
   history: { labels: string[]; data: number[] };
+  /** One kWh series per device, sharing history's labels. Empty until per-device
+   *  readings exist — today only the seed writes them (MQTT ingest is
+   *  whole-home only), so a live install shows no lines until NILM attribution
+   *  lands. */
+  deviceHistory: {
+    labels: string[];
+    series: { deviceId: string; name: string; color: string; data: number[] }[];
+  };
   topConsumers: ConsumerSlice[];
   reading: Reading;
   iotOnline: boolean;
@@ -271,7 +279,7 @@ export interface ApiDevice {
   room: string;
   category: string | null;
   imageUri: string | null;
-  status: "ACTIVE" | "IDLE" | "OFF";
+  status: "ACTIVE" | "IDLE" | "OFF" | "UNPOWERED";
   watts: number;
   enabled: boolean;
 }

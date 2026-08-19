@@ -29,17 +29,25 @@ voltwise/
 ├── app-voltwise/    # Expo React Native app (expo-router)
 │   ├── app/         # (auth) login/register · (tabs) dashboard/devices/alerts/analytics · profile · settings + its sub-screens
 │   ├── components/  # DemoFab, AnomalyModal, AlertDetailModal, ConfirmModal, DeleteAccountModal, AppLockOverlay, AppHeader
-│   ├── context/     # AuthContext, MqttContext, AppLockContext
-│   └── lib/         # api.ts (typed client + shared types), auth-storage.ts
+│   ├── context/     # Auth, Theme, AppLock, Units, Mqtt, Notification
+│   └── lib/         # api.ts (typed client + shared types) + *-storage.ts / *-prefs.ts pairs
 ├── iot-voltwise/    # PlatformIO ESP32 firmware (PZEM-004T v3.0 + 2-channel relay + MQTT)
 ├── ml-voltwise/     # FastAPI KMeans service (scaffold: app/main.py, train.py are empty stubs)
 ├── docs/            # ERD, DATA_FLOW, SYSTEM_ARCHITECTURE + NILM/KMeans/ESP32 build guides
 └── VOLTWISE_CORE_FEATURES.md
 ```
 
-> The root `package.json` `dev`/`dev:app` scripts still reference the old
-> `voltwise/` app directory (renamed to `app-voltwise/`) and are broken. Run
-> the backend and app from their own directories instead.
+### Root commands (run from the repo root)
+
+```bash
+npm run install:all   # npm install in backend/ and app-voltwise/
+npm run add:env:all   # copy both .env.example files to .env
+npm run dev           # concurrently: backend API + Expo (app started with -c)
+npm run dev:backend   # backend only
+npm run dev:app       # Expo only
+```
+
+> The root `test` script is a placeholder — tests live in `backend/` only.
 
 ## Backend (`backend/`)
 
@@ -101,7 +109,13 @@ guards against spreadsheet formula injection in user-authored strings.
 
 - **Stack:** Expo SDK 54, React Native 0.81, React 19, expo-router (file-based tabs in `app/(tabs)`).
 - **Data:** screens fetch from the backend through `lib/api.ts`, which auto-resolves the dev host from `expo-constants` and unwraps `{success,data}`. Each screen keeps local mock constants as an **offline-first fallback** and uses **optimistic updates** for writes.
-- **Expo is versioned:** before writing app code, consult the exact docs at https://docs.expo.dev/versions/v54.0.0/ (see `app-voltwise/AGENTS.md`).
+- **Expo is versioned:** before writing app code, consult the exact docs at https://docs.expo.dev/versions/v54.0.0/.
+- **Contexts wrap the whole app**, nested in this order in `app/_layout.tsx`:
+  `ThemeProvider` → `AuthProvider` → `AppLockProvider` → `UnitsProvider` →
+  `MqttProvider` → `NotificationProvider`. The order is load-bearing: theme must
+  paint the lock overlay before anyone signs in, and units/MQTT/notifications all
+  read `useAuth()`. Screens take colors from `useTheme()` and every kW/kWh/₱ string
+  from `useUnits()` — don't hard-code either.
 
 ### App commands (run from `app-voltwise/`)
 
@@ -113,7 +127,11 @@ npx expo start --ios      # iOS only
 npm run lint              # ESLint via expo lint
 ```
 
-> On a physical device, `lib/api.ts` derives the LAN IP automatically. Override with `EXPO_PUBLIC_API_URL` (e.g. `http://192.168.1.10:3000/api`).
+> The API base URL comes from `EXPO_PUBLIC_BASE_URL` (full URL including `/api`;
+> defaults to `http://localhost:3000/api`). On a physical device set it to your
+> dev machine's LAN IP, e.g. `http://192.168.1.10:3000/api`. Expo only exposes
+> `EXPO_PUBLIC_*` vars, and only at bundle time — restart with `npx expo start --clear`
+> after editing `.env`.
 
 ## IoT firmware (`iot-voltwise/`)
 
@@ -138,8 +156,10 @@ pio device monitor        # serial monitor at 115200 baud
 ## ML service (`ml-voltwise/`)
 
 FastAPI + scikit-learn KMeans service, currently a **scaffold**: `app/main.py`,
-`train.py`, and `feature_engineering.py` are empty stubs; `artifacts/` holds a
-pre-trained `kmeans_pipeline.joblib` + `cluster_profiles.csv`. The intended
+`train.py`, and `feature_engineering.py` are **empty (0-byte) files**; `artifacts/`
+holds a pre-trained `kmeans_pipeline.joblib` + `cluster_profiles.csv` and `data/`
+holds `raw/telemetry.csv` + `processed/windows.csv`. Nothing here is imported by
+the backend. The intended
 design is in `docs/voltwise_kmeans_fastapi_guide.md` and
 `docs/voltwise_model_service_guide.md`. Dependencies: `pip install -r requirements.txt`.
 
@@ -254,6 +274,45 @@ All three tiers share one topic contract, keyed by a device UID (default
 - A retained `"online"` status can outlive a crashed device — both backend and
   app cross-check telemetry age (≤15 s / ≤10 s) before reporting the device
   online.
+
+### New-load detection (MQTT → alert)
+
+`src/lib/loadDetector.ts` is a **pure, I/O-free step-change detector** fed one
+telemetry sample at a time from the MQTT handler. A sustained jump above the
+rolling EMA baseline (`LOAD_DETECT_DELTA_WATTS`, held for
+`LOAD_DETECT_SUSTAIN_SAMPLES` readings ~2 s apart, rate-limited by
+`LOAD_DETECT_COOLDOWN_MS`) is the signature of an appliance switching on, so the
+backend writes an INFO `Alert` for the ingest account suggesting the user add a
+device. Purity is the point — it holds all state in a factory closure, so
+`test/loadDetector.test.ts` drives it directly with no broker or DB. Detection
+never blocks ingestion: alert creation is fire-and-forget. Disable with
+`LOAD_DETECT_ENABLED=false`.
+
+### Tariff lookup
+
+`src/lib/tariff.ts::getLatestTariff(userId)` is the single source of the user's
+rate — most-recent `Tariff` by `effectiveFrom`, falling back to **10.5 ₱/kWh**.
+Dashboard, analytics, and devices all go through it so cost figures agree; don't
+re-query `Tariff` or inline a rate.
+
+### Device photos
+
+`src/lib/upload.ts` configures multer to store device images on local disk in
+`backend/uploads/` (5 MB cap, jpeg/png/webp only, filenames embedding device id +
+timestamp). `index.ts` serves that folder statically at `/uploads`, so a stored
+`imageUri` like `/uploads/device-3-….jpg` resolves for the app. There is no
+object storage — the folder is the bucket.
+
+### Notifications are local, not push
+
+`context/NotificationContext.tsx` runs the banner engine **in JS**, so it only
+fires while the app is alive: on an `ALERTS_CHANGED_EVENT`, or via a catch-up
+sweep when the app returns to the foreground. Swipe the app away and the MQTT
+socket dies with it — nothing arrives until next launch. Real background delivery
+would need remote push, a dev build, and backend token storage; don't describe the
+current behaviour as push. The decision rules (severity filter, quiet hours,
+high-water mark for "already notified") are pure functions in
+`lib/notification-rules.ts`, separate from the delivery plumbing.
 
 ### Alert event bus
 

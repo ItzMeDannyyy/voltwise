@@ -11,12 +11,26 @@ import type {
   DashboardResponseDto,
   DashboardPeriod,
   DashboardHistoryDto,
+  DashboardDeviceHistoryDto,
   TopConsumerDto,
   ReadingDto,
 } from "./dashboard";
 
 // A reading is considered "live" if it arrived within this window.
 const IOT_LIVENESS_WINDOW_MS = 5 * 60 * 1000;
+
+// A fixed palette for the per-device Usage History lines. Eight entries so a
+// typical home's device count each gets a distinct hue before wrapping.
+const DEVICE_SERIES_COLORS = [
+  "#00d4aa",
+  "#3b82f6",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ec4899",
+  "#ef4444",
+  "#14b8a6",
+  "#a3a3a3",
+];
 
 // A fixed color palette for top consumer chart segments.
 const CONSUMER_COLORS = [
@@ -76,6 +90,147 @@ const formatBucketLabel = (date: Date, period: DashboardPeriod): string => {
 // Fetches EnergyReading rows for the given user in the relevant window and sums kWh per bucket.
 // Accepts userId (number) and the period string.
 // Returns a Promise resolving to a DashboardHistoryDto.
+// Documentation only: Computes the x-axis buckets for a period — the single
+// definition of the chart's time axis, shared by the whole-home history and the
+// per-device series so their labels always line up.
+// Accepts the period and the current time.
+// Returns an ordered array of { label, start, end }, excluding future buckets.
+interface HistoryBucket {
+  label: string;
+  start: Date;
+  end: Date;
+}
+
+const buildBuckets = (period: DashboardPeriod, now: Date): HistoryBucket[] => {
+  const buckets: HistoryBucket[] = [];
+
+  if (period === "Day") {
+    // Every 3 hours from midnight to the current hour, giving up to 8 points.
+    const todayStart = startOfDay(now);
+    for (const bucketHour of [0, 3, 6, 9, 12, 15, 18, 21]) {
+      const start = new Date(todayStart);
+      start.setHours(bucketHour);
+      if (start > now) break;
+
+      const end = new Date(start);
+      end.setHours(bucketHour + 2, 59, 59, 999);
+      buckets.push({ label: formatBucketLabel(start, "Day"), start, end });
+    }
+    return buckets;
+  }
+
+  if (period === "Week") {
+    // One bucket per day for the past 7 days.
+    for (let daysAgo = 6; daysAgo >= 0; daysAgo--) {
+      const day = new Date(now);
+      day.setDate(now.getDate() - daysAgo);
+      const start = startOfDay(day);
+      buckets.push({
+        label: formatBucketLabel(start, "Week"),
+        start,
+        end: endOfDay(day),
+      });
+    }
+    return buckets;
+  }
+
+  // Month: one bucket per calendar month of the current year.
+  const currentYear = now.getFullYear();
+  for (let month = 0; month < 12; month++) {
+    const start = new Date(currentYear, month, 1, 0, 0, 0, 0);
+    if (start > now) break;
+    buckets.push({
+      label: formatBucketLabel(start, "Month"),
+      start,
+      end: new Date(currentYear, month + 1, 0, 23, 59, 59, 999),
+    });
+  }
+  return buckets;
+};
+
+// Documentation only: Builds one kWh series per device for the multi-line Usage
+// History chart, bucketed onto the same axis as the whole-home history.
+//
+// Unlike buildHistoryForPeriod, this issues a single range query and buckets in
+// memory rather than one aggregate per bucket — with a series per device the
+// per-bucket approach would be devices x buckets round trips.
+//
+// Devices with no consumption in the period are dropped rather than drawn as a
+// flat zero line, and the rest are ordered by total kWh so the legend reads
+// biggest-first and colours stay stable within a period.
+//
+// Accepts userId (number) and the period.
+// Returns a Promise resolving to a DashboardDeviceHistoryDto.
+const buildDeviceHistoryForPeriod = async (
+  userId: number,
+  period: DashboardPeriod
+): Promise<DashboardDeviceHistoryDto> => {
+  const buckets = buildBuckets(period, new Date());
+  const labels = buckets.map((bucket) => bucket.label);
+
+  if (buckets.length === 0) return { labels, series: [] };
+
+  const rangeStart = buckets[0].start;
+  const rangeEnd = buckets[buckets.length - 1].end;
+
+  const [readings, devices] = await Promise.all([
+    prisma.energyReading.findMany({
+      where: {
+        userId,
+        deviceId: { not: null },
+        timestamp: { gte: rangeStart, lte: rangeEnd },
+      },
+      select: { deviceId: true, timestamp: true, kwh: true },
+    }),
+    prisma.device.findMany({
+      where: { userId },
+      select: { id: true, name: true },
+    }),
+  ]);
+
+  if (readings.length === 0) return { labels, series: [] };
+
+  // deviceId -> per-bucket kWh totals.
+  const totalsByDevice = new Map<number, number[]>();
+
+  for (const reading of readings) {
+    if (reading.deviceId === null) continue;
+
+    // Buckets are ordered and non-overlapping, so the first match wins.
+    const bucketIndex = buckets.findIndex(
+      (bucket) =>
+        reading.timestamp >= bucket.start && reading.timestamp <= bucket.end
+    );
+    if (bucketIndex === -1) continue;
+
+    let totals = totalsByDevice.get(reading.deviceId);
+    if (!totals) {
+      totals = new Array(buckets.length).fill(0);
+      totalsByDevice.set(reading.deviceId, totals);
+    }
+    totals[bucketIndex] += reading.kwh;
+  }
+
+  const deviceNameMap = new Map(devices.map((device) => [device.id, device.name]));
+
+  return {
+    labels,
+    series: [...totalsByDevice.entries()]
+      .map(([deviceId, totals]) => ({
+        deviceId: String(deviceId),
+        name: deviceNameMap.get(deviceId) ?? "Unknown Device",
+        total: totals.reduce((sum, value) => sum + value, 0),
+        data: totals.map((value) => parseFloat(value.toFixed(3))),
+      }))
+      .filter((entry) => entry.total > 0)
+      .sort((a, b) => b.total - a.total)
+      .map(({ total: _total, ...entry }, index) => ({
+        ...entry,
+        color: DEVICE_SERIES_COLORS[index % DEVICE_SERIES_COLORS.length],
+      })),
+  };
+};
+
 const buildHistoryForPeriod = async (
   userId: number,
   period: DashboardPeriod
@@ -338,8 +493,9 @@ export const getDashboardData = async (
     active: device.status === DeviceStatus.ACTIVE,
   }));
 
-  const [history, topConsumers, reading, recentCount] = await Promise.all([
+  const [history, deviceHistory, topConsumers, reading, recentCount] = await Promise.all([
     buildHistoryForPeriod(userId, period),
+    buildDeviceHistoryForPeriod(userId, period),
     buildTopConsumers(userId),
     fetchLatestWholeHomeReading(userId),
     prisma.energyReading.count({
@@ -358,6 +514,7 @@ export const getDashboardData = async (
     totalTodayKwh,
     devices: deviceSummaries,
     history,
+    deviceHistory,
     topConsumers,
     reading,
     iotOnline,

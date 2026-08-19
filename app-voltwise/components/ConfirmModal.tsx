@@ -24,6 +24,11 @@ export interface ConfirmModalProps {
   destructive?: boolean;
   /** Show a spinner on the confirm button and disable both actions. */
   loading?: boolean;
+  /**
+   * Render only the confirm button — for notices that inform rather than ask
+   * (e.g. "Master power is off"), where a second choice would be meaningless.
+   */
+  singleAction?: boolean;
   /** Optional icon shown above the title. */
   icon?: keyof typeof Ionicons.glyphMap;
   onConfirm: () => void;
@@ -48,6 +53,7 @@ export default function ConfirmModal({
   cancelText = "No",
   destructive = false,
   loading = false,
+  singleAction = false,
   icon,
   onConfirm,
   onCancel,
@@ -83,14 +89,16 @@ export default function ConfirmModal({
           {message && <Text style={styles.message}>{message}</Text>}
 
           <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.btn, styles.cancelBtn]}
-              onPress={onCancel}
-              activeOpacity={0.8}
-              disabled={loading}
-            >
-              <Text style={styles.cancelText}>{cancelText}</Text>
-            </TouchableOpacity>
+            {!singleAction && (
+              <TouchableOpacity
+                style={[styles.btn, styles.cancelBtn]}
+                onPress={onCancel}
+                activeOpacity={0.8}
+                disabled={loading}
+              >
+                <Text style={styles.cancelText}>{cancelText}</Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={[
