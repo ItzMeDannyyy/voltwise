@@ -17,6 +17,23 @@ export interface DashboardHistoryDto {
   data: number[];
 }
 
+// One device's kWh per bucket, aligned to DashboardDeviceHistoryDto.labels.
+export interface DeviceHistorySeriesDto {
+  deviceId: string;
+  name: string;
+  // Stable per-series colour so the chart line and its legend entry match.
+  color: string;
+  // Same length and order as labels; 0 for a bucket with no readings.
+  data: number[];
+}
+
+// Per-device trend data for the multi-line Usage History chart. Labels are the
+// same buckets the whole-home history uses, so both charts line up.
+export interface DashboardDeviceHistoryDto {
+  labels: string[];
+  series: DeviceHistorySeriesDto[];
+}
+
 // A top-consuming device entry with an integer percentage and a chart color.
 export interface TopConsumerDto {
   id: string;
@@ -44,6 +61,7 @@ export interface DashboardResponseDto {
   totalTodayKwh: number;
   devices: DashboardDeviceSummaryDto[];
   history: DashboardHistoryDto;
+  deviceHistory: DashboardDeviceHistoryDto;
   topConsumers: TopConsumerDto[];
   reading: ReadingDto;
   iotOnline: boolean;

@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import type { Request, Response, NextFunction } from "express";
 import * as devicesService from "./devices.service.ts";
+import { getStatus as getIotStatus } from "../iot/iot.service.ts";
 import type {
   CreateDeviceDto,
   UpdateDeviceDto,
@@ -26,6 +27,36 @@ export const getAllDevices = async (
   try {
     const userId = req.user!.id;
     const deviceList = await devicesService.getAllDevices(userId);
+    res.status(200).json({ success: true, data: deviceList });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Documentation only: Handles POST /api/devices/reconcile-power.
+// Reconciles every device's status against the master relay's last-known
+// position, then returns the refreshed list. Called by the app's
+// pull-to-refresh. Takes no body — the relay position comes from the backend's
+// own MQTT state, never from the client.
+// Returns 200 with { success: true, data: DeviceResponseDto[] } on success.
+// Passes any errors to the Express error handler via next().
+export const reconcilePowerState = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    // Power counts as available only on positive evidence: the sensor is
+    // reporting (getIotStatus cross-checks telemetry freshness, so a stale
+    // retained "online" does not qualify) AND its relay is closed. A dead link
+    // or an unpaired install therefore reads as no power, not as "unknown".
+    const status = getIotStatus();
+    const powerAvailable = status.online && status.relay?.on === true;
+    const deviceList = await devicesService.reconcilePowerState(
+      userId,
+      powerAvailable
+    );
     res.status(200).json({ success: true, data: deviceList });
   } catch (error) {
     next(error);

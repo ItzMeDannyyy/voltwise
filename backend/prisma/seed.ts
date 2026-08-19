@@ -45,6 +45,20 @@ const randomBetween = (min: number, max: number): number => {
   return parseFloat((Math.random() * (max - min) + min).toFixed(3));
 };
 
+// Documentation only: Mirrors deriveDeviceStatus in devices.service.ts — an
+// enabled device drawing watts is ACTIVE, enabled at 0 W is IDLE, disabled is
+// OFF. The seed derives status from intent rather than hardcoding it so demo
+// data can never contradict the rule the API applies.
+//
+// UNPOWERED is deliberately never seeded: it describes the master relay being
+// open right now, which is a live condition reconciled from MQTT, not a fact
+// about the demo dataset.
+const deriveDeviceStatus = (enabled: boolean, watts: number): DeviceStatus => {
+  if (!enabled) return DeviceStatus.OFF;
+  if (watts > 0) return DeviceStatus.ACTIVE;
+  return DeviceStatus.IDLE;
+};
+
 // ─── Seed Execution ───────────────────────────────────────────────────────────
 
 // Documentation only: Main seed function — deletes all existing data in FK-safe order
@@ -139,7 +153,6 @@ async function seed(): Promise<void> {
       category: "Climate",
       roomName: "Bedroom",
       ratedWatts: 1200,
-      status: DeviceStatus.ACTIVE,
       enabled: true,
     },
     {
@@ -148,7 +161,6 @@ async function seed(): Promise<void> {
       category: "Lighting",
       roomName: "Living Room",
       ratedWatts: 340,
-      status: DeviceStatus.ACTIVE,
       enabled: true,
     },
     {
@@ -157,7 +169,6 @@ async function seed(): Promise<void> {
       category: "Entertainment",
       roomName: "Living Room",
       ratedWatts: 0,
-      status: DeviceStatus.IDLE,
       enabled: true,
     },
     {
@@ -166,7 +177,6 @@ async function seed(): Promise<void> {
       category: "Kitchen",
       roomName: "Kitchen",
       ratedWatts: 860,
-      status: DeviceStatus.ACTIVE,
       enabled: true,
     },
     {
@@ -175,7 +185,6 @@ async function seed(): Promise<void> {
       category: "Laundry",
       roomName: "Laundry",
       ratedWatts: 0,
-      status: DeviceStatus.OFF,
       enabled: false,
     },
     {
@@ -184,7 +193,6 @@ async function seed(): Promise<void> {
       category: "Kitchen",
       roomName: "Kitchen",
       ratedWatts: 180,
-      status: DeviceStatus.ACTIVE,
       enabled: true,
     },
     {
@@ -193,7 +201,6 @@ async function seed(): Promise<void> {
       category: "Bathroom",
       roomName: "Bathroom",
       ratedWatts: 1500,
-      status: DeviceStatus.ACTIVE,
       enabled: true,
     },
   ] as const;
@@ -207,7 +214,7 @@ async function seed(): Promise<void> {
           name: def.name,
           category: def.category,
           ratedWatts: def.ratedWatts,
-          status: def.status,
+          status: deriveDeviceStatus(def.enabled, def.ratedWatts),
           enabled: def.enabled,
         },
       })

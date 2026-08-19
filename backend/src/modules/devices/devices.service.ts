@@ -54,6 +54,50 @@ const deriveDeviceStatus = (enabled: boolean, watts: number): DeviceStatus => {
   return DeviceStatus.IDLE;
 };
 
+// The subset of a Device this reconciliation needs. Declared structurally so
+// the pure function below can be unit-tested with plain objects.
+export interface ReconcilableDevice {
+  id: number;
+  status: DeviceStatus;
+  enabled: boolean;
+  ratedWatts: number;
+}
+
+// Documentation only: Decides which devices must change status given whether
+// mains power is confirmed to be reaching them. Pure — no Prisma, no clock, no
+// MQTT — so the rule can be tested on its own; reconcilePowerState does the I/O.
+//
+// powerAvailable is a positive assertion, not the absence of bad news: it is
+// true only when the sensor is reporting AND its relay says closed. Every other
+// situation — relay open, sensor unreachable, no sensor paired at all — is
+// false, because in none of them can the system stand behind a claim that an
+// appliance is drawing power. Downgrading to UNPOWERED is the conservative
+// move; leaving a device ACTIVE asserts something nothing has verified.
+//
+//   false → every device not already UNPOWERED becomes UNPOWERED.
+//   true  → devices parked as UNPOWERED are released, each returning to
+//           whatever its own intent implies, so nothing the user chose is lost.
+//
+// Accepts whether power is confirmed available, and the user's devices.
+// Returns only the devices whose status actually changes, as {id, status}.
+export const resolvePowerReconciliation = (
+  powerAvailable: boolean,
+  devices: readonly ReconcilableDevice[]
+): { id: number; status: DeviceStatus }[] => {
+  if (!powerAvailable) {
+    return devices
+      .filter((device) => device.status !== DeviceStatus.UNPOWERED)
+      .map((device) => ({ id: device.id, status: DeviceStatus.UNPOWERED }));
+  }
+
+  return devices
+    .filter((device) => device.status === DeviceStatus.UNPOWERED)
+    .map((device) => ({
+      id: device.id,
+      status: deriveDeviceStatus(device.enabled, device.ratedWatts),
+    }));
+};
+
 // Documentation only: Finds or creates a Room record by name for a given user.
 // This allows the "create device" flow to accept a room name string without requiring
 // the caller to pre-create the room separately.
@@ -90,6 +134,48 @@ export const getAllDevices = async (userId: number): Promise<DeviceResponseDto[]
   });
 
   return devices.map(formatDeviceForResponse);
+};
+
+// Documentation only: Applies the master-relay position to the stored device
+// statuses and returns the resulting device list. Invoked by the app's
+// pull-to-refresh so the list a user pulls down is consistent with whether the
+// house actually has power.
+//
+// powerAvailable is passed in rather than derived here so this module never
+// imports the MQTT client — that would pull the broker singleton and the alerts
+// service into every consumer of the devices service, including its tests. The
+// controller computes it from the backend's own MQTT state; it is never taken
+// from the client, since the app may be paired to a different board and no
+// client should be able to mark another account's devices UNPOWERED.
+//
+// Accepts userId (number) and whether power is confirmed available (boolean).
+// Returns a Promise resolving to the full DeviceResponseDto[] after any change.
+export const reconcilePowerState = async (
+  userId: number,
+  powerAvailable: boolean
+): Promise<DeviceResponseDto[]> => {
+  const devices = await prisma.device.findMany({
+    where: { userId },
+    include: { room: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const changes = resolvePowerReconciliation(powerAvailable, devices);
+
+  // Nothing to do — return what we already read rather than querying twice.
+  if (changes.length === 0) return devices.map(formatDeviceForResponse);
+
+  // One transaction so the list can never be observed half-reconciled.
+  await prisma.$transaction(
+    changes.map((change) =>
+      prisma.device.update({
+        where: { id: change.id },
+        data: { status: change.status },
+      })
+    )
+  );
+
+  return getAllDevices(userId);
 };
 
 // Documentation only: Creates a new device for the given user.

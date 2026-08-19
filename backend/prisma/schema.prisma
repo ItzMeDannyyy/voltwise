@@ -13,6 +13,11 @@ enum DeviceStatus {
   ACTIVE
   IDLE
   OFF
+  // No power is available downstream of the master relay. Distinct from OFF,
+  // which means the appliance itself is not drawing: while the feed is dead a
+  // device's own switch position is unobservable, so claiming OFF would assert
+  // knowledge the system does not have.
+  UNPOWERED
 }
 
 enum AlertType {

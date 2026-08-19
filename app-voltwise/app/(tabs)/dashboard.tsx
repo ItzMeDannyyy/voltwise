@@ -33,28 +33,6 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-// ---- Offline-first fallback for the PZEM-004T reading ----
-// Realistic values: 220 V mains, ~1.46 A, ~320 W, ~18.7 kWh, 60 Hz, 0.92 PF.
-const FALLBACK_READING: Reading = {
-  voltage: 220.4,
-  current: 1.46,
-  activePower: 319.8,
-  energy: 18.7,
-  frequency: 60.0,
-  powerFactor: 0.92,
-  timestamp: new Date().toISOString(),
-};
-
-// Per-metric jitter caps so random fluctuations stay physically plausible.
-const JITTER = {
-  voltage: 0.8,      // ± 0.8 V
-  current: 0.05,     // ± 0.05 A
-  activePower: 12,   // ± 12 W
-  energy: 0.02,      // ± 0.02 kWh (ratchets up in practice; we keep it gentle here)
-  frequency: 0.05,   // ± 0.05 Hz
-  powerFactor: 0.01, // ± 0.01
-};
-
 // Metric display definitions — order determines grid order.
 const METRIC_DEFS: {
   key: keyof Omit<Reading, "timestamp">;
@@ -70,12 +48,6 @@ const METRIC_DEFS: {
   { key: "powerFactor", label: "Power Factor", unit: "PF",  decimals: 2 },
 ];
 
-const DAY_DATA   = [2.1, 2.4, 3.5, 3.8, 3.2, 2.0, 2.1, 2.3, 3.1, 3.6, 3.8, 3.4, 3.9];
-const WEEK_DATA  = [18.7, 22.1, 19.4, 25.3, 21.8, 17.2, 23.5];
-const MONTH_DATA = [580, 610, 595, 640, 620, 575, 655, 630, 600, 670, 645, 610];
-const DAY_LABELS   = ["6a", "9a", "12p", "3p", "6p", "9p", "12a"];
-const WEEK_LABELS  = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 type PillStatus = "online" | "offline" | "degraded" | "unknown";
 
@@ -103,62 +75,48 @@ function createPillStyles(colors: ThemeColors, fontScale: number) {
 
 type Period = "Day" | "Week" | "Month";
 
-function getChartConfig(period: Period) {
-  switch (period) {
-    case "Day":   return { data: DAY_DATA,   labels: DAY_LABELS   };
-    case "Week":  return { data: WEEK_DATA,  labels: WEEK_LABELS  };
-    case "Month": return { data: MONTH_DATA, labels: MONTH_LABELS };
-  }
-}
-
-// Clamp a number to [min, max].
-function clamp(v: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, v));
-}
-
-// Apply a random jitter delta, clamped to sane PZEM ranges.
-function jitter(value: number, range: number, min: number, max: number): number {
-  const delta = (Math.random() - 0.5) * 2 * range;
-  return Math.round(clamp(value + delta, min, max) * 1000) / 1000;
-}
-
 type LiveMetrics = Omit<Reading, "timestamp">;
 
 // Telemetry older than this is stale — the device publishes every ~2 s, so a
 // 10 s gap means the feed is effectively down and the UI must say so.
 const TELEMETRY_FRESH_MS = 10_000;
 
-// What is currently driving the live metrics:
+// What is currently driving the live metrics. There is no third option on
+// purpose: either real PZEM telemetry is arriving, or the panel shows nothing.
+// The UI must never invent a reading.
 //   "mqtt" — real PZEM telemetry streaming from the broker
-//   "sim"  — backend says IoT is online but no fresh MQTT data (demo fallback)
-//   "off"  — nothing live; readings freeze
-type LiveSource = "mqtt" | "sim" | "off";
+//   "off"  — no live feed; metrics render as "—"
+type LiveSource = "mqtt" | "off";
 
 // Reachability of the ESP32 as the UI reports it:
 //   "live"    — fresh MQTT telemetry; relay commands will land
-//   "sim"     — backend claims it's up but nothing is arriving over MQTT
+//   "nolink"  — backend claims it's up but nothing is arriving over MQTT
 //   "unknown" — still resolving on first load
 //   "offline" — the device is not there
-type IotState = "live" | "sim" | "unknown" | "offline";
+type IotState = "live" | "nolink" | "unknown" | "offline";
 
 export default function DashboardScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { formatPower, formatEnergy, formatCostOf, powerParts, energyParts } = useUnits();
-  const [currentKw, setCurrentKw]         = useState(3.24);
+  // null until the backend or the sensor supplies a real figure.
+  const [currentKw, setCurrentKw]         = useState<number | null>(null);
   const [period, setPeriod]               = useState<Period>("Day");
   const [dashboard, setDashboard]         = useState<DashboardData | null>(null);
   // Card starts expanded (true).
   const [expanded, setExpanded]           = useState(true);
-  // Live fluctuating metric values, seeded from FALLBACK_READING.
-  const [liveMetrics, setLiveMetrics]     = useState<LiveMetrics>({
-    voltage:     FALLBACK_READING.voltage,
-    current:     FALLBACK_READING.current,
-    activePower: FALLBACK_READING.activePower,
-    energy:      FALLBACK_READING.energy,
-    frequency:   FALLBACK_READING.frequency,
-    powerFactor: FALLBACK_READING.powerFactor,
-  });
+  // null until real telemetry arrives — the grid renders "—" until then.
+  const [liveMetrics, setLiveMetrics]     = useState<LiveMetrics | null>(null);
+
+  // Which chart point the user tapped, in SVG coordinates from chart-kit.
+  // null = no tooltip on screen.
+  const [chartPoint, setChartPoint] = useState<{
+    deviceId: string;
+    pointIndex: number;
+    kwh: number;
+    x: number;
+    y: number;
+  } | null>(null);
 
   const [serverOnline, setServerOnline] = useState<boolean | null>(null);
   const [iotOnline, setIotOnline]       = useState<boolean | null>(null);
@@ -188,17 +146,18 @@ export default function DashboardScreen() {
     setDashboard(data);
     setCurrentKw(data.currentKw);
     setIotOnline(data.iotOnline ?? false);
-    // Seed live metrics from the backend reading if present.
-    if (data.reading) {
-      const { timestamp: _ts, ...rest } = data.reading;
-      setLiveMetrics(rest);
-    }
+  }, [period]);
+
+  // The tooltip is pinned to coordinates on one particular axis, so drop it
+  // when the period changes rather than leaving it floating over new data.
+  useEffect(() => {
+    setChartPoint(null);
   }, [period]);
 
   // Refetch whenever the selected period changes.
   useEffect(() => {
     fetchDashboard().catch(() => {
-      // Offline-first: keep showing FALLBACK_READING values.
+      // Offline-first: keep whatever was last shown rather than inventing data.
     });
   }, [fetchDashboard]);
 
@@ -229,19 +188,20 @@ export default function DashboardScreen() {
   }, []);
 
   // Apply real MQTT telemetry the moment it arrives: the six PZEM metrics and
-  // the hero kW value come straight from the sensor, replacing the simulation.
+  // the hero kW value come straight from the sensor. This is the only place
+  // liveMetrics is ever populated.
   useEffect(() => {
     if (!telemetry || telemetryAt === null) return;
     telemetryAtRef.current = telemetryAt;
     setLiveSource("mqtt");
     setCurrentKw(Math.round((telemetry.watts / 1000) * 100) / 100);
     setLiveMetrics((prev) => ({
-      voltage:     telemetry.voltage     ?? prev.voltage,
-      current:     telemetry.current     ?? prev.current,
+      voltage:     telemetry.voltage     ?? prev?.voltage     ?? 0,
+      current:     telemetry.current     ?? prev?.current     ?? 0,
       activePower: telemetry.watts,
       energy:      telemetry.kwh,
-      frequency:   telemetry.frequency   ?? prev.frequency,
-      powerFactor: telemetry.powerFactor ?? prev.powerFactor,
+      frequency:   telemetry.frequency   ?? prev?.frequency   ?? 0,
+      powerFactor: telemetry.powerFactor ?? prev?.powerFactor ?? 0,
     }));
   }, [telemetry, telemetryAt]);
 
@@ -254,43 +214,21 @@ export default function DashboardScreen() {
     setRelayPending(false);
   }, [relayState]);
 
-  // Unified 2-second tick deciding what drives the live metrics:
-  //   fresh MQTT telemetry -> real data (the effect above already applied it);
-  //   backend says IoT online but no MQTT -> keep the original jitter
-  //   simulation as a demo fallback; otherwise freeze the readings.
+  // 2-second tick that only classifies the feed: telemetry is either fresh
+  // enough to show, or it is not. Nothing is generated here.
   useEffect(() => {
     const tick = () => {
       const fresh =
         telemetryAtRef.current !== null &&
         Date.now() - telemetryAtRef.current < TELEMETRY_FRESH_MS;
 
-      if (fresh) {
-        setLiveSource("mqtt");
-        return;
+      setLiveSource(fresh ? "mqtt" : "off");
+
+      // Drop stale readings rather than leaving the last live values on screen
+      // looking current.
+      if (!fresh) {
+        setLiveMetrics(null);
       }
-
-      if (iotOnline !== true) {
-        setLiveSource("off");
-        return;
-      }
-
-      setLiveSource("sim");
-
-      // kW fluctuation (unchanged from original logic).
-      setCurrentKw((prev) => {
-        const delta = (Math.random() - 0.5) * 0.1;
-        return Math.round(Math.max(0.5, prev + delta) * 100) / 100;
-      });
-
-      // Six metric fluctuations — each jitters around its own latest value.
-      setLiveMetrics((prev) => ({
-        voltage:     jitter(prev.voltage,     JITTER.voltage,     190, 250),
-        current:     jitter(prev.current,     JITTER.current,     0,   63),
-        activePower: jitter(prev.activePower, JITTER.activePower, 0,   9999),
-        energy:      jitter(prev.energy,      JITTER.energy,      0,   9999),
-        frequency:   jitter(prev.frequency,   JITTER.frequency,   45,  65),
-        powerFactor: jitter(prev.powerFactor, JITTER.powerFactor, 0,   1),
-      }));
     };
 
     tick();
@@ -351,8 +289,8 @@ export default function DashboardScreen() {
   const iotState: IotState =
     liveSource === "mqtt"
       ? "live"
-      : liveSource === "sim"
-        ? "sim"
+      : iotOnline === true
+        ? "nolink"
         : iotOnline === null && telemetryAt === null
           ? "unknown"
           : "offline";
@@ -399,17 +337,28 @@ export default function DashboardScreen() {
   const iotPill: { label: string; status: PillStatus } =
     iotState === "live"
       ? { label: "IoT Live", status: "online" }
-      : iotState === "sim"
-        ? { label: "IoT Sim", status: "degraded" }
+      : iotState === "nolink"
+        ? { label: "IoT No Link", status: "degraded" }
         : iotState === "unknown"
           ? { label: "IoT...", status: "unknown" }
           : { label: "IoT Offline", status: "offline" };
 
-  // Backend supplies matched labels/data per period; the chart falls back to a
-  // local demo curve, but device data is always real (empty until it loads).
-  const fallback       = getChartConfig(period);
-  const visibleLabels  = dashboard?.history.labels ?? fallback.labels;
-  const chartData      = dashboard?.history.data   ?? fallback.data;
+  // Chart data comes from the backend or not at all — an empty chart is the
+  // honest answer when there are no readings, and a demo curve here would be
+  // indistinguishable from real consumption.
+  const visibleLabels  = dashboard?.deviceHistory.labels ?? [];
+  const deviceSeries   = dashboard?.deviceHistory.series ?? [];
+
+  // Chart geometry, needed both to draw and to keep the tooltip on screen.
+  const CHART_WIDTH = SCREEN_WIDTH - 32;
+  const TOOLTIP_WIDTH = 156;
+
+  // Resolve the tapped point back to its device. A series that vanished on
+  // refresh (device deleted, or no usage in the new period) leaves the tooltip
+  // with nothing to describe, so it renders as nothing.
+  const tooltipSeries = chartPoint
+    ? deviceSeries.find((series) => series.deviceId === chartPoint.deviceId)
+    : undefined;
   const devices        = dashboard?.devices        ?? [];
   const topConsumers   = dashboard?.topConsumers   ?? [];
   const totalToday     = dashboard?.totalTodayKwh  ?? 0;
@@ -471,9 +420,14 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.kwRow}>
-            {/* currentKw is kW; the formatter works in watts. */}
-            <Text style={styles.kwValue}>{powerParts(currentKw * 1000).value}</Text>
-            <Text style={styles.kwUnit}>{powerParts(currentKw * 1000).unit}</Text>
+            {/* currentKw is kW; the formatter works in watts. Null until a real
+                figure arrives — the hero never shows a placeholder number. */}
+            <Text style={styles.kwValue}>
+              {currentKw === null ? "—" : powerParts(currentKw * 1000).value}
+            </Text>
+            <Text style={styles.kwUnit}>
+              {currentKw === null ? "" : powerParts(currentKw * 1000).unit}
+            </Text>
           </View>
           <Text style={styles.totalToday}>
             Total today: {formatEnergy(totalToday, 1)}
@@ -498,15 +452,17 @@ export default function DashboardScreen() {
               ]}
             >
               {METRIC_DEFS.map((def) => {
-                const raw = liveMetrics[def.key];
-                // Active power and energy follow the unit preferences; the
-                // other four (V, A, Hz, PF) have no alternative unit to pick.
+                const raw = liveMetrics?.[def.key];
+                // No sensor reading — show the absence rather than a number
+                // the system cannot stand behind.
                 const parts =
-                  def.key === "activePower"
-                    ? powerParts(raw)
-                    : def.key === "energy"
-                      ? energyParts(raw, def.decimals)
-                      : { value: raw.toFixed(def.decimals), unit: def.unit };
+                  raw === undefined
+                    ? { value: "—", unit: def.unit }
+                    : def.key === "activePower"
+                      ? powerParts(raw)
+                      : def.key === "energy"
+                        ? energyParts(raw, def.decimals)
+                        : { value: raw.toFixed(def.decimals), unit: def.unit };
                 return (
                   <View key={def.key} style={styles.metricCell}>
                     <Text style={styles.metricValue}>
@@ -538,7 +494,7 @@ export default function DashboardScreen() {
           <View style={styles.relayTextWrap}>
             <View style={styles.relayTitleRow}>
               <Text style={styles.relayTitle}>Master Power</Text>
-              {iotState === "offline" || iotState === "sim" ? (
+              {iotState === "offline" || iotState === "nolink" ? (
                 <View
                   style={[
                     styles.relayBadge,
@@ -654,37 +610,141 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.chartCard}>
-            <LineChart
-              data={{
-                labels: visibleLabels,
-                datasets: [{ data: chartData }],
-              }}
-              width={SCREEN_WIDTH - 32}
-              height={200}
-              withDots={false}
-              withShadow={false}
-              withInnerLines={true}
-              withOuterLines={false}
-              withVerticalLines={false}
-              withHorizontalLines={true}
-              fromZero
-              chartConfig={{
-                backgroundColor: colors.card,
-                backgroundGradientFrom: colors.card,
-                backgroundGradientTo: colors.card,
-                decimalPlaces: 1,
-                color: () => colors.accent,
-                labelColor: () => colors.sub,
-                style: { borderRadius: 12 },
-                propsForDots: { r: "0" },
-                propsForBackgroundLines: {
-                  stroke: colors.border,
-                  strokeDasharray: "4 4",
-                },
-              }}
-              bezier
-              style={styles.chart}
-            />
+            {deviceSeries.length === 0 ? (
+              <View style={styles.chartEmpty}>
+                <Ionicons name="analytics-outline" size={32} color={colors.sub} />
+                <Text style={styles.chartEmptyText}>
+                  No per-device usage recorded for this period yet.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <View>
+                  <LineChart
+                    data={{
+                      labels: visibleLabels,
+                      // One line per device. Each dataset carries its own colour so
+                      // the line matches its legend chip below, and its deviceId in
+                      // `key` — chart-kit hands the whole dataset back on tap but
+                      // not its index, and it never reads `key` itself.
+                      datasets: deviceSeries.map((series) => ({
+                        data: series.data,
+                        color: () => series.color,
+                        strokeWidth: 2,
+                        key: series.deviceId,
+                      })),
+                    }}
+                    width={CHART_WIDTH}
+                    height={200}
+                    // Dots are the tap targets — chart-kit binds the press handler
+                    // to each point's circle, so hiding them makes the chart inert.
+                    withDots
+                    onDataPointClick={({ index, value, x, y, dataset }) => {
+                      const deviceId = String(dataset.key ?? "");
+                      // Tapping the same point again dismisses it.
+                      setChartPoint((prev) =>
+                        prev &&
+                        prev.deviceId === deviceId &&
+                        prev.pointIndex === index
+                          ? null
+                          : { deviceId, pointIndex: index, kwh: value, x, y }
+                      );
+                    }}
+                    withShadow={false}
+                    withInnerLines={true}
+                    withOuterLines={false}
+                    withVerticalLines={false}
+                    withHorizontalLines={true}
+                    fromZero
+                    chartConfig={{
+                      backgroundColor: colors.card,
+                      backgroundGradientFrom: colors.card,
+                      backgroundGradientTo: colors.card,
+                      decimalPlaces: 1,
+                      // Per-dataset colours override this; it only tints the axes.
+                      color: () => colors.sub,
+                      labelColor: () => colors.sub,
+                      style: { borderRadius: 12 },
+                      // Dots inherit each dataset's colour. The card-coloured ring
+                      // keeps them readable where lines overlap, and the radius is
+                      // the finger target.
+                      propsForDots: { r: "4", strokeWidth: "1.5", stroke: colors.card },
+                      propsForBackgroundLines: {
+                        stroke: colors.border,
+                        strokeDasharray: "4 4",
+                      },
+                    }}
+                    bezier
+                    style={styles.chart}
+                  />
+
+                  {chartPoint && tooltipSeries && (
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      onPress={() => setChartPoint(null)}
+                      style={[
+                        styles.tooltip,
+                        {
+                          width: TOOLTIP_WIDTH,
+                          // Centre on the point, then clamp inside the chart.
+                          left: Math.max(
+                            4,
+                            Math.min(
+                              chartPoint.x - TOOLTIP_WIDTH / 2,
+                              CHART_WIDTH - TOOLTIP_WIDTH - 4
+                            )
+                          ),
+                          // Above the point normally; below it when there is no
+                          // room, so the tooltip never leaves the chart.
+                          top: chartPoint.y > 78 ? chartPoint.y - 74 : chartPoint.y + 14,
+                          borderColor: tooltipSeries.color,
+                        },
+                      ]}
+                    >
+                      <View style={styles.tooltipHeader}>
+                        <View
+                          style={[
+                            styles.tooltipDot,
+                            { backgroundColor: tooltipSeries.color },
+                          ]}
+                        />
+                        <Text style={styles.tooltipName} numberOfLines={1}>
+                          {tooltipSeries.name}
+                        </Text>
+                      </View>
+                      <Text style={styles.tooltipPeriod}>
+                        {visibleLabels[chartPoint.pointIndex] ?? ""}
+                      </Text>
+                      <View style={styles.tooltipRow}>
+                        <Text style={styles.tooltipValue}>
+                          {formatEnergy(chartPoint.kwh, 2)}
+                        </Text>
+                        {/* Priced locally so the figure tracks the tariff the user
+                            set, matching how the rest of the app shows cost. */}
+                        <Text style={styles.tooltipCost}>
+                          {formatCostOf(chartPoint.kwh)}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Custom legend rather than chart-kit's — with a line per
+                    device its built-in row overflows on a phone. */}
+                <View style={styles.legend}>
+                  {deviceSeries.map((series) => (
+                    <View key={series.deviceId} style={styles.legendItem}>
+                      <View
+                        style={[styles.legendDot, { backgroundColor: series.color }]}
+                      />
+                      <Text style={styles.legendLabel} numberOfLines={1}>
+                        {series.name}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
           </View>
         </View>
 
@@ -1028,6 +1088,103 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     },
     chart: {
       borderRadius: 16,
+    },
+    // Floats over the chart, anchored to the tapped point. Absolute so it can
+    // sit above the SVG without pushing the layout around.
+    tooltip: {
+      position: "absolute",
+      backgroundColor: colors.card,
+      borderRadius: 10,
+      borderWidth: 1.5,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      gap: 2,
+      // Keeps it legible over the lines it covers.
+      shadowColor: "#000",
+      shadowOpacity: 0.25,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 6,
+    },
+    tooltipHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    tooltipDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+    },
+    tooltipName: {
+      color: colors.text,
+      fontSize: 12 * fontScale,
+      fontWeight: "700",
+      flexShrink: 1,
+    },
+    tooltipPeriod: {
+      color: colors.sub,
+      fontSize: 10 * fontScale,
+      fontWeight: "600",
+      letterSpacing: 0.4,
+    },
+    tooltipRow: {
+      flexDirection: "row",
+      alignItems: "baseline",
+      justifyContent: "space-between",
+      gap: 8,
+      marginTop: 2,
+    },
+    tooltipValue: {
+      color: colors.text,
+      fontSize: 14 * fontScale,
+      fontWeight: "700",
+    },
+    tooltipCost: {
+      color: colors.accent,
+      fontSize: 12 * fontScale,
+      fontWeight: "700",
+    },
+    // Wraps so a home with many devices grows the legend downward rather than
+    // clipping names off the right edge.
+    legend: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      paddingHorizontal: 12,
+      paddingTop: 4,
+      paddingBottom: 12,
+      gap: 8,
+    },
+    legendItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingRight: 8,
+      maxWidth: "48%",
+    },
+    legendDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    legendLabel: {
+      color: colors.sub,
+      fontSize: 11 * fontScale,
+      fontWeight: "600",
+      flexShrink: 1,
+    },
+    chartEmpty: {
+      height: 200,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 10,
+      paddingHorizontal: 24,
+    },
+    chartEmptyText: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+      textAlign: "center",
+      lineHeight: 19 * fontScale,
     },
     consumersCard: {
       backgroundColor: colors.card,
