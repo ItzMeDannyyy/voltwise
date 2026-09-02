@@ -4,6 +4,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import AppLockOverlay from "../components/AppLockOverlay";
 import { AppLockProvider } from "../context/AppLockContext";
 import { AuthProvider } from "../context/AuthContext";
+import { DemoDataProvider } from "../context/DemoDataContext";
 import { MqttProvider } from "../context/MqttContext";
 import { NotificationProvider } from "../context/NotificationContext";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
@@ -137,9 +138,13 @@ export default function RootLayout() {
             {/* Below auth: the tariff it pulls is per-account. */}
             <UnitsProvider>
               <MqttProvider>
-                {/* Innermost: the banner engine gates its /alerts fetch on auth. */}
+                {/* Below MQTT: the banner engine gates its /alerts fetch on auth. */}
                 <NotificationProvider>
-                  <RootLayoutNav />
+                  {/* Innermost, and dependency-free: a render-time presentation
+                      switch the tab screens read. Nothing else consumes it. */}
+                  <DemoDataProvider>
+                    <RootLayoutNav />
+                  </DemoDataProvider>
                 </NotificationProvider>
               </MqttProvider>
             </UnitsProvider>

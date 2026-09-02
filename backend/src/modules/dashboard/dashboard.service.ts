@@ -6,10 +6,15 @@
 
 import { prisma } from "../../lib/prisma.ts";
 import { getLatestTariff } from "../../lib/tariff.ts";
+import {
+  bucketIndexFinder,
+  endOfDay,
+  startOfDay,
+  type ResolvedRange,
+} from "../../lib/range.ts";
 import { DeviceStatus } from "../../generated/prisma/index.js";
 import type {
   DashboardResponseDto,
-  DashboardPeriod,
   DashboardHistoryDto,
   DashboardDeviceHistoryDto,
   TopConsumerDto,
@@ -42,143 +47,35 @@ const CONSUMER_COLORS = [
   "#4b5563",
 ];
 
-// Documentation only: Returns a new Date set to midnight (00:00:00.000) of the same local day.
-// Used to define the start boundary for "today" queries.
-// Accepts a Date.
-// Returns a Date at midnight.
-const startOfDay = (date: Date): Date => {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
-
-// Documentation only: Returns a new Date set to 23:59:59.999 of the same local day.
-// Used to define the end boundary for "today" queries.
-// Accepts a Date.
-// Returns a Date at end-of-day.
-const endOfDay = (date: Date): Date => {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d;
-};
-
-// Documentation only: Returns the ISO string label for a bucket depending on period.
-// Day → "Ha" format (e.g. "6a", "9a", "12p").
-// Week → 3-letter day abbreviation (e.g. "Mon").
-// Month → 3-letter month abbreviation (e.g. "Jan").
-// Accepts a Date and the period string.
-// Returns a string label.
-const formatBucketLabel = (date: Date, period: DashboardPeriod): string => {
-  if (period === "Day") {
-    const hour = date.getHours();
-    if (hour === 0) return "12a";
-    if (hour < 12) return `${hour}a`;
-    if (hour === 12) return "12p";
-    return `${hour - 12}p`;
-  }
-  if (period === "Week") {
-    return date.toLocaleDateString("en-US", { weekday: "short" });
-  }
-  // Month period — show month abbreviation
-  return date.toLocaleDateString("en-US", { month: "short" });
-};
-
-// Documentation only: Builds the history chart data (labels + kWh values) for the given period.
-// Day = ~9 hourly buckets across the current day.
-// Week = 7 day buckets (past 7 days).
-// Month = 12 monthly buckets (past 12 months, or current year months).
-// Fetches EnergyReading rows for the given user in the relevant window and sums kWh per bucket.
-// Accepts userId (number) and the period string.
-// Returns a Promise resolving to a DashboardHistoryDto.
-// Documentation only: Computes the x-axis buckets for a period — the single
-// definition of the chart's time axis, shared by the whole-home history and the
-// per-device series so their labels always line up.
-// Accepts the period and the current time.
-// Returns an ordered array of { label, start, end }, excluding future buckets.
-interface HistoryBucket {
-  label: string;
-  start: Date;
-  end: Date;
-}
-
-const buildBuckets = (period: DashboardPeriod, now: Date): HistoryBucket[] => {
-  const buckets: HistoryBucket[] = [];
-
-  if (period === "Day") {
-    // Every 3 hours from midnight to the current hour, giving up to 8 points.
-    const todayStart = startOfDay(now);
-    for (const bucketHour of [0, 3, 6, 9, 12, 15, 18, 21]) {
-      const start = new Date(todayStart);
-      start.setHours(bucketHour);
-      if (start > now) break;
-
-      const end = new Date(start);
-      end.setHours(bucketHour + 2, 59, 59, 999);
-      buckets.push({ label: formatBucketLabel(start, "Day"), start, end });
-    }
-    return buckets;
-  }
-
-  if (period === "Week") {
-    // One bucket per day for the past 7 days.
-    for (let daysAgo = 6; daysAgo >= 0; daysAgo--) {
-      const day = new Date(now);
-      day.setDate(now.getDate() - daysAgo);
-      const start = startOfDay(day);
-      buckets.push({
-        label: formatBucketLabel(start, "Week"),
-        start,
-        end: endOfDay(day),
-      });
-    }
-    return buckets;
-  }
-
-  // Month: one bucket per calendar month of the current year.
-  const currentYear = now.getFullYear();
-  for (let month = 0; month < 12; month++) {
-    const start = new Date(currentYear, month, 1, 0, 0, 0, 0);
-    if (start > now) break;
-    buckets.push({
-      label: formatBucketLabel(start, "Month"),
-      start,
-      end: new Date(currentYear, month + 1, 0, 23, 59, 59, 999),
-    });
-  }
-  return buckets;
-};
-
 // Documentation only: Builds one kWh series per device for the multi-line Usage
-// History chart, bucketed onto the same axis as the whole-home history.
+// History chart, bucketed onto the range's axis so it lines up with the
+// whole-home history exactly.
 //
-// Unlike buildHistoryForPeriod, this issues a single range query and buckets in
-// memory rather than one aggregate per bucket — with a series per device the
-// per-bucket approach would be devices x buckets round trips.
+// One range query, bucketed in memory rather than an aggregate per bucket —
+// with a series per device the per-bucket approach would be devices x buckets
+// round trips, and a month range now has 31 buckets.
 //
-// Devices with no consumption in the period are dropped rather than drawn as a
+// Devices with no consumption in the range are dropped rather than drawn as a
 // flat zero line, and the rest are ordered by total kWh so the legend reads
-// biggest-first and colours stay stable within a period.
+// biggest-first and colours stay stable within a range.
 //
-// Accepts userId (number) and the period.
+// Accepts userId (number) and the resolved range.
 // Returns a Promise resolving to a DashboardDeviceHistoryDto.
-const buildDeviceHistoryForPeriod = async (
+const buildDeviceHistory = async (
   userId: number,
-  period: DashboardPeriod
+  range: ResolvedRange
 ): Promise<DashboardDeviceHistoryDto> => {
-  const buckets = buildBuckets(period, new Date());
+  const { buckets } = range;
   const labels = buckets.map((bucket) => bucket.label);
 
   if (buckets.length === 0) return { labels, series: [] };
-
-  const rangeStart = buckets[0].start;
-  const rangeEnd = buckets[buckets.length - 1].end;
 
   const [readings, devices] = await Promise.all([
     prisma.energyReading.findMany({
       where: {
         userId,
         deviceId: { not: null },
-        timestamp: { gte: rangeStart, lte: rangeEnd },
+        timestamp: { gte: buckets[0].start, lte: buckets[buckets.length - 1].end },
       },
       select: { deviceId: true, timestamp: true, kwh: true },
     }),
@@ -190,17 +87,15 @@ const buildDeviceHistoryForPeriod = async (
 
   if (readings.length === 0) return { labels, series: [] };
 
+  const bucketIndexOf = bucketIndexFinder(buckets);
+
   // deviceId -> per-bucket kWh totals.
   const totalsByDevice = new Map<number, number[]>();
 
   for (const reading of readings) {
     if (reading.deviceId === null) continue;
 
-    // Buckets are ordered and non-overlapping, so the first match wins.
-    const bucketIndex = buckets.findIndex(
-      (bucket) =>
-        reading.timestamp >= bucket.start && reading.timestamp <= bucket.end
-    );
+    const bucketIndex = bucketIndexOf(reading.timestamp);
     if (bucketIndex === -1) continue;
 
     let totals = totalsByDevice.get(reading.deviceId);
@@ -231,122 +126,68 @@ const buildDeviceHistoryForPeriod = async (
   };
 };
 
-const buildHistoryForPeriod = async (
+// Documentation only: Builds the whole-home kWh series on the same axis.
+//
+// This used to run one aggregate query per bucket, which was tolerable at 8
+// buckets and is not at 31; it is now the same single-query-and-bucket shape as
+// the per-device builder above.
+//
+// Accepts userId (number) and the resolved range.
+// Returns a Promise resolving to a DashboardHistoryDto.
+const buildHistory = async (
   userId: number,
-  period: DashboardPeriod
+  range: ResolvedRange
 ): Promise<DashboardHistoryDto> => {
-  const now = new Date();
-  const labels: string[] = [];
-  const data: number[] = [];
+  const { buckets } = range;
+  const labels = buckets.map((bucket) => bucket.label);
 
-  if (period === "Day") {
-    // Buckets: every 3 hours from midnight to current hour, giving ~9 points.
-    const bucketHours = [0, 3, 6, 9, 12, 15, 18, 21];
-    const todayStart = startOfDay(now);
-    const todayEnd = endOfDay(now);
+  if (buckets.length === 0) return { labels, data: [] };
 
-    const readings = await prisma.energyReading.findMany({
-      where: {
-        userId,
-        deviceId: null, // whole-home aggregate readings
-        timestamp: { gte: todayStart, lte: todayEnd },
-      },
-    });
+  const readings = await prisma.energyReading.findMany({
+    where: {
+      userId,
+      deviceId: null, // whole-home aggregate readings
+      timestamp: { gte: buckets[0].start, lte: buckets[buckets.length - 1].end },
+    },
+    select: { timestamp: true, kwh: true },
+  });
 
-    for (const bucketHour of bucketHours) {
-      const bucketDate = new Date(todayStart);
-      bucketDate.setHours(bucketHour);
+  const bucketIndexOf = bucketIndexFinder(buckets);
+  const totals = new Array(buckets.length).fill(0);
 
-      if (bucketDate > now) break; // Do not include future buckets
-
-      const bucketEnd = new Date(bucketDate);
-      bucketEnd.setHours(bucketHour + 2, 59, 59, 999);
-
-      const bucketKwh = readings
-        .filter(
-          (r) =>
-            r.timestamp >= bucketDate && r.timestamp <= bucketEnd
-        )
-        .reduce((sum, r) => sum + r.kwh, 0);
-
-      labels.push(formatBucketLabel(bucketDate, "Day"));
-      data.push(parseFloat(bucketKwh.toFixed(2)));
-    }
-
-    return { labels, data };
+  for (const reading of readings) {
+    const bucketIndex = bucketIndexOf(reading.timestamp);
+    if (bucketIndex === -1) continue;
+    totals[bucketIndex] += reading.kwh;
   }
 
-  if (period === "Week") {
-    // One bucket per day for the past 7 days.
-    for (let daysAgo = 6; daysAgo >= 0; daysAgo--) {
-      const bucketDate = new Date(now);
-      bucketDate.setDate(now.getDate() - daysAgo);
-      const dayStart = startOfDay(bucketDate);
-      const dayEnd = endOfDay(bucketDate);
-
-      const aggregateResult = await prisma.energyReading.aggregate({
-        where: {
-          userId,
-          deviceId: null,
-          timestamp: { gte: dayStart, lte: dayEnd },
-        },
-        _sum: { kwh: true },
-      });
-
-      labels.push(formatBucketLabel(bucketDate, "Week"));
-      data.push(
-        parseFloat((aggregateResult._sum.kwh ?? 0).toFixed(2))
-      );
-    }
-
-    return { labels, data };
-  }
-
-  // Month period: one bucket per calendar month for the current year.
-  const currentYear = now.getFullYear();
-  for (let month = 0; month < 12; month++) {
-    const monthStart = new Date(currentYear, month, 1, 0, 0, 0, 0);
-    const monthEnd = new Date(currentYear, month + 1, 0, 23, 59, 59, 999);
-
-    if (monthStart > now) break; // Do not include future months
-
-    const aggregateResult = await prisma.energyReading.aggregate({
-      where: {
-        userId,
-        deviceId: null,
-        timestamp: { gte: monthStart, lte: monthEnd },
-      },
-      _sum: { kwh: true },
-    });
-
-    labels.push(formatBucketLabel(monthStart, "Month"));
-    data.push(
-      parseFloat((aggregateResult._sum.kwh ?? 0).toFixed(2))
-    );
-  }
-
-  return { labels, data };
+  return { labels, data: totals.map((value) => parseFloat(value.toFixed(2))) };
 };
 
-// Documentation only: Computes top consumers for the current day (regardless of period)
-// by summing each ACTIVE device's per-device EnergyReading kWh for today,
-// expressing each as an integer percentage of the total. Each entry's cost is
-// its kWh multiplied by the user's current tariff rate (₱/kWh).
-// Accepts userId (number) — scopes all queries to the authenticated user.
+// Documentation only: Computes top consumers over the selected range by summing
+// each device's per-device EnergyReading kWh, expressing each as an integer
+// percentage of the total. Each entry's cost is its kWh multiplied by the user's
+// current tariff rate (₱/kWh).
+//
+// This follows the range rather than always reporting today, so the list under
+// the chart describes the same window the chart is drawing. Looking at last
+// January's bill and being shown this morning's biggest appliance would be a
+// straightforward lie.
+//
+// Accepts userId (number) and the resolved range.
 // Returns a Promise resolving to an array of up to 5 TopConsumerDto items.
-const buildTopConsumers = async (userId: number): Promise<TopConsumerDto[]> => {
-  const now = new Date();
-  const todayStart = startOfDay(now);
-  const todayEnd = endOfDay(now);
-
-  // Fetch all per-device readings for today (deviceId IS NOT NULL).
+const buildTopConsumers = async (
+  userId: number,
+  range: ResolvedRange
+): Promise<TopConsumerDto[]> => {
+  // Fetch all per-device readings in the range (deviceId IS NOT NULL).
   const [deviceReadings, tariff] = await Promise.all([
     prisma.energyReading.groupBy({
       by: ["deviceId"],
       where: {
         userId,
         deviceId: { not: null },
-        timestamp: { gte: todayStart, lte: todayEnd },
+        timestamp: { gte: range.start, lte: range.end },
       },
       _sum: { kwh: true },
     }),
@@ -446,14 +287,20 @@ const fetchLatestWholeHomeReading = async (userId: number): Promise<ReadingDto> 
   };
 };
 
-// Documentation only: Computes the complete dashboard payload for the given period.
+// Documentation only: Computes the complete dashboard payload for the given range.
 // Fetches active devices for current power (currentKw), sums today's whole-home kWh,
 // builds the history buckets, and computes top consumers by share.
-// Accepts userId (number) and the DashboardPeriod ("Day" | "Week" | "Month").
+//
+// Note the deliberate split: the hero card (currentKw, totalTodayKwh, reading,
+// iotOnline) is always *live* — it describes the meter right now — while the
+// chart and top consumers follow whichever range the user navigated to. Someone
+// reading January's bill still needs to see that their aircon is running today.
+//
+// Accepts userId (number) and the resolved range.
 // Returns a Promise resolving to a DashboardResponseDto.
 export const getDashboardData = async (
   userId: number,
-  period: DashboardPeriod
+  range: ResolvedRange
 ): Promise<DashboardResponseDto> => {
   const now = new Date();
   const todayStart = startOfDay(now);
@@ -494,9 +341,9 @@ export const getDashboardData = async (
   }));
 
   const [history, deviceHistory, topConsumers, reading, recentCount] = await Promise.all([
-    buildHistoryForPeriod(userId, period),
-    buildDeviceHistoryForPeriod(userId, period),
-    buildTopConsumers(userId),
+    buildHistory(userId, range),
+    buildDeviceHistory(userId, range),
+    buildTopConsumers(userId, range),
     fetchLatestWholeHomeReading(userId),
     prisma.energyReading.count({
       where: {
@@ -518,5 +365,11 @@ export const getDashboardData = async (
     topConsumers,
     reading,
     iotOnline,
+    range: {
+      period: range.period,
+      from: range.start.toISOString(),
+      to: range.end.toISOString(),
+      label: range.label,
+    },
   };
 };

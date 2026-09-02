@@ -28,8 +28,8 @@ voltwise/
 │   └── test/        # Jest unit tests (ESM + ts-jest)
 ├── app-voltwise/    # Expo React Native app (expo-router)
 │   ├── app/         # (auth) login/register · (tabs) dashboard/devices/alerts/analytics · profile · settings + its sub-screens
-│   ├── components/  # DemoFab, AnomalyModal, AlertDetailModal, ConfirmModal, DeleteAccountModal, AppLockOverlay, AppHeader
-│   ├── context/     # Auth, Theme, AppLock, Units, Mqtt, Notification
+│   ├── components/  # DemoFab, RangeNavigator, DatePickerModal, AnomalyModal, AlertDetailModal, ConfirmModal, DeleteAccountModal, AppLockOverlay, AppHeader
+│   ├── context/     # Auth, Theme, AppLock, Units, Mqtt, Notification, DemoData
 │   └── lib/         # api.ts (typed client + shared types) + *-storage.ts / *-prefs.ts pairs
 ├── iot-voltwise/    # PlatformIO ESP32 firmware (PZEM-004T v3.0 + 2-channel relay + MQTT)
 ├── ml-voltwise/     # FastAPI KMeans service (scaffold: app/main.py, train.py are empty stubs)
@@ -88,9 +88,9 @@ All routes are prefixed with `/api`:
 | ------------ | --------- | ---------------------------------------------------------------------------- |
 | `/auth`      | auth      | `POST /register`, `POST /login` (public); `GET /me`, `PATCH /me` (protected) |
 | `/devices`   | devices   | CRUD for smart devices                                                        |
-| `/dashboard` | dashboard | Live summary (kW, kWh, history, consumers)                                    |
+| `/dashboard` | dashboard | Live summary (kW, kWh, history, consumers) over a selectable range            |
 | `/alerts`    | alerts    | Alert management; `POST /` creates alerts                                     |
-| `/analytics` | analytics | Bill prediction, kWh breakdown, metrics                                       |
+| `/analytics` | analytics | Bill prediction, kWh breakdown, metrics over a selectable range               |
 | `/iot`       | iot       | `POST /relay` master relay command; `GET /status` last-known device state    |
 | `/export`    | export    | `GET /summary` row counts per dataset; `GET /:dataset` CSV/JSON download      |
 | `/security`  | security  | `GET /overview` sessions + account safety; session revoke; account deletion   |
@@ -288,6 +288,62 @@ device. Purity is the point — it holds all state in a factory closure, so
 never blocks ingestion: alert creation is fire-and-forget. Disable with
 `LOAD_DETECT_ENABLED=false`.
 
+### Time ranges (the chart timeline)
+
+`src/lib/range.ts::resolveRange()` is the **single definition of "which slice of
+time is being looked at"**, shared by `/dashboard` and `/analytics` — both accept
+the identical four query parameters, parsed by `parseRangeQuery()`:
+
+| Param    | Meaning                                                             |
+| -------- | ------------------------------------------------------------------- |
+| `period` | `Day` \| `Week` \| `Month` \| `Cycle` (defaults: Day / Month)        |
+| `anchor` | `YYYY-MM-DD` — which day/week/month to show (default today)          |
+| `from`   | `YYYY-MM-DD` — `Cycle` only, the billing window's first day          |
+| `to`     | `YYYY-MM-DD` — `Cycle` only, its last day                            |
+
+- **Day** = 24 hourly buckets, labelled `12:00mn`, `3:00am`, `12:00nn`, `9:00pm`.
+- **Week** = the 7 days ending on the anchor.
+- **Month** = every day of the anchor's calendar month.
+- **Cycle** = the user's utility billing window (e.g. Jan 14 – Feb 15); daily
+  buckets up to 62 days, monthly beyond that, capped at `MAX_RANGE_DAYS` (366).
+
+Buckets after *now* are always dropped — a chart must never draw a flat zero
+line into the future. Validation lives in the resolver and surfaces as
+`AppError(400)`, so there is exactly one place that decides what a valid range
+is; `test/range.test.ts` drives it directly since it is pure and takes an
+injected clock.
+
+Two consequences worth knowing:
+
+- **The dashboard's live card ignores the range.** `currentKw`, `totalTodayKwh`,
+  `reading` and `iotOnline` describe the meter *right now* whatever window is
+  being browsed — someone reading January's bill still needs to see that their
+  aircon is running today. Only `history`, `deviceHistory` and `topConsumers`
+  follow the range.
+- **`topConsumers` follows the range** rather than always reporting today.
+  Looking at last January and being shown this morning's biggest appliance would
+  be a straightforward lie.
+
+On the app side `lib/range-prefs.ts` mirrors these rules as pure functions
+(stepping, labelling, `resolveBuckets`, `thinLabels`) because the navigator has
+to label itself the instant a button is tapped, before any response arrives.
+**Keep the two in step.** Both sides handle dates as *local* `YYYY-MM-DD`
+strings: `toISOString()` is UTC, and in UTC+8 that reports the wrong day for
+anything before 8am, silently shifting every range by one.
+
+`components/RangeNavigator.tsx` is the shared control (period chips, ◀/▶, the
+window label) used by both chart screens, with `components/DatePickerModal.tsx`
+— a hand-rolled month grid, since the app has no date-picker dependency and
+ships to Android, iOS and web. The forward arrow stops at the present. The
+billing window itself is persisted device-locally by `lib/billing-storage.ts`
+(see the ownership note in that file: the API stays stateless about cycles
+because every request names its own `from`/`to`).
+
+Dense axes keep every data point and thin only the *labels* (`thinLabels`), so
+the dashboard tooltip can still name the exact hour behind a dot that has no
+label drawn under it. The Day axis uses a fixed 3-hour step so the clock times
+don't shift as the day fills in.
+
 ### Tariff lookup
 
 `src/lib/tariff.ts::getLatestTariff(userId)` is the single source of the user's
@@ -321,6 +377,32 @@ high-water mark for "already notified") are pure functions in
 ### DemoFab
 
 `components/DemoFab.tsx` is a floating action button (flask icon, bottom-right) that POSTs preset alert payloads to `/api/alerts` to exercise the full alert flow during demos. It opens `AnomalyModal` locally before the API call resolves so the UX is instant.
+
+Its first menu entry is not an alert but a switch: **Show sample data**, backed by
+`context/DemoDataContext.tsx` and the static dataset in `lib/demo-data.ts`. While
+it is on, Dashboard, Devices and Analytics render a fully-populated seven-appliance
+household — live PZEM metrics, the multi-line Usage History chart, top consumers,
+the donut breakdown, the bill predictor and every per-device panel — so the product
+can be shown as it looks in production rather than as the honest empty states a
+fresh account produces.
+
+Three properties make it safe to leave in the shipped app:
+
+- **It only overlays the render.** Fetched payloads and live telemetry stay in
+  state underneath; switching it off restores the real screen with nothing to
+  re-fetch.
+- **It never writes.** Every mutation on those screens is short-circuited — the
+  dashboard's Master Power button flips a local flag instead of publishing to
+  `/api/iot/relay`, and device toggles and additions stay in a separate
+  `demoDevices` state instead of hitting the API. A demo cannot move a real
+  contactor or edit a real inventory.
+- **It is in-memory only and it announces itself.** No storage key (deliberately
+  not in `lib/local-data.ts`), so a restart always lands back on real data, and
+  the FAB turns amber with a standing `SAMPLE DATA` chip while it is active.
+
+The numbers are deterministic — the chart must not twitch between renders — while
+the axis *labels* are built from the real calendar so they match what the backend
+would return for today.
 
 ### Device-local storage
 

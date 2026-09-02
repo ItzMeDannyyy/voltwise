@@ -5,10 +5,10 @@
 // No HTTP-specific code lives here.
 
 import { prisma } from "../../lib/prisma.ts";
+import type { ResolvedRange } from "../../lib/range.ts";
 import { getLatestTariff } from "../../lib/tariff.ts";
 import type {
   AnalyticsResponseDto,
-  AnalyticsPeriod,
   BillPredictorDto,
   BreakdownEntryDto,
   TopConsumerDto,
@@ -35,33 +35,6 @@ const formatCycleStartDate = (date: Date): string => {
     day: "numeric",
     year: "numeric",
   });
-};
-
-// Documentation only: Determines the start and end Date boundaries for the given period.
-// Day = today midnight to now; Week = 7 days ago to now; Month = current month start to now.
-// Accepts the AnalyticsPeriod string.
-// Returns { start: Date, end: Date }.
-const getDateRangeForPeriod = (
-  period: AnalyticsPeriod
-): { start: Date; end: Date } => {
-  const now = new Date();
-
-  if (period === "Day") {
-    const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
-    return { start, end: now };
-  }
-
-  if (period === "Week") {
-    const start = new Date(now);
-    start.setDate(now.getDate() - 6);
-    start.setHours(0, 0, 0, 0);
-    return { start, end: now };
-  }
-
-  // Month: start from the first day of the current month.
-  const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-  return { start, end: now };
 };
 
 // Documentation only: Retrieves the most recent open BillingPeriod for the given user
@@ -317,20 +290,23 @@ const buildMetricStats = async (
   });
 };
 
-// Documentation only: Computes the complete analytics payload for the given period.
-// Retrieves the current tariff, billing period, per-period kWh total,
-// and device breakdown + top consumer data.
-// Accepts userId (number) and the AnalyticsPeriod ("Day" | "Week" | "Month").
+// Documentation only: Computes the complete analytics payload for the given range.
+// Retrieves the current tariff, the bill predictor's cycle, the range's kWh
+// total, and the device breakdown + top consumer data.
+// Accepts userId (number) and the resolved range.
 // Returns a Promise resolving to an AnalyticsResponseDto.
 export const getAnalyticsData = async (
   userId: number,
-  period: AnalyticsPeriod
+  range: ResolvedRange
 ): Promise<AnalyticsResponseDto> => {
-  const { start, end } = getDateRangeForPeriod(period);
+  const { start, end } = range;
+  const isCycle = range.period === "Cycle";
 
   const [tariff, billingPeriod] = await Promise.all([
     getLatestTariff(userId),
-    getCurrentBillingPeriod(userId),
+    // A user-defined cycle *is* the billing period being asked about, so there
+    // is nothing to look up: the predictor describes the selected window.
+    isCycle ? Promise.resolve(null) : getCurrentBillingPeriod(userId),
   ]);
 
   // Sum whole-home kWh over the selected period window.
@@ -347,10 +323,14 @@ export const getAnalyticsData = async (
     (periodKwhAggregate._sum.kwh ?? 0).toFixed(2)
   );
 
-  // Build the bill predictor using the open billing period's accumulated data.
-  const accumulatedKwh = parseFloat(
-    billingPeriod.accumulatedKwh.toFixed(2)
-  );
+  // The bill predictor answers "what will this cycle cost?". When the user has
+  // navigated to an explicit billing cycle, that question is about the window
+  // on screen and the answer is the kWh just summed for it. Otherwise it falls
+  // back to the account's open BillingPeriod, which is what the card meant
+  // before ranges existed.
+  const accumulatedKwh = isCycle
+    ? totalKwh
+    : parseFloat(billingPeriod!.accumulatedKwh.toFixed(2));
   const estimatedBill = parseFloat(
     (tariff.ratePerKwh * accumulatedKwh).toFixed(2)
   );
@@ -360,7 +340,9 @@ export const getAnalyticsData = async (
     currency: tariff.currency,
     accumulatedKwh,
     estimatedBill,
-    cycleStart: formatCycleStartDate(billingPeriod.startDate),
+    cycleStart: formatCycleStartDate(isCycle ? range.start : billingPeriod!.startDate),
+    // Only a bounded cycle has a meaningful end; the open period has none yet.
+    cycleEnd: isCycle ? formatCycleStartDate(range.end) : null,
   };
 
   const [{ breakdown, topConsumers }, metrics] = await Promise.all([
@@ -374,6 +356,12 @@ export const getAnalyticsData = async (
     breakdown,
     topConsumers,
     metrics,
+    range: {
+      period: range.period,
+      from: range.start.toISOString(),
+      to: range.end.toISOString(),
+      label: range.label,
+    },
   };
 };
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -21,6 +21,17 @@ import { PullToRefresh } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useTheme } from "../../context/ThemeContext";
 import { useUnits } from "../../context/UnitsContext";
+import { useDemoData } from "../../context/DemoDataContext";
+import { demoAnalytics } from "../../lib/demo-data";
+import RangeNavigator from "../../components/RangeNavigator";
+import { getStoredBillingCycle, saveBillingCycle } from "../../lib/billing-storage";
+import {
+  defaultRangeState,
+  rangeLabel,
+  rangeQuery,
+  type BillingCycle,
+  type RangeState,
+} from "../../lib/range-prefs";
 import {
   energyIn,
   parseRate,
@@ -140,10 +151,6 @@ const FALLBACK_METRICS: MetricStat[] = [
   },
 ];
 
-type Period = "Day" | "Week" | "Month";
-
-const PERIODS: Period[] = ["Day", "Week", "Month"];
-
 // Accent colour per metric key for the label pill.
 function getMetricAccent(colors: ThemeColors): Record<MetricStat["key"], string> {
   return {
@@ -160,11 +167,14 @@ export default function AnalyticsScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { prefs, currency, setRatePerKwh, costOf, formatCostOf, energyParts } = useUnits();
+  const { demoData } = useDemoData();
   const DONUT_SEGMENTS = getDonutSegments(colors);
   const TOP_CONSUMERS = getTopConsumers(colors);
   const METRIC_ACCENT = getMetricAccent(colors);
 
-  const [period, setPeriod]     = useState<Period>("Day");
+  // Which slice of time every figure below the bill card describes. Always
+  // opens on today; the saved billing window is folded in once it loads.
+  const [range, setRange]       = useState<RangeState>(() => defaultRangeState("Day"));
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -174,14 +184,32 @@ export default function AnalyticsScreen() {
   const [updatingTariff, setUpdatingTariff] = useState(false);
   const [tariffError, setTariffError] = useState<string | null>(null);
 
-  // Fetch analytics — shared by the period/refresh-trigger effect below and
+  // Load the user's saved billing window once, so the Bill tab opens on their
+  // real cycle instead of the current-month default.
+  useEffect(() => {
+    let cancelled = false;
+    getStoredBillingCycle().then((cycle) => {
+      if (cycle && !cancelled) setRange((prev) => ({ ...prev, cycle }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleCycleSave = useCallback((cycle: BillingCycle) => {
+    void saveBillingCycle(cycle);
+  }, []);
+
+  const rangeKey = rangeQuery(range);
+
+  // Fetch analytics — shared by the range/refresh-trigger effect below and
   // pull-to-refresh.
   const fetchAnalytics = useCallback(async () => {
-    const data = await api.get<AnalyticsData>(`/analytics?period=${period}`);
+    const data = await api.get<AnalyticsData>(`/analytics?${rangeKey}`);
     setAnalytics(data);
-  }, [period]);
+  }, [rangeKey]);
 
-  // Refetch whenever the selected period or refresh trigger changes.
+  // Refetch whenever the selected range or refresh trigger changes.
   useEffect(() => {
     fetchAnalytics().catch(() => {
       // Offline-first: fall back to local mock values.
@@ -190,16 +218,32 @@ export default function AnalyticsScreen() {
 
   const { refreshing, onRefresh } = usePullToRefresh(fetchAnalytics);
 
-  const breakdown    = analytics?.breakdown   ?? DONUT_SEGMENTS;
-  const topConsumers = analytics !== null ? analytics.topConsumers : TOP_CONSUMERS;
-  const totalKwh     = analytics?.totalKwh     ?? 87.4;
-  const metrics      = analytics?.metrics      ?? FALLBACK_METRICS;
+  // Sample-data mode overlays the whole payload at render time; the fetched
+  // one stays in state underneath, so turning it off needs no re-fetch.
+  // Memoised on the period so the donut isn't handed new arrays every render.
+  const demoView = useMemo(
+    () => (demoData ? demoAnalytics(range) : null),
+    [demoData, range]
+  );
+  const view = demoView ?? analytics;
+
+  const breakdown    = view?.breakdown   ?? DONUT_SEGMENTS;
+  const topConsumers = view !== null ? view.topConsumers : TOP_CONSUMERS;
+  const totalKwh     = view?.totalKwh     ?? 87.4;
+  const metrics      = view?.metrics      ?? FALLBACK_METRICS;
   // The rate and currency are no longer read off this payload — they come from
   // the shared unit preferences, which are the same values the backend computed
   // with (see context/UnitsContext.tsx) and stay right even offline.
-  const bill = analytics?.billPredictor ?? {
+  const bill = view?.billPredictor ?? {
     accumulatedKwh: 87.4,
-    cycleStart: "Jun 1, 2026",
+    // Derived rather than hard-coded: a fixed date here would show a stale
+    // month to anyone who opened the screen offline.
+    cycleStart: new Date(
+      new Date().getFullYear(),
+      new Date().getMonth(),
+      1
+    ).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+    cycleEnd: null as string | null,
   };
 
   const handleSaveTariff = async () => {
@@ -301,8 +345,21 @@ export default function AnalyticsScreen() {
           </View>
 
           <Text style={styles.billFooter}>
-            {`Based on accumulated kWh since billing period.\nBilling cycle started: ${bill.cycleStart}`}
+            {bill.cycleEnd
+              ? `Based on the kWh recorded in this billing cycle.\nCycle: ${bill.cycleStart} – ${bill.cycleEnd}`
+              : `Based on accumulated kWh since billing period.\nBilling cycle started: ${bill.cycleStart}`}
           </Text>
+        </View>
+
+        {/* Timeline. Governs everything below: the breakdown, the top
+            consumers and the metric stats all follow this range. Shared with
+            the Dashboard so the two screens describe time identically. */}
+        <View style={styles.navigatorWrap}>
+          <RangeNavigator
+            state={range}
+            onChange={setRange}
+            onCycleSave={handleCycleSave}
+          />
         </View>
 
         {/* Usage Breakdown donut */}
@@ -365,24 +422,9 @@ export default function AnalyticsScreen() {
         {/* Top Consumers */}
         <View style={[styles.consumersHeader, { marginTop: 24, marginBottom: 12 }]}>
           <Text style={styles.sectionTitle}>Top Consumers</Text>
-          <View style={styles.periodSelector}>
-            {PERIODS.map((p) => (
-              <TouchableOpacity
-                key={p}
-                style={[styles.periodBtn, period === p && styles.periodBtnActive]}
-                onPress={() => setPeriod(p)}
-              >
-                <Text
-                  style={[
-                    styles.periodLabel,
-                    period === p && styles.periodLabelActive,
-                  ]}
-                >
-                  {p}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <Text style={styles.sectionRangeHint} numberOfLines={1}>
+            {rangeLabel(range)}
+          </Text>
         </View>
 
         <View style={[styles.card, styles.consumersCard]}>
@@ -661,6 +703,16 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       marginTop: 8,
       lineHeight: 16 * fontScale,
     },
+    navigatorWrap: {
+      marginTop: 20,
+    },
+    sectionRangeHint: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      fontWeight: "600",
+      flexShrink: 1,
+      marginLeft: 8,
+    },
     sectionTitle: {
       color: colors.text,
       fontSize: 18 * fontScale,
@@ -726,29 +778,6 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-    },
-    periodSelector: {
-      flexDirection: "row",
-      backgroundColor: colors.card,
-      borderRadius: 10,
-      padding: 3,
-    },
-    periodBtn: {
-      paddingHorizontal: 12,
-      paddingVertical: 5,
-      borderRadius: 8,
-    },
-    periodBtnActive: {
-      backgroundColor: colors.text,
-    },
-    periodLabel: {
-      color: colors.sub,
-      fontSize: 13 * fontScale,
-      fontWeight: "500",
-    },
-    periodLabelActive: {
-      color: colors.bg,
-      fontWeight: "700",
     },
     consumersCard: {
       gap: 14,

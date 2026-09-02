@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { api, ApiAlert, emitAlertsChanged, requestMasterShutdown } from "../lib/api";
 import { AnomalyModal } from "./AnomalyModal";
+import { useDemoData } from "../context/DemoDataContext";
 import { useTheme } from "../context/ThemeContext";
 import { useThemedStyles } from "./themed";
 import type { ThemeColors } from "../constants/theme";
@@ -120,6 +121,7 @@ function getPresets(colors: ThemeColors): Preset[] {
 
 export default function DemoFab() {
   const { colors } = useTheme();
+  const { demoData, toggleDemoData } = useDemoData();
   const styles = useThemedStyles(createStyles);
   const PRESETS = getPresets(colors);
   const [open, setOpen] = useState(false);
@@ -209,6 +211,44 @@ export default function DemoFab() {
               },
             ]}
           >
+            {/* Sample data sits above the alert presets and behaves
+                differently: it is a switch, not a one-shot event, so it stays
+                lit while it is on and the menu closes to reveal the chip. */}
+            <View style={styles.actionRow}>
+              <View
+                style={[
+                  styles.actionLabelWrap,
+                  demoData && { borderColor: colors.yellow },
+                ]}
+              >
+                <Text style={styles.actionLabel}>
+                  {demoData ? "Sample data: on — tap to hide" : "Show sample data"}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  { backgroundColor: demoData ? colors.yellow : colors.sub },
+                ]}
+                onPress={() => {
+                  toggleDemoData();
+                  setOpenAnimated(false);
+                }}
+                activeOpacity={0.85}
+                accessibilityRole="switch"
+                accessibilityLabel="Show sample data"
+                accessibilityState={{ checked: demoData }}
+              >
+                <Ionicons
+                  name={demoData ? "albums" : "albums-outline"}
+                  size={20}
+                  color={colors.white}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.actionDivider} />
+
             {PRESETS.map((preset) => (
               <View key={preset.key} style={styles.actionRow}>
                 <View style={styles.actionLabelWrap}>
@@ -231,8 +271,18 @@ export default function DemoFab() {
           </Animated.View>
         )}
 
+        {/* Standing reminder that the three data screens are showing the
+            static sample set, not the meter. Without it a demo left switched on
+            is indistinguishable from real readings. */}
+        {demoData && !open && (
+          <View style={styles.demoChip}>
+            <Ionicons name="albums" size={12} color={colors.bg} />
+            <Text style={styles.demoChipText}>SAMPLE DATA</Text>
+          </View>
+        )}
+
         <TouchableOpacity
-          style={styles.fab}
+          style={[styles.fab, demoData && { backgroundColor: colors.yellow }]}
           onPress={() => setOpenAnimated(!open)}
           activeOpacity={0.85}
           accessibilityLabel="Demo alert simulator"
@@ -291,6 +341,28 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       color: colors.text,
       fontSize: 13 * fontScale,
       fontWeight: "600",
+    },
+    actionDivider: {
+      alignSelf: "stretch",
+      height: 1,
+      backgroundColor: colors.border,
+      marginVertical: 2,
+    },
+    demoChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      backgroundColor: colors.yellow,
+      borderRadius: 10,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      marginBottom: 8,
+    },
+    demoChipText: {
+      color: colors.bg,
+      fontSize: 11 * fontScale,
+      fontWeight: "800",
+      letterSpacing: 0.6,
     },
     actionBtn: {
       width: 44,

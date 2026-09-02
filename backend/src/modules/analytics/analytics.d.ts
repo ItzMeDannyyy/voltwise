@@ -1,7 +1,10 @@
 // Documentation only: Defines TypeScript types for the analytics module response shapes.
 // These match the exact JSON structure the VoltWise mobile app's Analytics screen consumes.
 
-export type AnalyticsPeriod = "Day" | "Week" | "Month";
+// One definition of a period for the whole codebase — see src/lib/range.ts.
+// "Cycle" is a user-defined billing window (from/to).
+export type { RangePeriod as AnalyticsPeriod } from "../../lib/range.ts";
+export type { RangeSummaryDto } from "../dashboard/dashboard";
 
 // The bill predictor card at the top of the analytics screen.
 export interface BillPredictorDto {
@@ -10,6 +13,9 @@ export interface BillPredictorDto {
   accumulatedKwh: number;
   estimatedBill: number;
   cycleStart: string;   // Formatted like "Jun 1, 2026"
+  // The cycle's last day, when the user is looking at a bounded billing cycle.
+  // Null for the open-ended current period, which has no end date yet.
+  cycleEnd: string | null;
 }
 
 // A single breakdown segment for the category donut chart.
@@ -49,4 +55,5 @@ export interface AnalyticsResponseDto {
   breakdown: BreakdownEntryDto[];
   topConsumers: TopConsumerDto[];
   metrics: MetricStatDto[];
+  range: RangeSummaryDto;
 }

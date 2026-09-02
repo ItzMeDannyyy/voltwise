@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -17,6 +17,20 @@ import { Ionicons } from "@expo/vector-icons";
 import { LineChart } from "react-native-chart-kit";
 import { api, checkHealth, DashboardData, DashboardDevice, IotStatus, Reading } from "../../lib/api";
 import { useMqtt } from "../../context/MqttContext";
+import { useDemoData } from "../../context/DemoDataContext";
+import { demoDashboard, demoLiveReading } from "../../lib/demo-data";
+import RangeNavigator from "../../components/RangeNavigator";
+import { getStoredBillingCycle, saveBillingCycle } from "../../lib/billing-storage";
+import {
+  defaultRangeState,
+  dotRadiusFor,
+  axisLabelStep,
+  rangeLabel,
+  rangeQuery,
+  thinLabels,
+  type BillingCycle,
+  type RangeState,
+} from "../../lib/range-prefs";
 import { RELAY_REASON_LABELS } from "../../lib/iot-prefs";
 import AppHeader from "../../components/AppHeader";
 import { PullToRefresh } from "../../components/pull-to-refresh";
@@ -73,8 +87,6 @@ function createPillStyles(colors: ThemeColors, fontScale: number) {
   });
 }
 
-type Period = "Day" | "Week" | "Month";
-
 type LiveMetrics = Omit<Reading, "timestamp">;
 
 // Telemetry older than this is stale — the device publishes every ~2 s, so a
@@ -99,9 +111,12 @@ export default function DashboardScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { formatPower, formatEnergy, formatCostOf, powerParts, energyParts } = useUnits();
+  const { demoData } = useDemoData();
   // null until the backend or the sensor supplies a real figure.
   const [currentKw, setCurrentKw]         = useState<number | null>(null);
-  const [period, setPeriod]               = useState<Period>("Day");
+  // Which slice of time the chart is showing. Always opens on today — see
+  // defaultRangeState — and the saved billing cycle is folded in once it loads.
+  const [range, setRange]                 = useState<RangeState>(() => defaultRangeState("Day"));
   const [dashboard, setDashboard]         = useState<DashboardData | null>(null);
   // Card starts expanded (true).
   const [expanded, setExpanded]           = useState(true);
@@ -131,6 +146,9 @@ export default function DashboardScreen() {
   // reconciled when the firmware confirms on the relay/state topic.
   const [relayLocal, setRelayLocal]     = useState<boolean | null>(null);
   const [relayPending, setRelayPending] = useState(false);
+  // Sample-data mode drives the Master Power button off this instead, so the
+  // control still animates without a command ever reaching the broker.
+  const [demoRelayOn, setDemoRelayOn]   = useState(true);
   const relayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const intervalRef       = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -140,21 +158,39 @@ export default function DashboardScreen() {
   // Animated value for chevron rotation.
   const chevronAnim     = useRef(new Animated.Value(1)).current;
 
-  // Fetch dashboard data — shared by the period effect below and pull-to-refresh.
+  // Load the user's saved billing window once, so the Bill tab opens on their
+  // real cycle instead of the current-month default.
+  useEffect(() => {
+    let cancelled = false;
+    getStoredBillingCycle().then((cycle) => {
+      if (cycle && !cancelled) setRange((prev) => ({ ...prev, cycle }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleCycleSave = useCallback((cycle: BillingCycle) => {
+    void saveBillingCycle(cycle);
+  }, []);
+
+  const rangeKey = rangeQuery(range);
+
+  // Fetch dashboard data — shared by the range effect below and pull-to-refresh.
   const fetchDashboard = useCallback(async () => {
-    const data = await api.get<DashboardData>(`/dashboard?period=${period}`);
+    const data = await api.get<DashboardData>(`/dashboard?${rangeKey}`);
     setDashboard(data);
     setCurrentKw(data.currentKw);
     setIotOnline(data.iotOnline ?? false);
-  }, [period]);
+  }, [rangeKey]);
 
   // The tooltip is pinned to coordinates on one particular axis, so drop it
-  // when the period changes rather than leaving it floating over new data.
+  // when the range changes rather than leaving it floating over new data.
   useEffect(() => {
     setChartPoint(null);
-  }, [period]);
+  }, [rangeKey]);
 
-  // Refetch whenever the selected period changes.
+  // Refetch whenever the selected range changes.
   useEffect(() => {
     fetchDashboard().catch(() => {
       // Offline-first: keep whatever was last shown rather than inventing data.
@@ -242,6 +278,12 @@ export default function DashboardScreen() {
   // Master relay toggle: optimistic flip -> POST /api/iot/relay -> the
   // firmware's relay/state message reconciles (or the 10 s timeout reverts).
   async function handleRelayToggle(value: boolean) {
+    // Sample data must never move a real contactor: flip the local display
+    // state and stop before the REST call that publishes to MQTT.
+    if (demoData) {
+      setDemoRelayOn(value);
+      return;
+    }
     setRelayLocal(value);
     setRelayPending(true);
     if (relayTimeoutRef.current) clearTimeout(relayTimeoutRef.current);
@@ -286,8 +328,24 @@ export default function DashboardScreen() {
   // Single reachability judgement, shared by the status pill and the Master
   // Power card so the two can never contradict each other. Real telemetry
   // beats the backend's opinion; the simulation is shown honestly as degraded.
-  const iotState: IotState =
-    liveSource === "mqtt"
+  // ── Sample data ───────────────────────────────────────────────────────────
+  // A render-time overlay only: the fetched payload and the live telemetry stay
+  // in state underneath, so switching it back off restores the real screen with
+  // nothing to re-fetch. Memoised on the period because the chart must not be
+  // handed a freshly-built array on every render.
+  const demoDash = useMemo(
+    () => (demoData ? demoDashboard(range) : null),
+    [demoData, range]
+  );
+  const demoReading = useMemo(
+    () => (demoData ? demoLiveReading() : null),
+    [demoData]
+  );
+  const view = demoDash ?? dashboard;
+
+  const iotState: IotState = demoData
+    ? "live"
+    : liveSource === "mqtt"
       ? "live"
       : iotOnline === true
         ? "nolink"
@@ -296,17 +354,22 @@ export default function DashboardScreen() {
           : "offline";
   // Only a live MQTT feed means commands can actually reach the firmware.
   const iotReachable = iotState === "live";
+  // Whether the Current Usage card gets to claim a live feed.
+  const liveFeedOn = demoData || liveSource !== "off";
+  // The six PZEM metrics and the hero figure, from the sample set or the sensor.
+  const displayMetrics = demoReading ?? liveMetrics;
+  const displayKw = demoData ? demoDash?.currentKw ?? null : currentKw;
 
   // Master relay display state: the optimistic value wins while a command is
   // in flight; before any relay/state message arrives assume ON (firmware
   // boots with relays energized).
-  const relayOn = relayLocal ?? relayState?.on ?? true;
+  const relayOn = demoData ? demoRelayOn : relayLocal ?? relayState?.on ?? true;
   const relayReasonLabel = relayOn
     ? "Power is flowing to your loads"
     : RELAY_REASON_LABELS[relayState?.reason ?? ""] ?? "Power is off";
   // The button only works when the device is reachable and no command is
   // already pending confirmation.
-  const relayControlDisabled = relayPending || !iotReachable;
+  const relayControlDisabled = demoData ? false : relayPending || !iotReachable;
   // Button caption: the current relay state, or the reason it can't be used.
   const relayButtonLabel = !iotReachable
     ? iotState === "unknown"
@@ -346,8 +409,14 @@ export default function DashboardScreen() {
   // Chart data comes from the backend or not at all — an empty chart is the
   // honest answer when there are no readings, and a demo curve here would be
   // indistinguishable from real consumption.
-  const visibleLabels  = dashboard?.deviceHistory.labels ?? [];
-  const deviceSeries   = dashboard?.deviceHistory.series ?? [];
+  const visibleLabels  = view?.deviceHistory.labels ?? [];
+  const deviceSeries   = view?.deviceHistory.series ?? [];
+  // A day is 24 hourly points and a month up to 31 daily ones, so the axis
+  // shows every third or fourth label while the line keeps every point. The
+  // tooltip still reads `visibleLabels`, which is untouched, so a dot can name
+  // the exact hour it belongs to even where no label is drawn beneath it.
+  const axisLabels     = thinLabels(visibleLabels, 8, axisLabelStep(range.period));
+  const dotRadius      = dotRadiusFor(visibleLabels.length);
 
   // Chart geometry, needed both to draw and to keep the tooltip on screen.
   const CHART_WIDTH = SCREEN_WIDTH - 32;
@@ -359,9 +428,9 @@ export default function DashboardScreen() {
   const tooltipSeries = chartPoint
     ? deviceSeries.find((series) => series.deviceId === chartPoint.deviceId)
     : undefined;
-  const devices        = dashboard?.devices        ?? [];
-  const topConsumers   = dashboard?.topConsumers   ?? [];
-  const totalToday     = dashboard?.totalTodayKwh  ?? 0;
+  const devices        = view?.devices        ?? [];
+  const topConsumers   = view?.topConsumers   ?? [];
+  const totalToday     = view?.totalTodayKwh  ?? 0;
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
@@ -380,8 +449,18 @@ export default function DashboardScreen() {
         {/* Status Row */}
         <View style={styles.statusRow}>
           <StatusPill
-            label={serverOnline === null ? "Server..." : serverOnline ? "Server Live" : "Server Offline"}
-            status={serverOnline === null ? "unknown" : serverOnline ? "online" : "offline"}
+            label={
+              demoData
+                ? "Server Live"
+                : serverOnline === null
+                  ? "Server..."
+                  : serverOnline
+                    ? "Server Live"
+                    : "Server Offline"
+            }
+            status={
+              demoData ? "online" : serverOnline === null ? "unknown" : serverOnline ? "online" : "offline"
+            }
           />
           <StatusPill label={iotPill.label} status={iotPill.status} />
         </View>
@@ -392,7 +471,7 @@ export default function DashboardScreen() {
           <View style={styles.usageCardTop}>
             <Text style={styles.usageLabel}>Current{"\n"}Usage</Text>
             <View style={styles.usageTopRight}>
-              {liveSource !== "off" ? (
+              {liveFeedOn ? (
                 <View style={styles.livePill}>
                   <View style={styles.liveDot} />
                   <Text style={styles.liveText}>LIVE</Text>
@@ -423,10 +502,10 @@ export default function DashboardScreen() {
             {/* currentKw is kW; the formatter works in watts. Null until a real
                 figure arrives — the hero never shows a placeholder number. */}
             <Text style={styles.kwValue}>
-              {currentKw === null ? "—" : powerParts(currentKw * 1000).value}
+              {displayKw === null ? "—" : powerParts(displayKw * 1000).value}
             </Text>
             <Text style={styles.kwUnit}>
-              {currentKw === null ? "" : powerParts(currentKw * 1000).unit}
+              {displayKw === null ? "" : powerParts(displayKw * 1000).unit}
             </Text>
           </View>
           <Text style={styles.totalToday}>
@@ -452,7 +531,7 @@ export default function DashboardScreen() {
               ]}
             >
               {METRIC_DEFS.map((def) => {
-                const raw = liveMetrics?.[def.key];
+                const raw = displayMetrics?.[def.key];
                 // No sensor reading — show the absence rather than a number
                 // the system cannot stand behind.
                 const parts =
@@ -586,27 +665,16 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Usage History</Text>
-            <View style={styles.periodSelector}>
-              {(["Day", "Week", "Month"] as Period[]).map((p) => (
-                <TouchableOpacity
-                  key={p}
-                  style={[
-                    styles.periodBtn,
-                    period === p && styles.periodBtnActive,
-                  ]}
-                  onPress={() => setPeriod(p)}
-                >
-                  <Text
-                    style={[
-                      styles.periodLabel,
-                      period === p && styles.periodLabelActive,
-                    ]}
-                  >
-                    {p}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+          </View>
+
+          {/* Period + timeline. Shared with Analytics so the two screens can
+              never describe time differently. */}
+          <View style={styles.navigatorWrap}>
+            <RangeNavigator
+              state={range}
+              onChange={setRange}
+              onCycleSave={handleCycleSave}
+            />
           </View>
 
           <View style={styles.chartCard}>
@@ -614,7 +682,7 @@ export default function DashboardScreen() {
               <View style={styles.chartEmpty}>
                 <Ionicons name="analytics-outline" size={32} color={colors.sub} />
                 <Text style={styles.chartEmptyText}>
-                  No per-device usage recorded for this period yet.
+                  No per-device usage recorded for {rangeLabel(range).toLowerCase()}.
                 </Text>
               </View>
             ) : (
@@ -622,7 +690,7 @@ export default function DashboardScreen() {
                 <View>
                   <LineChart
                     data={{
-                      labels: visibleLabels,
+                      labels: axisLabels,
                       // One line per device. Each dataset carries its own colour so
                       // the line matches its legend chip below, and its deviceId in
                       // `key` — chart-kit hands the whole dataset back on tap but
@@ -668,7 +736,7 @@ export default function DashboardScreen() {
                       // Dots inherit each dataset's colour. The card-coloured ring
                       // keeps them readable where lines overlap, and the radius is
                       // the finger target.
-                      propsForDots: { r: "4", strokeWidth: "1.5", stroke: colors.card },
+                      propsForDots: { r: dotRadius, strokeWidth: "1.5", stroke: colors.card },
                       propsForBackgroundLines: {
                         stroke: colors.border,
                         strokeDasharray: "4 4",
@@ -1058,28 +1126,8 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       fontSize: 18 * fontScale,
       fontWeight: "700",
     },
-    periodSelector: {
-      flexDirection: "row",
-      backgroundColor: colors.card,
-      borderRadius: 10,
-      padding: 3,
-    },
-    periodBtn: {
-      paddingHorizontal: 12,
-      paddingVertical: 5,
-      borderRadius: 8,
-    },
-    periodBtnActive: {
-      backgroundColor: colors.text,
-    },
-    periodLabel: {
-      color: colors.sub,
-      fontSize: 13 * fontScale,
-      fontWeight: "500",
-    },
-    periodLabelActive: {
-      color: colors.bg,
-      fontWeight: "700",
+    navigatorWrap: {
+      marginBottom: 12,
     },
     chartCard: {
       backgroundColor: colors.card,

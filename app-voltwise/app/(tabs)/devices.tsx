@@ -21,11 +21,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { api, ApiDevice, ApiDeviceReading, resolveAssetUrl } from "../../lib/api";
+import { DEMO_DEVICES, demoDeviceReading } from "../../lib/demo-data";
 import { PullToRefresh, PullToRefreshList } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useTheme } from "../../context/ThemeContext";
 import { useUnits } from "../../context/UnitsContext";
 import { useMqtt } from "../../context/MqttContext";
+import { useDemoData } from "../../context/DemoDataContext";
 import { linkHealth } from "../../lib/iot-prefs";
 import ConfirmModal from "../../components/ConfirmModal";
 import { useThemedStyles } from "../../components/themed";
@@ -75,9 +77,14 @@ export default function DevicesScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { formatPower, formatEnergy, formatCostOf } = useUnits();
+  const { demoData } = useDemoData();
   const STATUS_COLORS = getStatusColors(colors);
 
   const [devices, setDevices] = useState<Device[]>([]);
+  // Sample-data mode renders this list instead. Kept in its own state, not
+  // merged into `devices`, so a demo can be toggled and switched about without
+  // ever touching the real inventory the server sent.
+  const [demoDevices, setDemoDevices] = useState<Device[]>(DEMO_DEVICES);
   const [loadingDevices, setLoadingDevices] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState("");
@@ -109,7 +116,12 @@ export default function DevicesScreen() {
       now: Date.now(),
     }) === "live" && relayState?.on === true;
 
-  const masterPowerOff = !powerAvailable;
+  // The sample household is powered by definition — an offline bench relay
+  // would grey out every card and hide exactly what the demo is meant to show.
+  const masterPowerOff = demoData ? false : !powerAvailable;
+
+  // The list the screen actually renders.
+  const listDevices = demoData ? demoDevices : devices;
 
   const originalsRef = useRef<Record<string, { status: DeviceStatus; watts: number }>>({});
   const accordionHeightsRef = useRef<Partial<Record<string, number>>>({});
@@ -121,6 +133,22 @@ export default function DevicesScreen() {
     }
     return accordionAnimsRef.current[id]!;
   }
+
+  // Every re-entry into sample mode starts from the authored household, so a
+  // demo never inherits toggles left over from the previous run.
+  useEffect(() => {
+    if (!demoData) return;
+    setDemoDevices(DEMO_DEVICES);
+    // Remember each sample device's running figures so switching one off and
+    // back on restores its draw instead of leaving it at 0 W. Demo ids can't
+    // collide with server ids, and the next real fetch replaces this map whole.
+    for (const device of DEMO_DEVICES) {
+      originalsRef.current[device.id] = {
+        status: device.status === "OFF" ? "ACTIVE" : device.status,
+        watts: device.watts,
+      };
+    }
+  }, [demoData]);
 
   // ── Deep link: ?openAdd=1 auto-opens the add-device form ─────────────────
   // Used by the "New load detected" prompt to jump straight into registering
@@ -167,7 +195,7 @@ export default function DevicesScreen() {
 
   // ── Filtered list ─────────────────────────────────────────────────────────
 
-  const filtered = devices.filter(
+  const filtered = listDevices.filter(
     (d) =>
       d.name.toLowerCase().includes(search.toLowerCase()) ||
       d.room.toLowerCase().includes(search.toLowerCase())
@@ -181,6 +209,22 @@ export default function DevicesScreen() {
   function handleToggle(id: string, value: boolean) {
     if (masterPowerOff) {
       setMasterNoticeVisible(true);
+      return;
+    }
+    // Sample devices are not rows in anyone's database: flip them locally and
+    // stop before the PATCH.
+    if (demoData) {
+      setDemoDevices((prev) =>
+        prev.map((d) => {
+          if (d.id !== id) return d;
+          if (!value) return { ...d, enabled: false, status: "OFF" as DeviceStatus, watts: 0 };
+          const original = originalsRef.current[id] ?? {
+            status: "ACTIVE" as DeviceStatus,
+            watts: d.watts,
+          };
+          return { ...d, enabled: true, status: original.status, watts: original.watts };
+        })
+      );
       return;
     }
     setDevices((prev) =>
@@ -223,6 +267,8 @@ export default function DevicesScreen() {
   // ── Live reading fetch ────────────────────────────────────────────────────
 
   async function fetchLiveReading(deviceId: string) {
+    // Sample readings are computed, not fetched — see readingFor() below.
+    if (demoData) return;
     if (loadingReadings[deviceId] || liveReadings[deviceId] !== undefined) return;
     setLoadingReadings((prev) => ({ ...prev, [deviceId]: true }));
     try {
@@ -326,9 +372,17 @@ export default function DevicesScreen() {
     };
 
     const photoUri = formPhotoUri;
-    setDevices((prev) => [newDevice, ...prev]);
     resetForm();
     setModalVisible(false);
+
+    // A device added during a demo joins the sample household and goes no
+    // further — nothing is posted, so the real inventory is unchanged.
+    if (demoData) {
+      setDemoDevices((prev) => [newDevice, ...prev]);
+      return;
+    }
+
+    setDevices((prev) => [newDevice, ...prev]);
 
     api
       .post<ApiDevice>("/devices", { name, room, watts, enabled: formEnabled, category })
@@ -408,8 +462,8 @@ export default function DevicesScreen() {
     const isExpanded = expandedId === device.id;
     const status = effectiveStatus(device);
     const watts = effectiveWatts(device);
-    const reading = liveReadings[device.id];
-    const isLoading = loadingReadings[device.id] ?? false;
+    const reading = demoData ? demoDeviceReading(device.id) : liveReadings[device.id];
+    const isLoading = demoData ? false : loadingReadings[device.id] ?? false;
 
     const elecMetrics =
       reading && typeof reading === "object"
@@ -555,7 +609,9 @@ export default function DevicesScreen() {
   // ── Render: loading / empty states ────────────────────────────────────────
 
   function renderListState() {
-    if (loadingDevices) {
+    // The sample list is always present and always complete, so neither the
+    // loading spinner nor the offline notice applies to it.
+    if (loadingDevices && !demoData) {
       return (
         <View style={styles.emptyState}>
           <ActivityIndicator size="large" color={colors.accent} />
@@ -563,7 +619,7 @@ export default function DevicesScreen() {
         </View>
       );
     }
-    if (loadError) {
+    if (loadError && !demoData) {
       return (
         <View style={styles.emptyState}>
           <Ionicons name="cloud-offline-outline" size={40} color={colors.sub} />
@@ -574,7 +630,7 @@ export default function DevicesScreen() {
         </View>
       );
     }
-    if (devices.length === 0) {
+    if (listDevices.length === 0) {
       return (
         <View style={styles.emptyState}>
           <Ionicons name="flash-outline" size={40} color={colors.sub} />

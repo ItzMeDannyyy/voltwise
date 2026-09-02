@@ -57,6 +57,14 @@ const { getDashboard } = await import(
   "../src/modules/dashboard/dashboard.controller.ts"
 );
 
+// The range resolver is pure and unmocked — the service now takes a resolved
+// range rather than a period string, so the tests build one the same way the
+// controller does. Its own boundary cases live in test/range.test.ts.
+const { resolveRange } = await import("../src/lib/range.ts");
+
+/** The range the service used to assume: today, hourly. */
+const dayRange = () => resolveRange({ period: "Day" });
+
 // Convenience: reset the aggregate/groupBy/etc. mocks to an "empty DB" baseline
 // so every test starts from a known, boring state and only overrides what it
 // cares about.
@@ -77,7 +85,7 @@ beforeEach(() => {
 
 describe("getDashboardData (service)", () => {
   it("returns a fully-shaped payload with nominal defaults on an empty database", async () => {
-    const data = await getDashboardData(1, "Day");
+    const data = await getDashboardData(1, dayRange());
 
     expect(data).toMatchObject({
       currentKw: 0,
@@ -108,7 +116,7 @@ describe("getDashboardData (service)", () => {
       { id: 3, name: "TV", ratedWatts: 85, status: "STANDBY" },
     ]);
 
-    const data = await getDashboardData(1, "Day");
+    const data = await getDashboardData(1, dayRange());
 
     // (1200 + 180) / 1000 = 1.38 kW — the STANDBY TV is excluded.
     expect(data.currentKw).toBe(1.38);
@@ -127,7 +135,7 @@ describe("getDashboardData (service)", () => {
       _sum: { kwh: 18.719 },
     });
 
-    const data = await getDashboardData(1, "Day");
+    const data = await getDashboardData(1, dayRange());
 
     expect(data.totalTodayKwh).toBe(18.72);
   });
@@ -135,7 +143,7 @@ describe("getDashboardData (service)", () => {
   it("marks iotOnline true when a recent whole-home reading exists", async () => {
     prismaMock.energyReading.count.mockResolvedValue(3);
 
-    const data = await getDashboardData(1, "Day");
+    const data = await getDashboardData(1, dayRange());
 
     expect(data.iotOnline).toBe(true);
     // The liveness check filters to whole-home readings (deviceId: null).
@@ -165,7 +173,7 @@ describe("getDashboardData (service)", () => {
       return Promise.resolve([]);
     });
 
-    const data = await getDashboardData(1, "Day");
+    const data = await getDashboardData(1, dayRange());
 
     // Total = 10 kWh → 60%, 30%, 10%. Sorted descending, top 5.
     // No tariff seeded → falls back to the default ₱10.5/kWh rate.
@@ -194,7 +202,7 @@ describe("getDashboardData (service)", () => {
       effectiveFrom: new Date(),
     });
 
-    const data = await getDashboardData(1, "Day");
+    const data = await getDashboardData(1, dayRange());
 
     expect(data.topConsumers).toEqual([
       { id: "10", name: "Aircon", pct: 100, color: "#00d4aa", kwh: 2, cost: 24 },
@@ -213,18 +221,51 @@ describe("getDashboard (controller)", () => {
     return res;
   }
 
-  it("rejects an invalid period with 400 and does not hit the database", async () => {
+  it("rejects an invalid period and does not hit the database", async () => {
     const req = { user: { id: 1 }, query: { period: "Year" } } as unknown as Request;
     const res = mockRes();
     const next = jest.fn() as unknown as NextFunction;
 
     await getDashboard(req, res, next);
 
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ success: false })
+    // Validation moved into the shared resolver, so a bad range now surfaces as
+    // an AppError(400) handed to next() rather than a response written here.
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 400 })
     );
-    expect(next).not.toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+    expect(prismaMock.device.findMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects a billing cycle that is missing its bounds", async () => {
+    const req = {
+      user: { id: 1 },
+      query: { period: "Cycle", from: "2026-01-14" },
+    } as unknown as Request;
+    const res = mockRes();
+    const next = jest.fn() as unknown as NextFunction;
+
+    await getDashboard(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 400 })
+    );
+    expect(prismaMock.device.findMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed anchor date", async () => {
+    const req = {
+      user: { id: 1 },
+      query: { period: "Day", anchor: "25-08-2026" },
+    } as unknown as Request;
+    const res = mockRes();
+    const next = jest.fn() as unknown as NextFunction;
+
+    await getDashboard(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 400 })
+    );
     expect(prismaMock.device.findMany).not.toHaveBeenCalled();
   });
 

@@ -6,37 +6,26 @@
 
 import type { Request, Response, NextFunction } from "express";
 import * as analyticsService from "./analytics.service.ts";
-import type { AnalyticsPeriod } from "./analytics";
+import { parseRangeQuery } from "../../lib/range.ts";
 
-// The set of valid period values the mobile app is permitted to send.
-const VALID_PERIODS: AnalyticsPeriod[] = ["Day", "Week", "Month"];
-
-// Documentation only: Handles GET /api/analytics?period=Day|Week|Month.
-// Reads the authenticated user's id from req.user (set by requireAuth middleware).
-// Reads the period query parameter (defaults to "Month" if absent, since analytics
-// is most meaningful over a billing cycle).
-// Validates the period, then delegates to the analytics service.
+// Documentation only: Handles GET /api/analytics.
+//
+// Takes the same four range parameters as /api/dashboard — period, anchor,
+// from, to — parsed by the shared resolver so the two endpoints can never
+// disagree about what a range means. Defaults to "Month" when no period is
+// given, since analytics is most meaningful over a billing-length window.
+//
+// Reads the authenticated user's id from req.user (set by requireAuth
+// middleware). Validation lives in the resolver and surfaces as AppError(400).
 // Returns 200 with { success: true, data: AnalyticsResponseDto } on success.
-// Passes any errors to the Express error handler via next().
 export const getAnalytics = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const userId = req.user!.id;
-    const rawPeriod = (req.query.period as string) ?? "Month";
-    const period = rawPeriod as AnalyticsPeriod;
-
-    if (!VALID_PERIODS.includes(period)) {
-      res.status(400).json({
-        success: false,
-        message: `Invalid period value "${rawPeriod}". Must be one of: ${VALID_PERIODS.join(", ")}.`,
-      });
-      return;
-    }
-
-    const analyticsData = await analyticsService.getAnalyticsData(userId, period);
+    const range = parseRangeQuery(req.query, "Month");
+    const analyticsData = await analyticsService.getAnalyticsData(req.user!.id, range);
     res.status(200).json({ success: true, data: analyticsData });
   } catch (error) {
     next(error);

@@ -217,7 +217,18 @@ export async function checkHealth(): Promise<boolean> {
 
 // ---- Response types (mirror the backend contracts) ----
 
-export type DashboardPeriod = "Day" | "Week" | "Month";
+export type DashboardPeriod = "Day" | "Week" | "Month" | "Cycle";
+
+/** The window a payload describes, echoed back by /dashboard and /analytics. */
+export interface RangeSummary {
+  period: DashboardPeriod;
+  /** ISO instant of the first reading included. */
+  from: string;
+  /** ISO instant of the last, never in the future. */
+  to: string;
+  /** Human label, e.g. "Jan 14 - Feb 15, 2026". */
+  label: string;
+}
 
 export interface DashboardDevice {
   id: string;
@@ -271,6 +282,10 @@ export interface DashboardData {
   topConsumers: ConsumerSlice[];
   reading: Reading;
   iotOnline: boolean;
+  /** The window the history and topConsumers above actually cover. The live
+   *  figures (currentKw, totalTodayKwh, reading, iotOnline) ignore it — they
+   *  describe the meter right now whatever range is being browsed. */
+  range: RangeSummary;
 }
 
 export interface ApiDevice {
@@ -403,9 +418,12 @@ export interface AnalyticsData {
     accumulatedKwh: number;
     estimatedBill: number;
     cycleStart: string;
+    /** The cycle's last day; null for the open-ended current period. */
+    cycleEnd: string | null;
   };
   totalKwh: number;
   breakdown: { label: string; pct: number; color: string; kwh: number; cost: number }[];
   topConsumers: ConsumerSlice[];
   metrics: MetricStat[];
+  range: RangeSummary;
 }

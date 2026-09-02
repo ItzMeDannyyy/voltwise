@@ -1,0 +1,338 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1900" viewBox="0 0 2200 1900">
+<rect width="2200" height="1900" fill="#FFFFFF"/>
+<text x="60" y="66" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="40" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">VoltWise — Electrical Wiring Schematic</text>
+<text x="60" y="102" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="20" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">AC mains  →  PZEM-004T v3.0 + CT clamp  →  2-channel relay  →  loads,  with ESP32 low-voltage control</text>
+<rect x="1500" y="32" width="640" height="80" rx="10" fill="#FFF3F0" stroke="#C62828" stroke-width="3"/>
+<text x="1530" y="64" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="22" fill="#B71C1C" text-anchor="start" font-weight="700" letter-spacing="0">⚠  DANGER - 230 V AC</text>
+<text x="1530" y="92" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#8E2C2C" text-anchor="start" font-weight="400" letter-spacing="0">Everything above the dashed line is live mains. Enclose it. Bench-test on USB first.</text>
+<rect x="40" y="140" width="2120" height="660" rx="16" fill="#FFF7F3" stroke="#E8D5CB" stroke-width="2"/>
+<rect x="40" y="812" width="2120" height="720" rx="16" fill="#F3F7FD" stroke="#D3E0F0" stroke-width="2"/>
+<line x1="40" y1="800" x2="2160" y2="800" stroke="#C62828" stroke-width="4" stroke-dasharray="18 12"/>
+<text x="60" y="784" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="17" fill="#B71C1C" text-anchor="start" font-weight="700" letter-spacing="0">AC MAINS SIDE  —  LETHAL</text>
+<text x="2140" y="852" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="17" fill="#1565C0" text-anchor="end" font-weight="700" letter-spacing="0">LOW-VOLTAGE DC SIDE  -  5 V / 3.3 V  -  SAFE TO PROBE</text>
+<rect x="60" y="150" width="220" height="280" rx="14" fill="#FFFFFF" stroke="#12181F" stroke-width="4"/>
+<text x="170" y="196" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="21" fill="#12181F" text-anchor="middle" font-weight="700" letter-spacing="0">AC MAINS</text>
+<text x="170" y="222" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">INLET / MAIN BREAKER</text>
+<text x="170" y="248" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">230 V · 60 Hz</text>
+<rect x="115" y="292" width="110" height="112" rx="8" fill="#F4F6F8" stroke="#5A6674" stroke-width="3"/>
+<line x1="146" y1="378" x2="146" y2="330" stroke="#12181F" stroke-width="5"/>
+<line x1="146" y1="330" x2="192" y2="308" stroke="#12181F" stroke-width="5"/>
+<circle cx="146" cy="378" r="7" fill="#12181F"/><circle cx="194" cy="330" r="7" fill="#12181F"/>
+<text x="170" y="398" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">2-POLE BREAKER</text>
+<rect x="272" y="167" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#1565C0" stroke-width="3"/>
+<text x="298" y="181" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#1565C0" text-anchor="start" font-weight="700" letter-spacing="0">N</text>
+<rect x="272" y="272" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#8C4A2F" stroke-width="3"/>
+<text x="298" y="286" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#8C4A2F" text-anchor="start" font-weight="700" letter-spacing="0">L</text>
+<polyline points="280,175 2170,175 2170,320" fill="none" stroke="#1565C0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="2170,320 2120,320" fill="none" stroke="#1565C0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="2170,320 2170,440 2120,440" fill="none" stroke="#1565C0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="2170" cy="320" r="10" fill="#1565C0"/>
+<text x="1180" y="158" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="16" fill="#1565C0" text-anchor="middle" font-weight="700" letter-spacing="0">NEUTRAL  -  blue  -  NEVER switched, NEVER through the relay</text>
+<polyline points="280,280 1180,280" fill="none" stroke="#8C4A2F" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="300" y="258" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="16" fill="#8C4A2F" text-anchor="start" font-weight="700" letter-spacing="0">LIVE / LINE  -  brown</text>
+<polyline points="390,280 390,470" fill="none" stroke="#8C4A2F" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="390" cy="280" r="10" fill="#8C4A2F"/>
+<rect x="444" y="269" width="32" height="22" fill="#FFFFFF" stroke="none"/>
+<path d="M 445 289 A 15 15 0 0 1 475 289" fill="none" stroke="#1565C0" stroke-width="6" stroke-linecap="round"/>
+<polyline points="460,175 460,470" fill="none" stroke="#1565C0" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="460" cy="175" r="10" fill="#1565C0"/>
+<polyline points="660,280 660,470" fill="none" stroke="#8C4A2F" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="660" cy="280" r="10" fill="#8C4A2F"/>
+<rect x="714" y="269" width="32" height="22" fill="#FFFFFF" stroke="none"/>
+<path d="M 715 289 A 15 15 0 0 1 745 289" fill="none" stroke="#1565C0" stroke-width="6" stroke-linecap="round"/>
+<polyline points="730,175 730,470" fill="none" stroke="#1565C0" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="730" cy="175" r="10" fill="#1565C0"/>
+<rect x="340" y="470" width="190" height="270" rx="14" fill="#FFFFFF" stroke="#12181F" stroke-width="4"/>
+<text x="435" y="516" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="19" fill="#12181F" text-anchor="middle" font-weight="700" letter-spacing="0">HI-LINK</text>
+<text x="435" y="540" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">HLK-PM01</text>
+<text x="435" y="600" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">230 V AC</text>
+<text x="435" y="624" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="18" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">↓</text>
+<text x="435" y="648" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">5 V DC · 3 W</text>
+<rect x="382" y="462" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#8C4A2F" stroke-width="3"/>
+<text x="390" y="500" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#8C4A2F" text-anchor="middle" font-weight="700" letter-spacing="0">AC-L</text>
+<rect x="452" y="462" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#1565C0" stroke-width="3"/>
+<text x="460" y="500" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#1565C0" text-anchor="middle" font-weight="700" letter-spacing="0">AC-N</text>
+<rect x="372" y="732" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#212121" stroke-width="3"/>
+<text x="380" y="722" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#212121" text-anchor="middle" font-weight="700" letter-spacing="0">GND</text>
+<rect x="492" y="732" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#D81B24" stroke-width="3"/>
+<text x="500" y="722" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#D81B24" text-anchor="middle" font-weight="700" letter-spacing="0">+5V</text>
+<rect x="610" y="470" width="420" height="270" rx="14" fill="#FFFFFF" stroke="#12181F" stroke-width="4"/>
+<text x="820" y="516" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="21" fill="#12181F" text-anchor="middle" font-weight="700" letter-spacing="0">PZEM-004T v3.0</text>
+<text x="820" y="540" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">ENERGY METER  ·  Modbus over UART</text>
+<text x="820" y="600" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">measures:  V · A · W · kWh · Hz · PF</text>
+<text x="820" y="626" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">voltage from its AC terminals, current from the CT clamp</text>
+<text x="820" y="652" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">P = V × I × PF  is computed inside the module</text>
+<rect x="652" y="462" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#8C4A2F" stroke-width="3"/>
+<text x="660" y="500" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#8C4A2F" text-anchor="middle" font-weight="700" letter-spacing="0">AC-L</text>
+<rect x="722" y="462" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#1565C0" stroke-width="3"/>
+<text x="730" y="500" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#1565C0" text-anchor="middle" font-weight="700" letter-spacing="0">AC-N</text>
+<rect x="942" y="462" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#AD1457" stroke-width="3"/>
+<text x="950" y="500" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#AD1457" text-anchor="middle" font-weight="700" letter-spacing="0">CT</text>
+<rect x="652" y="732" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#D81B24" stroke-width="3"/>
+<text x="660" y="722" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#D81B24" text-anchor="middle" font-weight="700" letter-spacing="0">5V</text>
+<rect x="712" y="732" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#212121" stroke-width="3"/>
+<text x="720" y="722" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#212121" text-anchor="middle" font-weight="700" letter-spacing="0">GND</text>
+<rect x="792" y="732" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#2E7D32" stroke-width="3"/>
+<text x="800" y="722" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#2E7D32" text-anchor="middle" font-weight="700" letter-spacing="0">TX</text>
+<rect x="862" y="732" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#6A1B9A" stroke-width="3"/>
+<text x="870" y="722" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#6A1B9A" text-anchor="middle" font-weight="700" letter-spacing="0">RX</text>
+<circle cx="880" cy="280" r="42" fill="none" stroke="#AD1457" stroke-width="16"/>
+<rect x="866" y="226" width="30" height="16" fill="#FFF7F3"/>
+<rect x="852" y="316" width="56" height="26" rx="6" fill="#AD1457"/>
+<line x1="844" y1="280" x2="916" y2="280" stroke="#8C4A2F" stroke-width="8" stroke-linecap="round"/>
+<polyline points="880,342 880,392 950,414 950,470" fill="none" stroke="#AD1457" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="880" y="196" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="17" fill="#AD1457" text-anchor="middle" font-weight="700" letter-spacing="0">CT CLAMP</text>
+<text x="880" y="216" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#AD1457" text-anchor="middle" font-weight="700" letter-spacing="0">around LIVE only</text>
+<path d="M 916 312 L 990 340" stroke="#AD1457" stroke-width="3" stroke-dasharray="7 6"/>
+<text x="1000" y="352" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#AD1457" text-anchor="start" font-weight="400" letter-spacing="0">the jaws close around</text>
+<text x="1000" y="370" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#AD1457" text-anchor="start" font-weight="400" letter-spacing="0">the insulated live wire</text>
+<text x="1000" y="388" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#AD1457" text-anchor="start" font-weight="400" letter-spacing="0">- nothing is cut</text>
+<rect x="1180" y="215" width="440" height="405" rx="14" fill="#FFFFFF" stroke="#12181F" stroke-width="4"/>
+<text x="1400" y="262" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="20" fill="#12181F" text-anchor="middle" font-weight="700" letter-spacing="0">2-CHANNEL RELAY MODULE</text>
+<text x="1400" y="286" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">opto-isolated  ·  ACTIVE-LOW  ·  10 A / 250 V AC</text>
+<rect x="1250" y="313" width="300" height="64" rx="8" fill="#F4F6F8" stroke="#5A6674" stroke-width="2"/>
+<circle cx="1288" cy="345" r="7" fill="#12181F"/>
+<line x1="1288" y1="345" x2="1382" y2="319" stroke="#12181F" stroke-width="5"/>
+<circle cx="1392" cy="319" r="7" fill="#12181F"/>
+<circle cx="1392" cy="367" r="7" fill="#5A6674"/>
+<text x="1408" y="323" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">NO</text>
+<text x="1408" y="372" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">NC (unused)</text>
+<rect x="1470" y="325" width="60" height="40" rx="5" fill="#FFFFFF" stroke="#00838F" stroke-width="3"/>
+<text x="1500" y="351" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" fill="#00838F" text-anchor="middle" font-weight="700" letter-spacing="0">COIL</text>
+<rect x="1250" y="428" width="300" height="64" rx="8" fill="#F4F6F8" stroke="#5A6674" stroke-width="2"/>
+<circle cx="1288" cy="460" r="7" fill="#12181F"/>
+<line x1="1288" y1="460" x2="1382" y2="434" stroke="#12181F" stroke-width="5"/>
+<circle cx="1392" cy="434" r="7" fill="#12181F"/>
+<circle cx="1392" cy="482" r="7" fill="#5A6674"/>
+<text x="1408" y="438" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">NO</text>
+<text x="1408" y="487" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">NC (unused)</text>
+<rect x="1470" y="440" width="60" height="40" rx="5" fill="#FFFFFF" stroke="#00838F" stroke-width="3"/>
+<text x="1500" y="466" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" fill="#00838F" text-anchor="middle" font-weight="700" letter-spacing="0">COIL</text>
+<text x="1400" y="556" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#00838F" text-anchor="middle" font-weight="700" letter-spacing="0">IN = LOW  →  coil energised  →  COM-NO closed  →  load ON</text>
+<text x="1400" y="580" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">both channels are driven together = one MASTER cut-off</text>
+<rect x="1172" y="272" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#8C4A2F" stroke-width="3"/>
+<text x="1198" y="286" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#8C4A2F" text-anchor="start" font-weight="700" letter-spacing="0">COM1</text>
+<rect x="1172" y="392" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#8C4A2F" stroke-width="3"/>
+<text x="1198" y="406" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#8C4A2F" text-anchor="start" font-weight="700" letter-spacing="0">COM2</text>
+<rect x="1612" y="272" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#E64A19" stroke-width="3"/>
+<text x="1602" y="286" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#E64A19" text-anchor="end" font-weight="700" letter-spacing="0">NO1</text>
+<rect x="1612" y="392" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#E64A19" stroke-width="3"/>
+<text x="1602" y="406" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#E64A19" text-anchor="end" font-weight="700" letter-spacing="0">NO2</text>
+<rect x="1242" y="612" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#D81B24" stroke-width="3"/>
+<text x="1250" y="602" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#D81B24" text-anchor="middle" font-weight="700" letter-spacing="0">VCC</text>
+<rect x="1322" y="612" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#212121" stroke-width="3"/>
+<text x="1330" y="602" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#212121" text-anchor="middle" font-weight="700" letter-spacing="0">GND</text>
+<rect x="1412" y="612" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#00838F" stroke-width="3"/>
+<text x="1420" y="602" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#00838F" text-anchor="middle" font-weight="700" letter-spacing="0">IN1</text>
+<rect x="1492" y="612" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#00838F" stroke-width="3"/>
+<text x="1500" y="602" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#00838F" text-anchor="middle" font-weight="700" letter-spacing="0">IN2</text>
+<polyline points="1120,280 1120,400 1180,400" fill="none" stroke="#8C4A2F" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1120" cy="280" r="10" fill="#8C4A2F"/>
+<polyline points="1620,280 1740,280" fill="none" stroke="#E64A19" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="1620,400 1740,400" fill="none" stroke="#E64A19" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1680" y="256" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#E64A19" text-anchor="middle" font-weight="700" letter-spacing="0">SWITCHED LIVE</text>
+<rect x="1740" y="225" width="380" height="110" rx="14" fill="#FFFFFF" stroke="#12181F" stroke-width="4"/>
+<text x="1930" y="271" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="18" fill="#12181F" text-anchor="middle" font-weight="700" letter-spacing="0">LOAD GROUP 1</text>
+<text x="1930" y="297" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">outlet circuit / aircon</text>
+<rect x="1732" y="272" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#E64A19" stroke-width="3"/>
+<text x="1758" y="286" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#E64A19" text-anchor="start" font-weight="700" letter-spacing="0">L</text>
+<rect x="2112" y="312" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#1565C0" stroke-width="3"/>
+<text x="2102" y="326" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#1565C0" text-anchor="end" font-weight="700" letter-spacing="0">N</text>
+<rect x="1740" y="345" width="380" height="110" rx="14" fill="#FFFFFF" stroke="#12181F" stroke-width="4"/>
+<text x="1930" y="391" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="18" fill="#12181F" text-anchor="middle" font-weight="700" letter-spacing="0">LOAD GROUP 2</text>
+<text x="1930" y="417" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">lighting circuit</text>
+<rect x="1732" y="392" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#E64A19" stroke-width="3"/>
+<text x="1758" y="406" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#E64A19" text-anchor="start" font-weight="700" letter-spacing="0">L</text>
+<rect x="2112" y="432" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#1565C0" stroke-width="3"/>
+<text x="2102" y="446" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#1565C0" text-anchor="end" font-weight="700" letter-spacing="0">N</text>
+<rect x="1660" y="470" width="500" height="180" rx="12" fill="#FFFFFF" stroke="#AD1457" stroke-width="3"/>
+<text x="1680" y="502" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="15" fill="#AD1457" text-anchor="start" font-weight="700" letter-spacing="0">WHERE THE CT CLAMP GOES</text>
+<text x="1680" y="528" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">A current transformer: it senses the magnetic field around</text>
+<text x="1680" y="550" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">ONE conductor, so nothing is cut and the circuit is not broken.</text>
+<text x="1680" y="572" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">It sits AFTER the Hi-Link / PZEM voltage taps and BEFORE the</text>
+<text x="1680" y="594" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">relay COM, so it reads load current only - not the meter's own</text>
+<text x="1680" y="616" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">supply. Relay OFF therefore drives the reading to about 0 A.</text>
+<rect x="1660" y="660" width="500" height="120" rx="12" fill="#FFFFFF" stroke="#C62828" stroke-width="3"/>
+<text x="1680" y="692" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="15" fill="#B71C1C" text-anchor="start" font-weight="700" letter-spacing="0">WHY THE TAPS SIT BEFORE THE RELAY</text>
+<text x="1680" y="716" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">Hi-Link and the PZEM voltage terminals are wired upstream of</text>
+<text x="1680" y="736" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">COM. If they sat after it, switching the relay OFF would cut power</text>
+<text x="1680" y="756" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">to the ESP32 itself - and it could never switch back ON.</text>
+<polyline points="500,860 1380,860" fill="none" stroke="#D81B24" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1140" y="838" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="16" fill="#D81B24" text-anchor="start" font-weight="700" letter-spacing="0">+5 V RAIL</text>
+<polyline points="380,1500 1380,1500" fill="none" stroke="#212121" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1390" y="1506" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="16" fill="#212121" text-anchor="start" font-weight="700" letter-spacing="0">GND RAIL (0 V, common)</text>
+<polyline points="500,740 500,860" fill="none" stroke="#D81B24" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="380,740 380,1500" fill="none" stroke="#212121" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="60" y="920" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#D81B24" text-anchor="start" font-weight="700" letter-spacing="0">Hi-Link is the only source</text>
+<text x="60" y="940" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#D81B24" text-anchor="start" font-weight="700" letter-spacing="0">of DC power on the board:</text>
+<text x="60" y="960" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#D81B24" text-anchor="start" font-weight="700" letter-spacing="0">ESP32, PZEM logic, relay</text>
+<text x="60" y="980" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#D81B24" text-anchor="start" font-weight="700" letter-spacing="0">coils and the converter.</text>
+<polyline points="660,740 660,860" fill="none" stroke="#D81B24" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="660" cy="860" r="10" fill="#D81B24"/>
+<rect x="704" y="849" width="32" height="22" fill="#FFFFFF" stroke="none"/>
+<path d="M 705 869 A 15 15 0 0 1 735 869" fill="none" stroke="#212121" stroke-width="6" stroke-linecap="round"/>
+<polyline points="720,740 720,890 600,890 600,1500" fill="none" stroke="#212121" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="600" cy="1500" r="10" fill="#212121"/>
+<rect x="784" y="849" width="32" height="22" fill="#FFFFFF" stroke="none"/>
+<path d="M 785 869 A 15 15 0 0 1 815 869" fill="none" stroke="#2E7D32" stroke-width="6" stroke-linecap="round"/>
+<polyline points="800,740 800,960" fill="none" stroke="#2E7D32" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="854" y="849" width="32" height="22" fill="#FFFFFF" stroke="none"/>
+<path d="M 855 869 A 15 15 0 0 1 885 869" fill="none" stroke="#6A1B9A" stroke-width="6" stroke-linecap="round"/>
+<polyline points="870,740 870,960" fill="none" stroke="#6A1B9A" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="792" y="922" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#2E7D32" text-anchor="end" font-weight="700" letter-spacing="0">TX</text>
+<text x="896" y="922" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#6A1B9A" text-anchor="start" font-weight="700" letter-spacing="0">RX</text>
+<rect x="680" y="960" width="240" height="260" rx="14" fill="#FFFFFF" stroke="#12181F" stroke-width="4"/>
+<text x="800" y="1010" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="17" fill="#12181F" text-anchor="middle" font-weight="700" letter-spacing="0">LOGIC LEVEL</text>
+<text x="800" y="1032" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="17" fill="#12181F" text-anchor="middle" font-weight="700" letter-spacing="0">CONVERTER</text>
+<text x="800" y="1060" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">5 V  ↔  3.3 V</text>
+<text x="800" y="1150" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">protects the ESP32's</text>
+<text x="800" y="1168" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">3.3 V pins from the</text>
+<text x="800" y="1186" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">PZEM's 5 V logic</text>
+<rect x="752" y="952" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#D81B24" stroke-width="3"/>
+<text x="760" y="990" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#D81B24" text-anchor="middle" font-weight="700" letter-spacing="0">HV</text>
+<rect x="792" y="952" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#2E7D32" stroke-width="3"/>
+<text x="800" y="990" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#2E7D32" text-anchor="middle" font-weight="700" letter-spacing="0">HV1</text>
+<rect x="862" y="952" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#6A1B9A" stroke-width="3"/>
+<text x="870" y="990" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#6A1B9A" text-anchor="middle" font-weight="700" letter-spacing="0">HV2</text>
+<rect x="752" y="1212" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#212121" stroke-width="3"/>
+<text x="760" y="1202" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#212121" text-anchor="middle" font-weight="700" letter-spacing="0">GND</text>
+<rect x="912" y="1012" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#2E7D32" stroke-width="3"/>
+<text x="902" y="1026" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#2E7D32" text-anchor="end" font-weight="700" letter-spacing="0">LV1</text>
+<rect x="912" y="1092" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#6A1B9A" stroke-width="3"/>
+<text x="902" y="1106" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#6A1B9A" text-anchor="end" font-weight="700" letter-spacing="0">LV2</text>
+<rect x="912" y="1172" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#F9A825" stroke-width="3"/>
+<text x="902" y="1186" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#F9A825" text-anchor="end" font-weight="700" letter-spacing="0">LV</text>
+<polyline points="760,960 760,860" fill="none" stroke="#D81B24" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="760" cy="860" r="10" fill="#D81B24"/>
+<polyline points="760,1220 760,1500" fill="none" stroke="#212121" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="760" cy="1500" r="10" fill="#212121"/>
+<rect x="1060" y="940" width="340" height="460" rx="14" fill="#FFFFFF" stroke="#12181F" stroke-width="4"/>
+<text x="1245" y="1008" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="20" fill="#12181F" text-anchor="middle" font-weight="700" letter-spacing="0">ESP32 DEVKIT V1</text>
+<text x="1230" y="1226" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">Wi-Fi  ·  MQTT over TLS</text>
+<text x="1230" y="1250" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">reads the PZEM every 2 s,</text>
+<text x="1230" y="1270" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">cuts the relay above 1000 W,</text>
+<text x="1230" y="1290" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">publishes telemetry to HiveMQ</text>
+<text x="1230" y="1332" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">UART2 = GPIO16 / GPIO17</text>
+<rect x="1052" y="1012" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#2E7D32" stroke-width="3"/>
+<text x="1078" y="1026" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#2E7D32" text-anchor="start" font-weight="700" letter-spacing="0">GPIO16 (RX2)</text>
+<rect x="1052" y="1092" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#6A1B9A" stroke-width="3"/>
+<text x="1078" y="1106" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#6A1B9A" text-anchor="start" font-weight="700" letter-spacing="0">GPIO17 (TX2)</text>
+<rect x="1052" y="1172" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#F9A825" stroke-width="3"/>
+<text x="1078" y="1186" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#F9A825" text-anchor="start" font-weight="700" letter-spacing="0">3V3</text>
+<rect x="1092" y="932" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#D81B24" stroke-width="3"/>
+<text x="1100" y="970" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#D81B24" text-anchor="middle" font-weight="700" letter-spacing="0">VIN / 5V</text>
+<rect x="1112" y="1392" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#212121" stroke-width="3"/>
+<text x="1120" y="1382" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#212121" text-anchor="middle" font-weight="700" letter-spacing="0">GND</text>
+<rect x="1392" y="1032" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#00838F" stroke-width="3"/>
+<text x="1382" y="1046" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#00838F" text-anchor="end" font-weight="700" letter-spacing="0">GPIO25</text>
+<rect x="1392" y="1112" width="16" height="16" rx="3" fill="#FFFFFF" stroke="#00838F" stroke-width="3"/>
+<text x="1382" y="1126" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#00838F" text-anchor="end" font-weight="700" letter-spacing="0">GPIO26</text>
+<polyline points="920,1020 1060,1020" fill="none" stroke="#2E7D32" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="920,1100 1060,1100" fill="none" stroke="#6A1B9A" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="920,1180 1060,1180" fill="none" stroke="#F9A825" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="1100,940 1100,860" fill="none" stroke="#D81B24" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1100" cy="860" r="10" fill="#D81B24"/>
+<polyline points="1120,1400 1120,1500" fill="none" stroke="#212121" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1120" cy="1500" r="10" fill="#212121"/>
+<polyline points="1250,620 1250,860" fill="none" stroke="#D81B24" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1250" cy="860" r="10" fill="#D81B24"/>
+<polyline points="1330,620 1330,706" fill="none" stroke="#212121" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 1294 706 L 1366 706 L 1366 736 L 1330 754 L 1294 736 Z" fill="#FFFFFF" stroke="#212121" stroke-width="3"/>
+<text x="1330" y="730" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#212121" text-anchor="middle" font-weight="700" letter-spacing="0">GND</text>
+<path d="M 1304 1500 L 1376 1500 L 1376 1470 L 1340 1452 L 1304 1470 Z" fill="#FFFFFF" stroke="#212121" stroke-width="3"/>
+<text x="1340" y="1494" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#212121" text-anchor="middle" font-weight="700" letter-spacing="0">GND</text>
+<circle cx="1340" cy="1500" r="10" fill="#212121"/>
+<text x="1200" y="700" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11.5" fill="#5A6674" text-anchor="end" font-weight="400" letter-spacing="0">same net - joined by a</text>
+<text x="1200" y="718" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11.5" fill="#5A6674" text-anchor="end" font-weight="400" letter-spacing="0">label, not by a long wire</text>
+<polyline points="1420,620 1420,1040 1400,1040" fill="none" stroke="#00838F" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="1500,620 1500,1120 1400,1120" fill="none" stroke="#00838F" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="1640" y="1240" width="500" height="280" rx="14" fill="#FFFFFF" stroke="#1565C0" stroke-width="3"/>
+<text x="1890" y="1290" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="18" fill="#1565C0" text-anchor="middle" font-weight="700" letter-spacing="0">HiveMQ Cloud  ·  MQTT / TLS</text>
+<text x="1890" y="1314" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" fill="#5A6674" text-anchor="middle" font-weight="400" letter-spacing="0">port 8883 (device)  ·  8884 wss (app)</text>
+<text x="1666" y="1356" font-family="Consolas, 'Courier New', monospace" font-size="13.5" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">voltwise/&lt;uid&gt;/telemetry</text>
+<text x="1666" y="1373" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11.5" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">PZEM JSON every ~2 s</text>
+<text x="1666" y="1396" font-family="Consolas, 'Courier New', monospace" font-size="13.5" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">voltwise/&lt;uid&gt;/relay/state</text>
+<text x="1666" y="1413" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11.5" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">retained: on + reason</text>
+<text x="1666" y="1436" font-family="Consolas, 'Courier New', monospace" font-size="13.5" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">voltwise/&lt;uid&gt;/relay/set</text>
+<text x="1666" y="1453" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11.5" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">backend → ESP32 command</text>
+<text x="1666" y="1476" font-family="Consolas, 'Courier New', monospace" font-size="13.5" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">voltwise/&lt;uid&gt;/status</text>
+<text x="1666" y="1493" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11.5" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">LWT online / offline</text>
+<path d="M 1400 1350 C 1500 1350 1540 1380 1640 1380" fill="none" stroke="#1565C0" stroke-width="5" stroke-dasharray="12 9"/>
+<text x="1520" y="1334" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#1565C0" text-anchor="middle" font-weight="700" letter-spacing="0">Wi-Fi</text>
+<rect x="40" y="1552" width="2120" height="320" rx="16" fill="#FAFBFC" stroke="#DCE3EA" stroke-width="2"/>
+<text x="70" y="1590" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="16" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="1">WIRE COLOUR CODE</text>
+<line x1="70" y1="1624" x2="132" y2="1624" stroke="#8C4A2F" stroke-width="8" stroke-linecap="round"/>
+<text x="146" y="1630" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">AC LIVE / LINE</text>
+<text x="320" y="1630" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">brown - mains, always hot</text>
+<line x1="70" y1="1657" x2="132" y2="1657" stroke="#1565C0" stroke-width="8" stroke-linecap="round"/>
+<text x="146" y="1663" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">AC NEUTRAL</text>
+<text x="320" y="1663" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">blue - never switched</text>
+<line x1="70" y1="1690" x2="132" y2="1690" stroke="#E64A19" stroke-width="8" stroke-linecap="round"/>
+<text x="146" y="1696" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">SWITCHED LIVE</text>
+<text x="320" y="1696" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">relay NO → appliance</text>
+<line x1="70" y1="1723" x2="132" y2="1723" stroke="#43A047" stroke-width="8" stroke-linecap="round"/>
+<text x="146" y="1729" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">EARTH / PE  (not drawn)</text>
+<text x="320" y="1729" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">green-yellow - panel to appliance, direct</text>
+<line x1="70" y1="1756" x2="132" y2="1756" stroke="#D81B24" stroke-width="8" stroke-linecap="round"/>
+<text x="146" y="1762" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">+5 V DC</text>
+<text x="320" y="1762" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">Hi-Link → ESP32 / relay / PZEM</text>
+<line x1="70" y1="1789" x2="132" y2="1789" stroke="#F9A825" stroke-width="8" stroke-linecap="round"/>
+<text x="146" y="1795" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">+3.3 V DC</text>
+<text x="320" y="1795" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">ESP32 3V3 → converter LV</text>
+<line x1="70" y1="1822" x2="132" y2="1822" stroke="#212121" stroke-width="8" stroke-linecap="round"/>
+<text x="146" y="1828" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">GND (0 V)</text>
+<text x="320" y="1828" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">one common ground for everything</text>
+<text x="620" y="1590" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="16" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="1">SIGNAL WIRES</text>
+<line x1="620" y1="1624" x2="682" y2="1624" stroke="#2E7D32" stroke-width="8" stroke-linecap="round"/>
+<text x="696" y="1630" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">PZEM TX → GPIO16</text>
+<text x="890" y="1630" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">the meter's answers</text>
+<line x1="620" y1="1657" x2="682" y2="1657" stroke="#6A1B9A" stroke-width="8" stroke-linecap="round"/>
+<text x="696" y="1663" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">GPIO17 → PZEM RX</text>
+<text x="890" y="1663" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">the ESP32's requests</text>
+<line x1="620" y1="1690" x2="682" y2="1690" stroke="#00838F" stroke-width="8" stroke-linecap="round"/>
+<text x="696" y="1696" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">GPIO25/26 → IN1/IN2</text>
+<text x="890" y="1696" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">relay control (active-LOW)</text>
+<line x1="620" y1="1723" x2="682" y2="1723" stroke="#AD1457" stroke-width="8" stroke-linecap="round"/>
+<text x="696" y="1729" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">CT CLAMP LEAD</text>
+<text x="890" y="1729" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">current signal into the PZEM</text>
+<text x="620" y="1778" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="16" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="1">DRAWING CONVENTIONS</text>
+<circle cx="640" cy="1816" r="9" fill="#12181F"/>
+<text x="664" y="1822" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">filled dot = the wires are joined</text>
+<line x1="620" y1="1864" x2="700" y2="1864" stroke="#12181F" stroke-width="5"/>
+<rect x="644" y="1853" width="32" height="22" fill="#FAFBFC"/>
+<path d="M 645 1873 A 15 15 0 0 1 675 1873" fill="none" stroke="#5A6674" stroke-width="5"/>
+<line x1="660" y1="1842" x2="660" y2="1853" stroke="#5A6674" stroke-width="5"/>
+<line x1="660" y1="1873" x2="660" y2="1886" stroke="#5A6674" stroke-width="5"/>
+<text x="716" y="1870" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">hop = crosses over, NOT connected</text>
+<text x="1190" y="1590" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="16" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="1">ESP32 PIN MAP  (matches iot-voltwise/src/main.cpp)</text>
+<text x="1190" y="1630" font-family="Consolas, 'Courier New', monospace" font-size="13.5" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">GPIO16 / RX2</text>
+<text x="1350" y="1630" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13.5" fill="#00838F" text-anchor="start" font-weight="700" letter-spacing="0">← PZEM TX</text>
+<text x="1500" y="1630" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">serial in from the meter</text>
+<text x="1190" y="1663" font-family="Consolas, 'Courier New', monospace" font-size="13.5" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">GPIO17 / TX2</text>
+<text x="1350" y="1663" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13.5" fill="#00838F" text-anchor="start" font-weight="700" letter-spacing="0">→ PZEM RX</text>
+<text x="1500" y="1663" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">serial out to the meter</text>
+<text x="1190" y="1696" font-family="Consolas, 'Courier New', monospace" font-size="13.5" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">GPIO25</text>
+<text x="1350" y="1696" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13.5" fill="#00838F" text-anchor="start" font-weight="700" letter-spacing="0">→ relay IN1</text>
+<text x="1500" y="1696" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">channel 1, active-LOW</text>
+<text x="1190" y="1729" font-family="Consolas, 'Courier New', monospace" font-size="13.5" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">GPIO26</text>
+<text x="1350" y="1729" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13.5" fill="#00838F" text-anchor="start" font-weight="700" letter-spacing="0">→ relay IN2</text>
+<text x="1500" y="1729" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">channel 2, active-LOW</text>
+<text x="1190" y="1762" font-family="Consolas, 'Courier New', monospace" font-size="13.5" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">VIN / 5V</text>
+<text x="1350" y="1762" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13.5" fill="#00838F" text-anchor="start" font-weight="700" letter-spacing="0">← Hi-Link +5 V</text>
+<text x="1500" y="1762" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">never feed 5 V into 3V3</text>
+<text x="1190" y="1795" font-family="Consolas, 'Courier New', monospace" font-size="13.5" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">3V3</text>
+<text x="1350" y="1795" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13.5" fill="#00838F" text-anchor="start" font-weight="700" letter-spacing="0">→ converter LV</text>
+<text x="1500" y="1795" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">sets the low-side logic level</text>
+<text x="1190" y="1828" font-family="Consolas, 'Courier New', monospace" font-size="13.5" fill="#12181F" text-anchor="start" font-weight="700" letter-spacing="0">GND</text>
+<text x="1350" y="1828" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13.5" fill="#00838F" text-anchor="start" font-weight="700" letter-spacing="0">← common 0 V</text>
+<text x="1500" y="1828" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5A6674" text-anchor="start" font-weight="400" letter-spacing="0">PZEM, relay, converter, Hi-Link</text>
+<text x="1770" y="1590" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="16" fill="#B71C1C" text-anchor="start" font-weight="700" letter-spacing="1">RULES THAT KEEP IT SAFE</text>
+<text x="1770" y="1624" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">Clamp the CT around ONE live wire. Live + neutral</text>
+<text x="1770" y="1654" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">together cancel out and read about 0 A.</text>
+<text x="1770" y="1684" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">Switch the LIVE conductor, never the neutral.</text>
+<text x="1770" y="1714" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">Earth runs panel → appliance directly: never through</text>
+<text x="1770" y="1744" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">the relay contacts or the PZEM.</text>
+<text x="1770" y="1774" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">Use NO, so a dead ESP32 leaves the load OFF.</text>
+<text x="1770" y="1804" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">Firmware cut-offs: over 1000 W instant, plus a 30 s</text>
+<text x="1770" y="1834" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#12181F" text-anchor="start" font-weight="400" letter-spacing="0">countdown once current is detected.</text>
+</svg>

@@ -1,7 +1,21 @@
 // Documentation only: Defines TypeScript types for the dashboard module response shapes.
 // These match the exact JSON fields expected by the VoltWise mobile app's dashboard screen.
 
-export type DashboardPeriod = "Day" | "Week" | "Month";
+// Re-exported from the shared resolver so there is one definition of a period
+// in the codebase. "Cycle" is a user-defined billing window (from/to).
+export type { RangePeriod as DashboardPeriod } from "../../lib/range.ts";
+
+// The window the payload actually describes, echoed back so the client can
+// confirm the server read its request the way it meant it.
+export interface RangeSummaryDto {
+  period: "Day" | "Week" | "Month" | "Cycle";
+  /** ISO instant of the first reading included. */
+  from: string;
+  /** ISO instant of the last, never in the future. */
+  to: string;
+  /** Human label, e.g. "Jan 14 - Feb 15, 2026". */
+  label: string;
+}
 
 // A compact device summary shown on the dashboard live-view card.
 export interface DashboardDeviceSummaryDto {
@@ -65,4 +79,5 @@ export interface DashboardResponseDto {
   topConsumers: TopConsumerDto[];
   reading: ReadingDto;
   iotOnline: boolean;
+  range: RangeSummaryDto;
 }

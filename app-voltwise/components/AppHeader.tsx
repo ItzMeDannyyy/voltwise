@@ -19,11 +19,13 @@ import { useTheme } from "../context/ThemeContext";
 import { useThemedStyles } from "./themed";
 import type { ThemeColors } from "../constants/theme";
 
-// The dropdown shows up to 5 banners at full height, then scrolls. These
-// constants translate that "5 visible" rule into a concrete max height.
-const BANNER_HEIGHT = 66;
-const BANNER_GAP = 8;
-const MAX_VISIBLE = 5;
+// The dropdown is deliberately narrow: anchored under the bell in the top-right
+// corner, a wide bubble reaches back across the header and buries the logo and
+// the icons beside it. These constants translate the "4 visible, then scroll"
+// rule into a concrete max height.
+const BANNER_HEIGHT = 52;
+const BANNER_GAP = 6;
+const MAX_VISIBLE = 4;
 const LIST_MAX_HEIGHT = BANNER_HEIGHT * MAX_VISIBLE + BANNER_GAP * (MAX_VISIBLE - 1);
 
 function severityColor(type: ApiAlert["type"], colors: ThemeColors): string {
@@ -55,8 +57,10 @@ function severityIcon(type: ApiAlert["type"]): keyof typeof Ionicons.glyphMap {
  * with an interactive bell and a profile avatar (→ Profile) on the right.
  *
  * Tapping the bell opens a message-bubble dropdown anchored under the icon that
- * summarizes recent alerts (severity, title, one-line detail, time). Up to five
- * banners are visible at once; beyond that the list scrolls. A footer jumps to
+ * summarizes recent alerts (severity, title, one-line detail, time). It is kept
+ * narrow and compact on purpose so it hangs under the icon cluster instead of
+ * spreading back over the header. Up to four banners are visible at once;
+ * beyond that the list scrolls. A footer jumps to
  * the full Alerts screen. Replaces the native tab header so the in-app
  * logo/profile bar is the single source of truth.
  */
@@ -184,7 +188,7 @@ export default function AppHeader() {
 
             {visibleAlerts.length === 0 ? (
               <View style={styles.empty}>
-                <Ionicons name="notifications-off-outline" size={24} color={colors.sub} />
+                <Ionicons name="notifications-off-outline" size={22} color={colors.sub} />
                 <Text style={styles.emptyText}>You&apos;re all caught up</Text>
               </View>
             ) : (
@@ -203,7 +207,7 @@ export default function AppHeader() {
                       onPress={goToAlerts}
                     >
                       <View style={[styles.bannerIcon, { backgroundColor: color + "26" }]}>
-                        <Ionicons name={severityIcon(a.type)} size={16} color={color} />
+                        <Ionicons name={severityIcon(a.type)} size={14} color={color} />
                       </View>
                       <View style={styles.bannerBody}>
                         <Text style={styles.bannerTitle} numberOfLines={1}>
@@ -289,27 +293,29 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     },
     bubble: {
       position: "absolute",
-      width: 320,
-      maxWidth: Dimensions.get("window").width - 24,
+      // Narrow enough to sit under the icon cluster rather than spanning the
+      // whole header width.
+      width: 258,
+      maxWidth: Dimensions.get("window").width - 32,
       backgroundColor: colors.card,
-      borderRadius: 16,
+      borderRadius: 14,
       borderWidth: 1,
       borderColor: colors.border,
-      paddingHorizontal: 12,
-      paddingTop: 12,
-      paddingBottom: 4,
+      paddingHorizontal: 8,
+      paddingTop: 10,
+      paddingBottom: 2,
       shadowColor: colors.shadow,
-      shadowOffset: { width: 0, height: 8 },
+      shadowOffset: { width: 0, height: 6 },
       shadowOpacity: 0.35,
-      shadowRadius: 16,
+      shadowRadius: 14,
       elevation: 12,
     },
     pointer: {
       position: "absolute",
-      top: -7,
-      right: 18,
-      width: 14,
-      height: 14,
+      top: -6,
+      right: 14,
+      width: 12,
+      height: 12,
       backgroundColor: colors.card,
       borderTopWidth: 1,
       borderLeftWidth: 1,
@@ -320,22 +326,22 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      marginBottom: 10,
+      marginBottom: 8,
     },
     bubbleTitle: {
       color: colors.text,
-      fontSize: 15 * fontScale,
+      fontSize: 13 * fontScale,
       fontWeight: "700",
     },
     headerCount: {
       backgroundColor: colors.red + "26",
-      borderRadius: 10,
-      paddingHorizontal: 8,
-      paddingVertical: 2,
+      borderRadius: 9,
+      paddingHorizontal: 6,
+      paddingVertical: 1,
     },
     headerCountText: {
       color: colors.red,
-      fontSize: 11 * fontScale,
+      fontSize: 10 * fontScale,
       fontWeight: "700",
     },
     list: {
@@ -345,20 +351,20 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       height: BANNER_HEIGHT,
       flexDirection: "row",
       alignItems: "center",
-      gap: 10,
+      gap: 8,
       backgroundColor: colors.bg,
-      borderRadius: 12,
+      borderRadius: 10,
       borderWidth: 1,
       borderColor: colors.border,
-      paddingHorizontal: 10,
+      paddingHorizontal: 8,
     },
     bannerUnread: {
       borderColor: colors.accent + "66",
     },
     bannerIcon: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
+      width: 26,
+      height: 26,
+      borderRadius: 13,
       alignItems: "center",
       justifyContent: "center",
     },
@@ -367,43 +373,43 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     },
     bannerTitle: {
       color: colors.text,
-      fontSize: 13 * fontScale,
+      fontSize: 12 * fontScale,
       fontWeight: "600",
     },
     bannerDesc: {
       color: colors.sub,
-      fontSize: 12 * fontScale,
-      marginTop: 2,
+      fontSize: 11 * fontScale,
+      marginTop: 1,
     },
     bannerTime: {
       color: colors.sub,
-      fontSize: 11 * fontScale,
+      fontSize: 10 * fontScale,
       alignSelf: "flex-start",
-      marginTop: 2,
+      marginTop: 1,
     },
     empty: {
       alignItems: "center",
       justifyContent: "center",
-      paddingVertical: 28,
-      gap: 8,
+      paddingVertical: 20,
+      gap: 6,
     },
     emptyText: {
       color: colors.sub,
-      fontSize: 13 * fontScale,
+      fontSize: 12 * fontScale,
     },
     footer: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
       gap: 4,
-      paddingVertical: 12,
-      marginTop: 4,
+      paddingVertical: 9,
+      marginTop: 2,
       borderTopWidth: 1,
       borderTopColor: colors.border,
     },
     footerText: {
       color: colors.accent,
-      fontSize: 13 * fontScale,
+      fontSize: 12 * fontScale,
       fontWeight: "600",
     },
   });
