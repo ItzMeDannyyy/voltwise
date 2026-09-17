@@ -31,7 +31,7 @@ voltwise/
 │   ├── components/  # DemoFab, RangeNavigator, DatePickerModal, AnomalyModal, AlertDetailModal, ConfirmModal, DeleteAccountModal, AppLockOverlay, AppHeader
 │   ├── context/     # Auth, Theme, AppLock, Units, Mqtt, Notification, DemoData
 │   └── lib/         # api.ts (typed client + shared types) + *-storage.ts / *-prefs.ts pairs
-├── iot-voltwise/    # PlatformIO ESP32 firmware (PZEM-004T v3.0 + 2-channel relay + MQTT)
+├── iot-voltwise/    # PlatformIO ESP32 firmware (PZEM-004T v3.0 + 6-socket dual-tier relays + MQTT)
 ├── ml-voltwise/     # FastAPI KMeans service (scaffold: app/main.py, train.py are empty stubs)
 ├── docs/            # ERD, DATA_FLOW, SYSTEM_ARCHITECTURE + NILM/KMeans/ESP32 build guides
 └── VOLTWISE_CORE_FEATURES.md
@@ -136,15 +136,16 @@ npm run lint              # ESLint via expo lint
 ## IoT firmware (`iot-voltwise/`)
 
 PlatformIO project (`env:esp32dev`, Arduino framework) in a single `src/main.cpp`.
-It reads a **PZEM-004T v3.0** power sensor over `Serial2` (RX 16 / TX 17) every
-2 s and drives a 2-channel relay module (pins 25/26, **active-LOW**, both
-channels switched together as a master) with a safety cutoff at
+It reads a **PZEM-004T v3.0** power sensor over `Serial2` (dedicated RX 16 / TX 17
+via LLC CH1/CH2) every 2 s and controls a 6-socket dual-tier relay system
+(4-channel 10A Low Load module on GPIO 12–15 via LLC CH3–CH6, and 2× single-channel
+30A High Load modules on GPIO 25/26) with a safety cutoff at
 `MAX_ALLOWED_POWER_WATTS` and a 30 s auto-shutdown countdown. It publishes
 telemetry to HiveMQ Cloud over TLS MQTT and accepts remote relay commands (see
 "MQTT / IoT layer" below). Credentials live in `include/secrets.h` (gitignored;
 copy from `include/secrets.h.example`). `DIAGNOSTIC_MODE` (on by default) prints
 raw readings + the PZEM slave address to separate UART faults from AC-power
-issues. See `docs/esp32_pzem_relay_iot_build_guide.md` for the wiring guide and
+issues. See `docs/esp32_pzem_relay_iot_build_guide.md` for the v4 wiring guide and
 §13 there for the MQTT design.
 
 ```bash

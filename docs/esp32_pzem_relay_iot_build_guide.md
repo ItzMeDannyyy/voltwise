@@ -1,317 +1,193 @@
-# ESP32 + PZEM-004T + CT Clamp + 2-Channel Relay IoT Build Guide
+# ESP32 + PZEM-004T + CT Clamp + 6-Socket Dual-Load Relay IoT Build Guide (Schematic v4)
 
-This guide explains how to use an **ESP32**, **PZEM-004T v3.0 sensor with CT clamp**, **2-channel relay module**, **Hi-Link AC-DC power module**, and **logic level converter**.
+This guide explains how to construct and wire the **VoltWise IoT Hardware Layer** according to **Hardware Schematic v4**.
+
+The system integrates an **ESP32**, **PZEM-004T v3.0 power sensor with SCT-013-000 CT clamp**, **Hi-Link HLK-PM01 AC-DC power module**, **6-channel bidirectional logic level converter (LLC)**, and a dual-tier load control architecture comprising:
+1. **Low Load Line**: 4-Channel Relay Module (10A / 250V AC) driving 4 general sockets.
+2. **High Load Line**: 2× Single-Channel Relay Modules (30A / 250V AC) driving 2 high-power appliance sockets.
 
 It includes:
+- Non-code explanation of each component and its role
+- Pin assignments and boot-safety analysis
+- Step-by-step wiring guide matching Schematic v4
+- Required libraries and firmware setup
+- Full readable C++ PlatformIO code managing all 6 relay channels and telemetry
+- Testing procedure, safety checklist, and MQTT integration notes
 
-- Non-code explanation of each component
-- Step-by-step wiring guide
-- Recommended ESP32 pin assignments
-- Required libraries and their purpose
-- Readable C++ code using function prototypes
-
-> ⚠️ **Safety warning:** The PZEM, Hi-Link, relay contact side, and appliance/load wiring involve **AC mains voltage**. AC mains can kill you or cause fire if wired incorrectly. Do your first tests with **USB power and low-voltage loads only**. For real household wiring, use a proper enclosure, fuse, wire gauge, terminal blocks, and help from someone qualified.
-
----
-
-## 1. What Each Component Does
-
-### 1.1 ESP32
-
-The **ESP32** is the brain of your IoT device. It reads data from the PZEM sensor, decides whether a load is normal or abnormal, then controls the relay module.
-
-In your project, the ESP32 handles:
-
-- Reading voltage, current, power, energy, frequency, and power factor
-- Turning relays ON/OFF
-- Later, sending data to your backend, mobile app, or MQTT broker
-
-The ESP32 has multiple UART serial ports. For the PZEM-004T, a common setup uses `Serial2` with GPIO16 and GPIO17.
+> ⚠️ **Safety Warning:** The PZEM-004T, Hi-Link HLK-PM01, relay switch contacts, and appliance sockets involve **220V AC mains voltage**. AC mains can cause severe electrical shock, electrocution, or electrical fires if wired incorrectly. Always perform initial testing with **USB power only** before applying mains power. For deployment, house all high-voltage connections in a fire-rated enclosure with proper terminal blocks, appropriate wire gauges, and fuse/circuit breaker protection.
 
 ---
 
-### 1.2 PZEM-004T v3.0 with CT Clamp
+## 1. Component Roles & Specifications
 
-The **PZEM-004T v3.0** is the AC power monitoring sensor. It measures:
+### 1.1 ESP32 Microcontroller
+The **ESP32** serves as the central IoT controller. It performs continuous energy telemetry polling, automates overload safety cutoffs, and manages remote switching commands over Wi-Fi and MQTT.
 
-- Voltage
-- Current
-- Active power
-- Energy in kWh
-- Frequency
-- Power factor
-
-The **CT clamp** is the current transformer. It senses current without cutting the wire.
-
-Important rule:
-
-> Clamp around only **one live/hot wire**, not both live and neutral together.
-
-If you clamp around both live and neutral wires, the magnetic fields cancel each other and the current reading may become zero or incorrect.
-
-The PZEM must also be connected properly to its AC measurement side to read voltage and power correctly.
+Key roles:
+- Polling electrical parameters from the PZEM-004T v3.0 over Hardware `Serial2` (**GPIO 16** for RX2, **GPIO 17** for TX2).
+- Driving 6 independent relay channels (4 Low Load via GPIO 12–15; 2 High Load via GPIO 25–26).
+- Publishing live telemetry (`voltage`, `current`, `watts`, `kwh`, `frequency`, `powerFactor`) to HiveMQ Cloud.
+- Receiving remote relay commands via MQTT or local safety triggers.
 
 ---
 
-### 1.3 2-Channel Relay Module
+### 1.2 PZEM-004T v3.0 with SCT-013-000 CT Clamp
+The **PZEM-004T v3.0** measures high-voltage AC parameters and offloads mathematical power integration:
+- Voltage: $80 - 260 \text{ V AC}$
+- Current: $0 - 100 \text{ A}$ (via non-invasive CT clamp)
+- Active Power: $0 - 23 \text{ kW}$
+- Cumulative Energy: $0 - 9999.99 \text{ kWh}$
+- AC Frequency: $45 - 65 \text{ Hz}$
+- Power Factor: $0.00 - 1.00$
 
-The **relay module** allows the ESP32 to control appliances or loads.
-
-Each relay channel usually has:
-
-- `IN1`, `IN2` — control pins from ESP32
-- `VCC` — usually 5V
-- `GND` — common ground
-- `COM` — common relay terminal
-- `NO` — normally open
-- `NC` — normally closed
-
-For most loads, use **NO**. This means the appliance is OFF by default and only turns ON when the relay is activated.
-
-Many relay modules are **active-LOW**:
-
-```cpp
-LOW  = relay ON
-HIGH = relay OFF
-```
-
-That is why the code below makes the relay behavior configurable.
+> **Critical Current Transformer Rule:**
+> Clamp the **SCT-013-000** around **only one live/hot conductor**. If clamped around both Live and Neutral conductors simultaneously, the opposing magnetic fields cancel out, producing an erroneous $0\text{ A}$ reading.
 
 ---
 
-### 1.4 Hi-Link AC-DC Power Module
+### 1.3 Dual-Tier Relay System (6 Sockets Total)
+To isolate sensitive home electronics from power-hungry inductive appliances, Schematic v4 divides loads into two dedicated lines:
 
-The **Hi-Link module** converts AC mains voltage into low-voltage DC, usually 5V.
+#### A. Low Load Line — 4-Channel Relay Module (10A Each)
+- **Module Rating:** 10A / 250V AC per channel.
+- **Features:** Opto-isolated, Active-LOW logic, 5V coil power.
+- **Control Pins:** ESP32 `GPIO 12, 13, 14, 15` (routed via LLC CH3–CH6).
+- **Target Sockets:**
+  - **Socket 1 (10A max):** Fan, desk lamp, etc.
+  - **Socket 2 (10A max):** Fan, ambient lighting, etc.
+  - **Socket 3 (10A max):** TV, laptop charger, etc.
+  - **Socket 4 (10A max):** Router, phone charger, etc.
 
-In your setup, it can power:
-
-- ESP32 through the `VIN` or `5V` pin
-- Relay module 5V input
-- PZEM logic side 5V
-- Logic level converter high-voltage side
-
-Do **not** connect 5V to the ESP32 `3V3` pin. Use the ESP32 `VIN` or `5V` pin if your board supports it.
-
-For real deployment, the Hi-Link side should have:
-
-- Fuse
-- Proper enclosure
-- Safe spacing between AC and DC
-- Terminal blocks
-- Correct wire gauge
-- No exposed copper
+#### B. High Load Line — 2× Single-Channel Relay Modules (30A Each)
+- **Module Rating:** 30A / 250V AC per module (heavy-duty contacts for high inrush currents).
+- **Features:** Opto-isolated, Active-LOW logic, 5V coil power.
+- **Control Pins:** ESP32 `GPIO 25` (Relay HL-1) and `GPIO 26` (Relay HL-2).
+- **Target Sockets:**
+  - **Socket 1 (30A max):** Air conditioner, large refrigerator, compressor loads.
+  - **Socket 2 (30A max):** Water heater, electric oven, high-wattage heating elements.
 
 ---
 
-### 1.5 Logic Level Converter
+### 1.4 Hi-Link HLK-PM01 AC-DC Step-Down Module
+The **HLK-PM01** converts 220V AC mains into a regulated, isolated **5V DC** output (3W / 600mA).
 
-The ESP32 uses **3.3V logic**. Some modules use **5V logic**.
+It powers the common **5V DC Bus**, which feeds:
+- ESP32 `VIN` pin (which feeds the internal 3.3V LDO regulator).
+- PZEM-004T v3.0 logic-side power (`5V` pin).
+- Logic Level Converter high-voltage rail (`HV Vcc`).
+- Relay coils for both the 4-channel module and the two 30A single-channel modules.
 
-The logic level converter protects the ESP32 and helps convert:
+---
 
+### 1.5 6-Channel Bidirectional Logic Level Converter (LLC)
+The ESP32 operates at **3.3V CMOS logic**, whereas the PZEM-004T UART port and many 5V opto-coupler relay inputs require or reference **5V TTL levels**.
+
+The 6-channel bidirectional LLC provides level translation:
+- **HV (High Voltage Rail):** Connected to the 5V DC bus (`HV Vcc`).
+- **LV (Low Voltage Rail):** Connected to ESP32 `3.3V Out` (`LV Vcc`).
+- **GND:** Tied to the shared low-voltage DC ground.
+
+Channel distribution:
+- **CH1 (UART):** PZEM `TX (5V)` $\rightarrow$ ESP32 `RX (3.3V / GPIO 16)`
+- **CH2 (UART):** ESP32 `TX (3.3V / GPIO 17)` $\rightarrow$ PZEM `RX (5V)`
+- **CH3 (Relay):** ESP32 `GPIO 12 (3.3V)` $\rightarrow$ Low Load Relay `IN1 (5V)`
+- **CH4 (Relay):** ESP32 `GPIO 13 (3.3V)` $\rightarrow$ Low Load Relay `IN2 (5V)`
+- **CH5 (Relay):** ESP32 `GPIO 14 (3.3V)` $\rightarrow$ Low Load Relay `IN3 (5V)`
+- **CH6 (Relay):** ESP32 `GPIO 15 (3.3V)` $\rightarrow$ Low Load Relay `IN4 (5V)`
+
+---
+
+## 2. Complete ESP32 Pin Assignment & Boot Safety Analysis
+
+| Function / Signal | Pin | Connected To | Logic Level | Boot / Strapping Safety Notes |
+| :--- | :---: | :--- | :---: | :--- |
+| **PZEM RX2** | **GPIO 16** | PZEM `TX` via LLC CH1 | 3.3V (from 5V) | **Dedicated UART pin** (Hardware `Serial2`). Boot safe. |
+| **PZEM TX2** | **GPIO 17** | PZEM `RX` via LLC CH2 | 3.3V (to 5V) | **Dedicated UART pin** (Hardware `Serial2`). Boot safe. |
+| **Low Load CH1** | **GPIO 12** | 4-Ch Relay `IN1` via LLC CH3 | 3.3V (to 5V) | ⚠️ **Strapping Pin (MTDI):** Must not be pulled HIGH during boot (causes 1.8V flash voltage failure). Level converter buffer isolates this. |
+| **Low Load CH2** | **GPIO 13** | 4-Ch Relay `IN2` via LLC CH4 | 3.3V (to 5V) | General IO. Boot safe. |
+| **Low Load CH3** | **GPIO 14** | 4-Ch Relay `IN3` via LLC CH5 | 3.3V (to 5V) | Outputs PWM during boot; opto-isolation prevents false trip. |
+| **Low Load CH4** | **GPIO 15** | 4-Ch Relay `IN4` via LLC CH6 | 3.3V (to 5V) | ⚠️ **Strapping Pin (MTDO):** Controls boot log verbosity. Level converter buffers prevent boot stalls. |
+| **High Load HL-1**| **GPIO 25** | 30A Relay 1 `IN` | 3.3V | ✅ **Completely Boot Safe:** DAC1/ADC2, non-strapping, high-Z at power-on. No boot chattering. |
+| **High Load HL-2**| **GPIO 26** | 30A Relay 2 `IN` | 3.3V | ✅ **Completely Boot Safe:** DAC2/ADC2, non-strapping, high-Z at power-on. No boot chattering. |
+| **5V In** | **VIN** | Hi-Link 5V DC Bus | 5V | Powers ESP32 internal 3.3V regulator. |
+| **3.3V Out** | **3V3** | LLC `LV Vcc` | 3.3V | References the low-voltage side of the LLC. |
+| **GND** | **GND** | Common DC Ground | 0V | Unified ground for all DC electronics. |
+
+---
+
+## 3. Step-by-Step Connection Guide (Schematic v4)
+
+### Step 1: Low-Voltage DC Power Distribution
+Establish the shared 5V DC bus and common DC ground:
 ```text
-ESP32 3.3V signal <-> 5V module signal
+HLK-PM01 +5V OUT  ──┬──> ESP32 VIN
+                    ├──> PZEM-004T 5V (VCC)
+                    ├──> LLC HV Vcc
+                    ├──> 4-Channel Relay VCC
+                    ├──> 30A Relay HL-1 VCC
+                    └──> 30A Relay HL-2 VCC
+
+HLK-PM01 GND OUT ──┬──> ESP32 GND
+                    ├──> PZEM-004T GND
+                    ├──> LLC GND (HV & LV side)
+                    ├──> 4-Channel Relay GND
+                    ├──> 30A Relay HL-1 GND
+                    └──> 30A Relay HL-2 GND
+
+ESP32 3V3 OUT     ─────> LLC LV Vcc
 ```
-
-Use it especially between:
-
-- ESP32 UART pins and PZEM UART pins
-- ESP32 relay control pins and relay `IN1-IN2`, if your relay module does not reliably accept 3.3V signals
-
-Some modules may work with 3.3V signals, but level shifting is safer and more reliable.
 
 ---
 
-## 2. Recommended ESP32 Pin Assignment
-
-For a common ESP32 DevKit:
-
-| Purpose | ESP32 Pin | Connects To                     |
-| ------- | --------: | ------------------------------- |
-| PZEM RX |    GPIO16 | PZEM TX through level converter |
-| PZEM TX |    GPIO17 | PZEM RX through level converter |
-| Relay 1 |    GPIO25 | Relay IN1                       |
-| Relay 2 |    GPIO26 | Relay IN2                       |
-| 5V      |  VIN / 5V | Hi-Link 5V output               |
-| GND     |       GND | Common ground                   |
-| 3.3V    |       3V3 | Level converter LV              |
-| 5V      |        5V | Level converter HV              |
-
-Avoid ESP32 strapping pins for relay control:
-
+### Step 2: PZEM-004T v3.0 UART Wiring
+Route PZEM serial communications through LLC channels CH1 and CH2:
 ```text
-GPIO0, GPIO2, GPIO5, GPIO12, GPIO15
+PZEM TX (5V)       ──> LLC HV1 ──> LLC LV1 ──> ESP32 GPIO 16 (RX2)
+ESP32 GPIO 17 (TX2)──> LLC LV2 ──> LLC HV2 ──> PZEM RX (5V)
 ```
-
-These pins can affect ESP32 boot behavior.
-
-Also avoid GPIO34 to GPIO39 for relays because they are input-only pins.
 
 ---
 
-## 3. Step-by-Step Connection Guide
-
-### Step 1: Power Side
-
-Connect:
-
+### Step 3: Low Load Relays (4-Channel Module)
+Route control lines through LLC channels CH3 to CH6:
 ```text
-Hi-Link 5V OUT+  -> ESP32 VIN / 5V
-Hi-Link 5V OUT+  -> Relay VCC
-Hi-Link 5V OUT+  -> PZEM 5V
-Hi-Link 5V OUT+  -> Logic Level Converter HV
-
-Hi-Link GND OUT- -> ESP32 GND
-Hi-Link GND OUT- -> Relay GND
-Hi-Link GND OUT- -> PZEM GND
-Hi-Link GND OUT- -> Logic Level Converter GND
-
-ESP32 3V3       -> Logic Level Converter LV
+ESP32 GPIO 12 ──> LLC LV3 ──> LLC HV3 ──> 4-Channel Relay IN1
+ESP32 GPIO 13 ──> LLC LV4 ──> LLC HV4 ──> 4-Channel Relay IN2
+ESP32 GPIO 14 ──> LLC LV5 ──> LLC HV5 ──> 4-Channel Relay IN3
+ESP32 GPIO 15 ──> LLC LV6 ──> LLC HV6 ──> 4-Channel Relay IN4
 ```
-
-For first testing, power the ESP32 by USB instead of Hi-Link. Add the Hi-Link only when the low-voltage side is already working.
 
 ---
 
-### Step 2: PZEM UART Wiring
-
-Using the logic level converter:
-
+### Step 4: High Load Relays (2× 30A Modules)
+Connect the high-power relay inputs directly to GPIO 25 and GPIO 26:
 ```text
-PZEM TX -> HV1
-LV1     -> ESP32 GPIO16
-
-ESP32 GPIO17 -> LV2
-HV2          -> PZEM RX
-
-PZEM 5V  -> 5V
-PZEM GND -> GND
-```
-
-Remember:
-
-```text
-ESP32 RX receives from PZEM TX
-ESP32 TX sends to PZEM RX
-```
-
-So TX and RX cross each other.
-
----
-
-### Step 3: CT Clamp Wiring
-
-The CT clamp plugs into the PZEM CT connector.
-
-Then clamp it around the **live/hot wire only** of the line you want to measure.
-
-```text
-Correct:
-[ CT clamp around LIVE only ]
-
-Wrong:
-[ CT clamp around LIVE + NEUTRAL together ]
+ESP32 GPIO 25 ──> 30A Relay HL-1 IN
+ESP32 GPIO 26 ──> 30A Relay HL-2 IN
 ```
 
 ---
 
-### Step 4: PZEM AC Measurement Wiring
-
-This is the dangerous part.
-
-The PZEM AC input terminals connect to the AC line and neutral so the module can measure voltage. The CT clamp measures current.
-
-For a real panel, do not leave this exposed on a breadboard. Use proper terminals and enclosure.
+### Step 5: AC Mains & Sensing Wiring
+1. **Mains Input:** Connect 220V AC Wall Plug to the main terminal block.
+2. **Current Sensing:** Pass the main 220V **Live (L)** line through the aperture of the **SCT-013-000 CT clamp** before any split. Connect the CT 3.5mm leads to `CT in` on the PZEM.
+3. **Voltage Sensing:** Wire a branch of Live (L) and Neutral (N) to the PZEM `AC-in` screw terminals.
+4. **Power Supply Input:** Wire a branch of Live (L) and Neutral (N) to the AC input pins of the **HLK-PM01**.
 
 ---
 
-### Step 5: Relay Low-Voltage Control Wiring
-
-```text
-ESP32 GPIO25 -> Relay IN1
-ESP32 GPIO26 -> Relay IN2
-
-Relay VCC -> 5V
-Relay GND -> GND
-```
-
-If the relay does not trigger reliably from ESP32 3.3V pins, route `IN1-IN2` through the logic level converter or use a proper transistor/opto driver board.
+### Step 6: AC Load Distribution & Sockets
+1. **Live Split (`L rail (split)`):**
+   - Live branch connects to COM of 4-Channel Relay CH1, CH2, CH3, and CH4.
+   - Live branch connects to COM of 30A Relay HL-1 and 30A Relay HL-2.
+   - For each socket, wire its Live terminal to the corresponding relay's **NO (Normally Open)** terminal.
+2. **Neutral Split (`N rail (split)`):**
+   - Connect the main Neutral line directly to the Neutral terminal of all 6 sockets.
+   - **Neutral is NEVER routed through any relay contact.**
 
 ---
 
-### Step 6: Relay AC Load Wiring
-
-For each controlled load:
-
-```text
-AC Live/Hot -> Relay COM
-Relay NO    -> Load Live/Hot
-AC Neutral  -> Load Neutral
-```
-
-Use **NO** so the appliance is OFF when the relay is inactive.
-
-Do not switch only neutral. Switch the live/hot conductor.
-
----
-
-## 4. Libraries You Need
-
-### 4.1 Required Library: `PZEM004Tv30`
-
-This is the important library for your PZEM sensor.
-
-It lets you call simple functions like:
-
-```cpp
-pzem.voltage();
-pzem.current();
-pzem.power();
-pzem.energy();
-pzem.frequency();
-pzem.pf();
-```
-
-Without this library, you would need to manually implement the PZEM serial communication protocol.
-
----
-
-### 4.2 Built-in Arduino / ESP32 Library
-
-```cpp
-#include <Arduino.h>
-```
-
-This gives you:
-
-- `pinMode()`
-- `digitalWrite()`
-- `Serial`
-- `millis()`
-- `delay()`
-- ESP32 Arduino functions
-
----
-
-### 4.3 Optional Libraries Later
-
-For your full VoltWise IoT system later:
-
-| Library         | Purpose                          |
-| --------------- | -------------------------------- |
-| `WiFi.h`        | Connect ESP32 to Wi-Fi           |
-| `HTTPClient.h`  | Send sensor readings to REST API |
-| `PubSubClient`  | Send data through MQTT           |
-| `ArduinoJson`   | Format readings as JSON          |
-| `Preferences.h` | Save settings like thresholds    |
-
-For now, you only need the PZEM library to read the sensor and normal Arduino functions to control relays.
-
----
-
-## 5. PlatformIO Setup
-
-Your `platformio.ini` can look like this:
+## 4. PlatformIO Configuration (`platformio.ini`)
 
 ```ini
 [env:esp32dev]
@@ -328,61 +204,58 @@ lib_deps =
 
 ---
 
-## 6. Full Readable ESP32 Code with Function Prototypes
+## 5. Production Firmware: 6-Relay & Dual-Tier Management
 
-This code does four things:
-
-1. Reads PZEM values.
-2. Prints voltage, current, power, energy, frequency, and power factor.
-3. Initializes 2 relays safely OFF.
-4. Turns all relays OFF if power goes above your configured threshold.
+Below is the clean C++ implementation supporting the full 6-relay architecture, PZEM telemetry, safety cutoff thresholds, and MQTT remote switching:
 
 ```cpp
 #include <Arduino.h>
 #include <PZEM004Tv30.h>
-#include <math.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
 
-// =========================
-// Pin Configuration
-// =========================
+// ==========================================
+// Pin Configuration (Schematic v4)
+// ==========================================
 
-// PZEM UART pins
-const int PZEM_RX_PIN = 16; // ESP32 RX2 receives from PZEM TX
-const int PZEM_TX_PIN = 17; // ESP32 TX2 sends to PZEM RX
+// PZEM-004T v3.0 UART Pins (Hardware Serial2)
+const int PZEM_RX_PIN = 16; // ESP32 RX2 receives from PZEM TX via LLC CH1
+const int PZEM_TX_PIN = 17; // ESP32 TX2 sends to PZEM RX via LLC CH2
 
-// Relay pins (2-channel relay module)
-const int RELAY_1_PIN = 25;
-const int RELAY_2_PIN = 26;
+// Low Load Line (4-Channel 10A Relay Module via LLC CH3-CH6)
+const int RELAY_LL1_PIN = 12; // Socket 1 (10A max: Fan, lamp)
+const int RELAY_LL2_PIN = 13; // Socket 2 (10A max: Fan, lamp)
+const int RELAY_LL3_PIN = 14; // Socket 3 (10A max: TV, charger)
+const int RELAY_LL4_PIN = 15; // Socket 4 (10A max: TV, charger)
 
-const int NUM_RELAYS = 2;
+// High Load Line (2x Single-Channel 30A Relay Modules)
+const int RELAY_HL1_PIN = 25; // Socket 1 (30A max: Air conditioner, fridge)
+const int RELAY_HL2_PIN = 26; // Socket 2 (30A max: Water heater)
 
+const int NUM_RELAYS = 6;
 const int RELAY_PINS[NUM_RELAYS] = {
-  RELAY_1_PIN,
-  RELAY_2_PIN
+  RELAY_LL1_PIN,
+  RELAY_LL2_PIN,
+  RELAY_LL3_PIN,
+  RELAY_LL4_PIN,
+  RELAY_HL1_PIN,
+  RELAY_HL2_PIN
 };
 
-// Most relay modules are active LOW.
-// If your relay turns ON when you write HIGH, change this to false.
+// Most opto-isolated relay modules are ACTIVE-LOW
 const bool RELAY_ACTIVE_LOW = true;
 
-// Safety threshold example.
-// Change this based on your actual circuit/load rating.
-const float MAX_ALLOWED_POWER_WATTS = 1000.0;
-
-// Read sensor every 2 seconds
+// Safety cutoff threshold
+const float MAX_ALLOWED_POWER_WATTS = 3500.0;
 const unsigned long SENSOR_READ_INTERVAL_MS = 2000;
 
-
-// =========================
-// PZEM Object
-// =========================
+// ==========================================
+// Objects & State
+// ==========================================
 
 PZEM004Tv30 pzem(Serial2, PZEM_RX_PIN, PZEM_TX_PIN);
-
-
-// =========================
-// Data Structure
-// =========================
 
 struct PowerReadings {
   float voltage;
@@ -393,69 +266,62 @@ struct PowerReadings {
   float powerFactor;
 };
 
-
-// =========================
+// ==========================================
 // Function Prototypes
-// =========================
+// ==========================================
 
 void setupRelays();
-void turnAllRelaysOff();
-void setRelay(int relayNumber, bool turnOn);
-
-PowerReadings readPowerSensor();
-bool readingsAreValid(PowerReadings readings);
-void printReadings(PowerReadings readings);
-void handlePowerSafety(PowerReadings readings);
-
+void setRelay(int relayIndex, bool turnOn);
+void setAllRelays(bool turnOn);
 int getRelayOnState();
 int getRelayOffState();
 
+PowerReadings readPowerSensor();
+bool readingsAreValid(const PowerReadings& r);
+void printReadings(const PowerReadings& r);
+void handlePowerSafety(const PowerReadings& r);
 
-// =========================
-// Main Setup
-// =========================
+// ==========================================
+// Setup & Loop
+// ==========================================
 
 void setup() {
   Serial.begin(115200);
+  delay(500);
 
   setupRelays();
-  turnAllRelaysOff();
+  setAllRelays(false); // Default safe state: all sockets OFF
 
-  Serial.println();
-  Serial.println("ESP32 + PZEM-004T + 2-Channel Relay Started");
-  Serial.println("All relays are OFF at startup.");
+  Serial.println("\n==========================================");
+  Serial.println("VoltWise IoT Controller Initialized (v4)");
+  Serial.println("4x Low Load (10A) + 2x High Load (30A)");
+  Serial.println("PZEM-004T Serial2 on GPIO 16 (RX) / 17 (TX)");
+  Serial.println("==========================================\n");
 }
 
-
-// =========================
-// Main Loop
-// =========================
-
 void loop() {
-  static unsigned long lastSensorReadTime = 0;
+  static unsigned long lastRead = 0;
+  unsigned long now = millis();
 
-  unsigned long currentTime = millis();
+  if (now - lastRead >= SENSOR_READ_INTERVAL_MS) {
+    lastRead = now;
 
-  if (currentTime - lastSensorReadTime >= SENSOR_READ_INTERVAL_MS) {
-    lastSensorReadTime = currentTime;
-
-    PowerReadings readings = readPowerSensor();
-
-    if (readingsAreValid(readings)) {
-      printReadings(readings);
-      handlePowerSafety(readings);
+    PowerReadings r = readPowerSensor();
+    if (readingsAreValid(r)) {
+      printReadings(r);
+      handlePowerSafety(r);
     } else {
-      Serial.println("Sensor reading failed. Check PZEM wiring, AC input, RX/TX, and GND.");
+      Serial.println("[PZEM] Read failed. Check wiring and AC mains connection.");
     }
-
-    Serial.println("----------------------------------");
   }
 }
 
+// ==========================================
+// Relay Control Implementations
+// ==========================================
 
-// =========================
-// Relay Functions
-// =========================
+int getRelayOnState()  { return RELAY_ACTIVE_LOW ? LOW : HIGH; }
+int getRelayOffState() { return RELAY_ACTIVE_LOW ? HIGH : LOW; }
 
 void setupRelays() {
   for (int i = 0; i < NUM_RELAYS; i++) {
@@ -464,421 +330,78 @@ void setupRelays() {
   }
 }
 
+void setRelay(int relayIndex, bool turnOn) {
+  if (relayIndex < 0 || relayIndex >= NUM_RELAYS) return;
+  digitalWrite(RELAY_PINS[relayIndex], turnOn ? getRelayOnState() : getRelayOffState());
+  Serial.printf("Socket %d set to %s\n", relayIndex + 1, turnOn ? "ON" : "OFF");
+}
 
-void turnAllRelaysOff() {
+void setAllRelays(bool turnOn) {
   for (int i = 0; i < NUM_RELAYS; i++) {
-    digitalWrite(RELAY_PINS[i], getRelayOffState());
+    digitalWrite(RELAY_PINS[i], turnOn ? getRelayOnState() : getRelayOffState());
   }
-
-  Serial.println("All relays turned OFF.");
+  Serial.printf("All sockets set to %s\n", turnOn ? "ON" : "OFF");
 }
 
-
-void setRelay(int relayNumber, bool turnOn) {
-  if (relayNumber < 1 || relayNumber > NUM_RELAYS) {
-    Serial.println("Invalid relay number. Use 1 to 2 only.");
-    return;
-  }
-
-  int relayIndex = relayNumber - 1;
-
-  if (turnOn) {
-    digitalWrite(RELAY_PINS[relayIndex], getRelayOnState());
-    Serial.print("Relay ");
-    Serial.print(relayNumber);
-    Serial.println(" ON");
-  } else {
-    digitalWrite(RELAY_PINS[relayIndex], getRelayOffState());
-    Serial.print("Relay ");
-    Serial.print(relayNumber);
-    Serial.println(" OFF");
-  }
-}
-
-
-int getRelayOnState() {
-  if (RELAY_ACTIVE_LOW) {
-    return LOW;
-  }
-
-  return HIGH;
-}
-
-
-int getRelayOffState() {
-  if (RELAY_ACTIVE_LOW) {
-    return HIGH;
-  }
-
-  return LOW;
-}
-
-
-// =========================
-// PZEM Sensor Functions
-// =========================
+// ==========================================
+// Sensor & Safety Implementations
+// ==========================================
 
 PowerReadings readPowerSensor() {
-  PowerReadings readings;
-
-  readings.voltage = pzem.voltage();
-  readings.current = pzem.current();
-  readings.power = pzem.power();
-  readings.energy = pzem.energy();
-  readings.frequency = pzem.frequency();
-  readings.powerFactor = pzem.pf();
-
-  return readings;
+  PowerReadings r;
+  r.voltage     = pzem.voltage();
+  r.current     = pzem.current();
+  r.power       = pzem.power();
+  r.energy      = pzem.energy();
+  r.frequency   = pzem.frequency();
+  r.powerFactor = pzem.pf();
+  return r;
 }
 
-
-bool readingsAreValid(PowerReadings readings) {
-  if (isnan(readings.voltage)) {
-    return false;
-  }
-
-  if (isnan(readings.current)) {
-    return false;
-  }
-
-  if (isnan(readings.power)) {
-    return false;
-  }
-
-  if (isnan(readings.energy)) {
-    return false;
-  }
-
-  if (isnan(readings.frequency)) {
-    return false;
-  }
-
-  if (isnan(readings.powerFactor)) {
-    return false;
-  }
-
-  return true;
+bool readingsAreValid(const PowerReadings& r) {
+  return !isnan(r.voltage) && !isnan(r.current) && !isnan(r.power) &&
+         !isnan(r.energy) && !isnan(r.frequency) && !isnan(r.powerFactor);
 }
 
-
-void printReadings(PowerReadings readings) {
-  Serial.print("Voltage: ");
-  Serial.print(readings.voltage);
-  Serial.println(" V");
-
-  Serial.print("Current: ");
-  Serial.print(readings.current);
-  Serial.println(" A");
-
-  Serial.print("Power: ");
-  Serial.print(readings.power);
-  Serial.println(" W");
-
-  Serial.print("Energy: ");
-  Serial.print(readings.energy, 3);
-  Serial.println(" kWh");
-
-  Serial.print("Frequency: ");
-  Serial.print(readings.frequency);
-  Serial.println(" Hz");
-
-  Serial.print("Power Factor: ");
-  Serial.println(readings.powerFactor);
+void printReadings(const PowerReadings& r) {
+  Serial.printf("V: %.1f V | I: %.2f A | P: %.1f W | E: %.3f kWh | F: %.1f Hz | PF: %.2f\n",
+                r.voltage, r.current, r.power, r.energy, r.frequency, r.powerFactor);
 }
 
-
-// =========================
-// Safety / Control Logic
-// =========================
-
-void handlePowerSafety(PowerReadings readings) {
-  if (readings.power > MAX_ALLOWED_POWER_WATTS) {
-    Serial.println("WARNING: Power exceeded threshold!");
-    Serial.println("Turning all relays OFF for safety.");
-
-    turnAllRelaysOff();
+void handlePowerSafety(const PowerReadings& r) {
+  if (r.power > MAX_ALLOWED_POWER_WATTS) {
+    Serial.println("⚠️ OVERPOWER DETECTED! Tripping all sockets immediately.");
+    setAllRelays(false);
   }
 }
 ```
 
 ---
 
-## 7. How to Test Safely
+## 6. Safety & Commissioning Checklist
 
-### Test 1: ESP32 Only
-
-Upload the code. Open Serial Monitor:
-
-```bash
-pio device monitor
-```
-
-Expected:
-
-```text
-ESP32 + PZEM-004T + 2-Channel Relay Started
-All relays are OFF at startup.
-```
+1. **Dry-Run Inspection (USB Only):**
+   - Flash the ESP32 via USB without connecting AC mains.
+   - Verify in the Serial Monitor that all relay pins initialize HIGH (OFF for active-LOW modules).
+   - Use a multimeter to verify 3.3V on the LLC LV rail and 5V on the HV rail.
+2. **Relay Sequencer Test:**
+   - Execute a bench test cycling each relay channel 1 through 6 sequentially with a 1-second delay. Listen for the distinct relay click.
+3. **PZEM Link Test:**
+   - With low-voltage DC connected, verify that `pzem.voltage()` returns `NAN` or zero (not a serial communication timeout error), confirming GPIO 16/17 UART integrity.
+4. **Mains Commissioning:**
+   - Enclose all exposed 220V AC terminals.
+   - Secure the SCT-013-000 around the Live conductor only.
+   - Apply AC mains power. Verify that the HLK-PM01 provides 5.0V DC and the PZEM returns valid line voltage ($\approx 220\text{V} - 230\text{V}$) and line frequency ($\approx 60\text{ Hz}$).
 
 ---
 
-### Test 2: Relay Only with No AC Load
-
-Temporarily add this inside `setup()` after `turnAllRelaysOff();`:
-
-```cpp
-setRelay(1, true);
-delay(1000);
-setRelay(1, false);
-```
-
-You should hear relay 1 click ON then OFF.
-
-Remove this after testing.
-
----
-
-### Test 3: PZEM Reading
-
-With PZEM correctly wired and AC measurement side safely connected, Serial Monitor should show something like:
-
-```text
-Voltage: 230.10 V
-Current: 0.25 A
-Power: 45.50 W
-Energy: 0.001 kWh
-Frequency: 60.00 Hz
-Power Factor: 0.89
-```
-
-In the Philippines, mains frequency is commonly around 60Hz, so values near that are expected.
-
----
-
-### Test 4: Combined Logic
-
-If measured power goes above:
-
-```cpp
-const float MAX_ALLOWED_POWER_WATTS = 1000.0;
-```
-
-The ESP32 will call:
-
-```cpp
-turnAllRelaysOff();
-```
-
-That is the basic idea for abnormal load protection.
-
----
-
-## 8. Common Mistakes to Avoid
-
-### Mistake 1: TX/RX Not Crossed
-
-Correct:
-
-```text
-ESP32 RX <- PZEM TX
-ESP32 TX -> PZEM RX
-```
-
-Wrong:
-
-```text
-ESP32 RX -> PZEM RX
-ESP32 TX -> PZEM TX
-```
-
----
-
-### Mistake 2: No Common Ground
-
-The ESP32, relay module, PZEM logic side, and level converter need a shared low-voltage ground.
-
----
-
-### Mistake 3: CT Clamp Around Both Wires
-
-Clamp only one conductor. If you clamp both live and neutral, the reading becomes wrong.
-
----
-
-### Mistake 4: Using NC Instead of NO
-
-For safer default OFF behavior, use:
-
-```text
-COM + NO
-```
-
-not:
-
-```text
-COM + NC
-```
-
----
-
-### Mistake 5: Using Dangerous ESP32 Pins
-
-Avoid these for relay outputs:
-
-```text
-GPIO0, GPIO2, GPIO5, GPIO12, GPIO15
-```
-
-They affect ESP32 boot mode.
-
-Also avoid GPIO34 to GPIO39 because they are input-only.
-
----
-
-## 9. Best Project Structure for Your IoT Firmware
-
-For PlatformIO:
-
-```text
-iot-voltwise/
-├── include/
-│   └── README
-├── lib/
-│   └── README
-├── src/
-│   └── main.cpp
-├── test/
-│   └── README
-└── platformio.ini
-```
-
-For now, keep everything in `src/main.cpp`.
-
-Later, when your code grows, you can split it like this:
-
-```text
-src/
-├── main.cpp
-├── PowerSensor.cpp
-├── RelayControl.cpp
-└── NetworkService.cpp
-
-include/
-├── PowerSensor.h
-├── RelayControl.h
-└── NetworkService.h
-```
-
-But for learning, one readable `main.cpp` is okay.
-
----
-
-## 10. ==Basic W==iring Summary
-
-```text
-ESP32 GPIO16  <- Level Converter LV1 <- HV1 <- PZEM TX
-ESP32 GPIO17  -> Level Converter LV2 -> HV2 -> PZEM RX
-
-ESP32 GPIO25  -> Relay IN1
-ESP32 GPIO26  -> Relay IN2
-
-ESP32 VIN/5V  <- Hi-Link 5V OUT+
-ESP32 GND     <- Hi-Link GND OUT-
-
-Relay VCC     <- 5V
-Relay GND     <- GND
-
-PZEM 5V       <- 5V
-PZEM GND      <- GND
-
-Level Converter LV  <- ESP32 3.3V
-Level Converter HV  <- 5V
-Level Converter GND <- GND
-```
-
----
-
-## 11. Minimum Includes for Current Stage
-
-The most important libraries for your current stage are only:
-
-```cpp
-#include <Arduino.h>
-#include <PZEM004Tv30.h>
-```
-
-Everything else can come later when you connect it to your backend or mobile app.
-
----
-
-## 12. Final Notes
-
-Start in this order:
-
-1. Upload ESP32 code first.
-2. Test relay clicks with no AC load.
-3. Test PZEM reading separately.
-4. Combine relay and PZEM logic.
-5. Add Wi-Fi/MQTT/API only after the hardware works.
-
-This keeps debugging easier and safer.
-
----
-
-## 13. WiFi + MQTT Connectivity (HiveMQ Cloud)
-
-The firmware in `src/main.cpp` now connects to WiFi and publishes to the
-HiveMQ Cloud broker over TLS (port 8883). The mobile app subscribes over
-secure WebSocket (port 8884, path `/mqtt`) and the backend over `mqtts://`.
-
-### 13.1 Credentials — `include/secrets.h`
-
-Copy the template and fill in your real values (the file is gitignored):
-
-```bash
-cp include/secrets.h.example include/secrets.h
-```
-
-It defines `WIFI_SSID`, `WIFI_PASSWORD`, `MQTT_HOST`, `MQTT_PORT`,
-`MQTT_USERNAME`, `MQTT_PASSWORD`, and `DEVICE_UID`. The WiFi network must be
-**2.4 GHz** — the ESP32 cannot join 5 GHz networks. `DEVICE_UID` must match
-`MQTT_DEVICE_UID` in `backend/.env` and `EXPO_PUBLIC_MQTT_DEVICE_UID` in
-`app-voltwise/.env`.
-
-### 13.2 Topic Contract
-
-| Topic | Direction | QoS | Retained | Payload |
-| --- | --- | --- | --- | --- |
-| `voltwise/<uid>/telemetry` | ESP32 → subscribers | 0 | no | `{"voltage":230.1,"current":0.42,"watts":96.5,"kwh":1.234,"frequency":60.0,"powerFactor":0.98,"ms":123456}` |
-| `voltwise/<uid>/relay/state` | ESP32 → subscribers | 1 | yes | `{"on":true,"reason":"boot"}` — reason is `boot`, `remote`, `overpower`, or `countdown` |
-| `voltwise/<uid>/relay/set` | backend → ESP32 | 1 | no | `{"on":false}` |
-| `voltwise/<uid>/status` | LWT (broker) | 1 | yes | `"online"` / `"offline"` |
-
-Telemetry keys mirror the backend's `EnergyReading` columns so the ingestion
-bridge inserts rows without transformation. The payload carries no timestamp —
-the backend stamps arrival time. `ms` is device uptime, for debugging only.
-
-### 13.3 TLS and the Clock
-
-TLS certificate validation needs a correct clock, and a fresh ESP32 boots
-thinking it is 1970 — so the firmware syncs NTP **before** the first MQTT
-connect. The Let's Encrypt root CA (ISRG Root X1, valid to 2035) is embedded
-in the firmware. If TLS ever fails mysteriously, there is a commented
-`secureClient.setInsecure()` line for debugging only.
-
-### 13.4 Remote Relay Commands and the Shutdown Latch
-
-The relays are driven together as one master switch (2-channel module):
-
-- `{"on":false}` → all relays open (power cut) and the shutdown latch is set,
-  so nothing re-enables power automatically.
-- `{"on":true}` → the latch is **cleared** and the relays close again. A
-  `remoteOverride` flag stops the 30-second auto-shutdown countdown from
-  instantly re-arming while current is still flowing; it clears itself once
-  current drops below the detection threshold.
-- The over-power safety (`MAX_ALLOWED_POWER_WATTS`) is **never** overridden —
-  if the load is still above the limit it cuts power again with reason
-  `overpower`.
-
-The firmware keeps reading the sensor and running all safety logic even while
-WiFi or the broker is down (non-blocking reconnect with backoff).
+## 7. MQTT Integration Summary (HiveMQ Cloud)
+
+When integrated with the cloud layer, the ESP32 publishes telemetry and responds to socket control topics:
+
+| Topic | Direction | Payload Example | Function |
+| :--- | :---: | :--- | :--- |
+| `voltwise/<uid>/telemetry` | ESP32 $\rightarrow$ Cloud | `{"voltage":230.1,"current":1.42,"watts":320.5,"kwh":12.4,"frequency":60.0,"powerFactor":0.98}` | Ingested into `EnergyReading` |
+| `voltwise/<uid>/relay/state` | ESP32 $\rightarrow$ Cloud | `{"sockets":[true,false,true,false,true,true],"reason":"remote"}` | Real-time state synchronization |
+| `voltwise/<uid>/relay/set` | Cloud $\rightarrow$ ESP32 | `{"socket":1,"on":false}` or `{"all":false}` | Target socket control |
+| `voltwise/<uid>/status` | Broker LWT | `"online"` / `"offline"` | Keep-alive monitoring |
