@@ -56,6 +56,8 @@ export interface MqttRelayState {
   on: boolean;
   /** "boot" | "remote" | "overpower" | "countdown" */
   reason: string;
+  highOn?: boolean;
+  lowOn?: boolean;
 }
 
 /**
@@ -252,6 +254,8 @@ export function MqttProvider({ children }: { children: ReactNode }) {
           setRelayState({
             on: parsed.on,
             reason: typeof parsed.reason === "string" ? parsed.reason : "unknown",
+            highOn: typeof parsed.highOn === "boolean" ? parsed.highOn : parsed.on,
+            lowOn: typeof parsed.lowOn === "boolean" ? parsed.lowOn : parsed.on,
           });
           return;
         }

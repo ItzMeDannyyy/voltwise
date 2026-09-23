@@ -149,6 +149,7 @@ struct PowerReadings {
 
 void setupRelays();
 void applyRelays(bool on, const char* reason);
+void applyLineRelay(const char* line, bool on, const char* reason);
 void setRelay(int relayNumber, bool turnOn);
 
 PowerReadings readPowerSensor();
@@ -176,6 +177,8 @@ void publishRelayState();
 // =========================
 
 bool relaysAreOn = false;
+bool highLineOn = false;
+bool lowLineOn = false;
 const char* relayReason = "boot";    // "boot" | "remote" | "overpower" | "countdown"
 
 bool countdownActive = false;
@@ -314,6 +317,8 @@ void applyRelays(bool on, const char* reason) {
   }
 
   relaysAreOn = on;
+  highLineOn = on;
+  lowLineOn = on;
   relayReason = reason;
 
   Serial.print("All relays turned ");
@@ -321,6 +326,26 @@ void applyRelays(bool on, const char* reason) {
   Serial.print(" (");
   Serial.print(reason);
   Serial.println(").");
+
+  publishRelayState();
+}
+
+
+void applyLineRelay(const char* line, bool on, const char* reason) {
+  if (strcmp(line, "high") == 0) {
+    digitalWrite(RELAY_PINS[0], on ? getRelayOnState() : getRelayOffState());
+    highLineOn = on;
+    Serial.print("High Voltage Line turned ");
+    Serial.println(on ? "ON" : "OFF");
+  } else if (strcmp(line, "low") == 0) {
+    digitalWrite(RELAY_PINS[1], on ? getRelayOnState() : getRelayOffState());
+    lowLineOn = on;
+    Serial.print("Low Voltage Line turned ");
+    Serial.println(on ? "ON" : "OFF");
+  }
+
+  relaysAreOn = highLineOn || lowLineOn;
+  relayReason = reason;
 
   publishRelayState();
 }
@@ -659,7 +684,7 @@ void maintainMqtt() {
 
 
 // Handles remote relay commands published to voltwise/<uid>/relay/set.
-// Payload: {"on": true|false}. Malformed payloads are ignored.
+// Payload: {"on": true|false, "line": "high"|"low"|"all"}. Malformed payloads are ignored.
 void onMqttMessage(char* topic, byte* payload, unsigned int length) {
   if (strcmp(topic, TOPIC_RELAY_SET) != 0) {
     return;
@@ -673,8 +698,12 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
   }
 
   bool turnOn = doc["on"].as<bool>();
+  const char* line = doc["line"] | "all";
+
   Serial.print("Remote relay command received: ");
-  Serial.println(turnOn ? "ON" : "OFF");
+  Serial.print(turnOn ? "ON" : "OFF");
+  Serial.print(" for line: ");
+  Serial.println(line);
 
   if (turnOn) {
     // The user explicitly wants power back: clear the shutdown latch and stop
@@ -682,12 +711,16 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
     powerShutDown = false;
     countdownActive = false;
     remoteOverride = true;
-    applyRelays(true, "remote");
-  } else {
+  } else if (strcmp(line, "all") == 0) {
     // Reuse the latch so nothing turns power back on until asked.
     powerShutDown = true;
     countdownActive = false;
-    applyRelays(false, "remote");
+  }
+
+  if (strcmp(line, "high") == 0 || strcmp(line, "low") == 0) {
+    applyLineRelay(line, turnOn, "remote");
+  } else {
+    applyRelays(turnOn, "remote");
   }
 }
 
@@ -722,6 +755,8 @@ void publishRelayState() {
 
   JsonDocument doc;
   doc["on"] = relaysAreOn;
+  doc["highOn"] = highLineOn;
+  doc["lowOn"] = lowLineOn;
   doc["reason"] = relayReason;
 
   char buffer[128];

@@ -24,12 +24,21 @@ export const setRelay = async (
     if (typeof body.on !== "boolean") {
       res.status(400).json({
         success: false,
-        message: "Body must be { on: boolean }.",
+        message: "Body must be { on: boolean, line?: 'high' | 'low' | 'all' }.",
       });
       return;
     }
 
-    const status = iotService.setRelay(body.on);
+    const line = body.line;
+    if (line !== undefined && line !== "high" && line !== "low" && line !== "all") {
+      res.status(400).json({
+        success: false,
+        message: "line must be 'high', 'low', or 'all'.",
+      });
+      return;
+    }
+
+    const status = iotService.setRelay(body.on, line);
     res.status(200).json({ success: true, data: status });
   } catch (error) {
     next(error);

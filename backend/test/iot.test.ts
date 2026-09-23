@@ -324,6 +324,50 @@ describe("iot controller", () => {
     );
   });
 
+  it("publishes line-specific command for high voltage line", async () => {
+    const req = { body: { on: false, line: "high" } } as unknown as Request;
+    const res = createRes();
+    const next = jest.fn<AnyFn>() as unknown as NextFunction;
+
+    await iotController.setRelay(req, res as unknown as Response, next);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ success: true });
+    expect(mqttClientMock.publish).toHaveBeenCalledWith(
+      "voltwise/esp32-01/relay/set",
+      JSON.stringify({ on: false, line: "high" }),
+      { qos: 1 }
+    );
+  });
+
+  it("publishes line-specific command for low voltage line", async () => {
+    const req = { body: { on: true, line: "low" } } as unknown as Request;
+    const res = createRes();
+    const next = jest.fn<AnyFn>() as unknown as NextFunction;
+
+    await iotController.setRelay(req, res as unknown as Response, next);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ success: true });
+    expect(mqttClientMock.publish).toHaveBeenCalledWith(
+      "voltwise/esp32-01/relay/set",
+      JSON.stringify({ on: true, line: "low" }),
+      { qos: 1 }
+    );
+  });
+
+  it("rejects an invalid line with 400", async () => {
+    const req = { body: { on: true, line: "invalid" } } as unknown as Request;
+    const res = createRes();
+    const next = jest.fn<AnyFn>() as unknown as NextFunction;
+
+    await iotController.setRelay(req, res as unknown as Response, next);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ success: false });
+    expect(mqttClientMock.publish).not.toHaveBeenCalled();
+  });
+
   it("returns the status snapshot from GET /api/iot/status", async () => {
     const req = {} as Request;
     const res = createRes();

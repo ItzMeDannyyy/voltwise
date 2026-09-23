@@ -12,10 +12,11 @@ import { AppError } from "./AppError.ts";
 import { createLoadDetector } from "./loadDetector.ts";
 import { createAlert } from "../modules/alerts/alerts.service.ts";
 
-// Shape of a relay/state message published (retained) by the firmware.
 export interface RelayState {
   on: boolean;
   reason: string; // "boot" | "remote" | "overpower" | "countdown"
+  highOn?: boolean;
+  lowOn?: boolean;
   updatedAt: string;
 }
 
@@ -126,11 +127,15 @@ export const handleMessage = async (
       const parsed = JSON.parse(payload.toString()) as {
         on?: unknown;
         reason?: unknown;
+        highOn?: unknown;
+        lowOn?: unknown;
       };
       if (typeof parsed.on !== "boolean") return;
       state.relay = {
         on: parsed.on,
         reason: typeof parsed.reason === "string" ? parsed.reason : "unknown",
+        highOn: typeof parsed.highOn === "boolean" ? parsed.highOn : parsed.on,
+        lowOn: typeof parsed.lowOn === "boolean" ? parsed.lowOn : parsed.on,
         updatedAt: new Date().toISOString(),
       };
       return;
@@ -290,15 +295,21 @@ export const initMqtt = async (): Promise<void> => {
   });
 };
 
-// Documentation only: Publishes a relay command ({ on: true|false }) to the
+export type PowerLine = "high" | "low" | "all";
+
+// Documentation only: Publishes a relay command ({ on: true|false, line?: "high"|"low"|"all" }) to the
 // device's relay/set topic at QoS 1. Throws AppError 503 when the broker
 // connection is down so the controller can report a meaningful failure.
-export const publishRelayCommand = (on: boolean): void => {
+export const publishRelayCommand = (on: boolean, line?: PowerLine): void => {
   if (!client || !client.connected) {
     throw new AppError(503, "IoT broker connection is not available.");
   }
 
-  client.publish(topic("relay/set"), JSON.stringify({ on }), { qos: 1 });
+  const payload: { on: boolean; line?: PowerLine } = { on };
+  if (line) {
+    payload.line = line;
+  }
+  client.publish(topic("relay/set"), JSON.stringify(payload), { qos: 1 });
 };
 
 // Documentation only: Returns a snapshot of the last-known IoT state for the

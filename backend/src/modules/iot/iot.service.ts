@@ -3,7 +3,7 @@
 // shapes the last-known device state for the status endpoint. No Prisma access
 // here — telemetry ingestion lives in lib/mqtt.ts itself.
 
-import { getIotState, publishRelayCommand } from "../../lib/mqtt.ts";
+import { getIotState, publishRelayCommand, type PowerLine } from "../../lib/mqtt.ts";
 import type { IotStatusDto } from "./iot";
 
 // A retained "online" status can outlive a crashed device until the broker's
@@ -30,11 +30,11 @@ export const getStatus = (): IotStatusDto => {
   };
 };
 
-// Documentation only: Publishes a master relay on/off command to the device.
+// Documentation only: Publishes a relay on/off command to the device (master "all", "high", or "low").
 // Throws AppError 503 (from publishRelayCommand) when the broker is down.
 // Returns the current status snapshot so the client can show pending state
 // until the firmware confirms via the retained relay/state topic.
-export const setRelay = (on: boolean): IotStatusDto => {
-  publishRelayCommand(on);
+export const setRelay = (on: boolean, line?: PowerLine): IotStatusDto => {
+  publishRelayCommand(on, line);
   return getStatus();
 };

@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { api, checkHealth, DashboardData, DashboardDevice, IotStatus, Reading } from "../../lib/api";
+import { api, checkHealth, DashboardData, DashboardDevice, Reading } from "../../lib/api";
 import { useMqtt } from "../../context/MqttContext";
 import { useDemoData } from "../../context/DemoDataContext";
 import { demoDashboard, demoLiveReading } from "../../lib/demo-data";
@@ -37,6 +37,7 @@ import { PullToRefresh } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useTheme } from "../../context/ThemeContext";
 import { useUnits } from "../../context/UnitsContext";
+import { usePowerControl } from "../../context/PowerControlContext";
 import { useThemedStyles } from "../../components/themed";
 import type { ThemeColors } from "../../constants/theme";
 
@@ -128,18 +129,17 @@ export default function DashboardScreen() {
 
   // Real-time IoT feed (direct MQTT subscription to the broker).
   const { telemetry, telemetryAt, relayState } = useMqtt();
+  const {
+    masterOn,
+    highOn,
+    lowOn,
+    pending: powerPending,
+    isOffline: powerOffline,
+    toggleMaster,
+  } = usePowerControl();
   const [liveSource, setLiveSource] = useState<LiveSource>("off");
   // Read inside the interval tick without re-creating the interval.
   const telemetryAtRef = useRef<number | null>(null);
-
-  // Master relay control: optimistic value while a command is in flight,
-  // reconciled when the firmware confirms on the relay/state topic.
-  const [relayLocal, setRelayLocal]     = useState<boolean | null>(null);
-  const [relayPending, setRelayPending] = useState(false);
-  // Sample-data mode drives the Master Power button off this instead, so the
-  // control still animates without a command ever reaching the broker.
-  const [demoRelayOn, setDemoRelayOn]   = useState(true);
-  const relayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const intervalRef       = useRef<ReturnType<typeof setInterval> | null>(null);
   const healthIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -225,14 +225,6 @@ export default function DashboardScreen() {
     }));
   }, [telemetry, telemetryAt]);
 
-  // Reconcile the relay switch when the firmware confirms a state change on
-  // the retained relay/state topic (or when the retained state first loads).
-  useEffect(() => {
-    if (relayState === null) return;
-    if (relayTimeoutRef.current) clearTimeout(relayTimeoutRef.current);
-    setRelayLocal(null);
-    setRelayPending(false);
-  }, [relayState]);
 
   // 2-second tick that only classifies the feed: telemetry is either fresh
   // enough to show, or it is not. Nothing is generated here.
@@ -259,32 +251,6 @@ export default function DashboardScreen() {
     };
   }, [iotOnline]);
 
-  // Master relay toggle: optimistic flip -> POST /api/iot/relay -> the
-  // firmware's relay/state message reconciles (or the 10 s timeout reverts).
-  async function handleRelayToggle(value: boolean) {
-    // Sample data must never move a real contactor: flip the local display
-    // state and stop before the REST call that publishes to MQTT.
-    if (demoData) {
-      setDemoRelayOn(value);
-      return;
-    }
-    setRelayLocal(value);
-    setRelayPending(true);
-    if (relayTimeoutRef.current) clearTimeout(relayTimeoutRef.current);
-    relayTimeoutRef.current = setTimeout(() => {
-      // Device never confirmed — drop the optimistic value.
-      setRelayLocal(null);
-      setRelayPending(false);
-    }, 10_000);
-
-    try {
-      await api.post<IotStatus>("/iot/relay", { on: value });
-    } catch {
-      if (relayTimeoutRef.current) clearTimeout(relayTimeoutRef.current);
-      setRelayLocal(null);
-      setRelayPending(false);
-    }
-  }
 
   function toggleExpanded() {
     const next = !expanded;
@@ -318,12 +284,12 @@ export default function DashboardScreen() {
   // nothing to re-fetch. Memoised on the period because the chart must not be
   // handed a freshly-built array on every render.
   const demoDash = useMemo(
-    () => (demoData ? demoDashboard(range) : null),
-    [demoData, range]
+    () => (demoData ? demoDashboard(range, undefined, { highOn, lowOn }) : null),
+    [demoData, range, highOn, lowOn]
   );
   const demoReading = useMemo(
-    () => (demoData ? demoLiveReading() : null),
-    [demoData]
+    () => (demoData ? demoLiveReading(undefined, { highOn, lowOn }) : null),
+    [demoData, highOn, lowOn]
   );
   const view = demoDash ?? dashboard;
 
@@ -344,18 +310,17 @@ export default function DashboardScreen() {
   const displayMetrics = demoReading ?? liveMetrics;
   const displayKw = demoData ? demoDash?.currentKw ?? null : currentKw;
 
-  // Master relay display state: the optimistic value wins while a command is
-  // in flight; before any relay/state message arrives assume ON (firmware
-  // boots with relays energized).
-  const relayOn = demoData ? demoRelayOn : relayLocal ?? relayState?.on ?? true;
+  // Master relay display state driven by unified PowerControlContext
+  const relayOn = masterOn;
+  const relayPending = powerPending;
   const relayReasonLabel = relayOn
     ? "Power is flowing to your loads"
-    : RELAY_REASON_LABELS[relayState?.reason ?? ""] ?? "Power is off";
-  // The button only works when the device is reachable and no command is
-  // already pending confirmation.
+    : RELAY_REASON_LABELS[relayState?.reason ?? ""] ?? "All circuits powered off";
+
+  // Button is ONLY clickable if in Demo Mode OR if IoT is reachable:
+  // "buttons should not be clicked if it is offline, and no offline manuever, what I said there is a show sample data in the lab if I turn that on I can demo the feature, if not then it stays offline and not clickable since it is offline"
   const relayControlDisabled = demoData ? false : relayPending || !iotReachable;
-  // Button caption: the current relay state, or the reason it can't be used.
-  const relayButtonLabel = !iotReachable
+  const relayButtonLabel = !iotReachable && !demoData
     ? iotState === "unknown"
       ? "..."
       : "OFFLINE"
@@ -363,19 +328,17 @@ export default function DashboardScreen() {
       ? "ON"
       : "CLOSE";
 
-  // Unreachable device: say so plainly, and qualify the shown state as a
-  // last-known value rather than something the user can act on.
-  const relaySubtitle = iotReachable
-    ? relayPending
-      ? "Waiting for device confirmation..."
-      : relayReasonLabel
-    : iotState === "unknown"
-      ? "Checking device..."
-      : `${iotState === "offline" ? "Device offline" : "No live link to device"}${
-          relayState ? ` — last known: ${relayState.on ? "on" : "off"}` : ""
-        } · control unavailable`;
-  // Grey the whole control out when it can't be trusted or used.
-  const relayTint = !iotReachable
+  const relaySubtitle = demoData
+    ? `Sample Data Demo — ${relayOn ? "whole-home power simulated" : "all circuits de-energized"}`
+    : !iotReachable
+      ? iotState === "unknown"
+        ? "Checking device..."
+        : `${iotState === "offline" ? "Device offline" : "No live link to device"} · control unavailable`
+      : relayPending
+        ? "Waiting for device confirmation..."
+        : relayReasonLabel;
+
+  const relayTint = !iotReachable && !demoData
     ? colors.sub
     : relayOn
       ? colors.accent
@@ -539,33 +502,72 @@ export default function DashboardScreen() {
           <View style={styles.relayTextWrap}>
             <View style={styles.relayTitleRow}>
               <Text style={styles.relayTitle}>Master Power</Text>
-              {iotState === "offline" || iotState === "nolink" ? (
+              {demoData ? (
                 <View
                   style={[
                     styles.relayBadge,
-                    {
-                      backgroundColor:
-                        (iotState === "offline" ? colors.red : colors.amber) + "26",
-                    },
+                    { backgroundColor: colors.accent + "26" },
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.relayBadgeText,
-                      { color: iotState === "offline" ? colors.red : colors.amber },
-                    ]}
-                  >
-                    {iotState === "offline" ? "OFFLINE" : "NO LINK"}
+                  <Text style={[styles.relayBadgeText, { color: colors.accent }]}>
+                    DEMO
                   </Text>
                 </View>
-              ) : null}
+              ) : powerOffline ? (
+                <View
+                  style={[
+                    styles.relayBadge,
+                    { backgroundColor: colors.red + "26" },
+                  ]}
+                >
+                  <Text style={[styles.relayBadgeText, { color: colors.red }]}>
+                    OFFLINE
+                  </Text>
+                </View>
+              ) : (
+                <View
+                  style={[
+                    styles.relayBadge,
+                    { backgroundColor: colors.green + "26" },
+                  ]}
+                >
+                  <Text style={[styles.relayBadgeText, { color: colors.green }]}>
+                    LIVE
+                  </Text>
+                </View>
+              )}
             </View>
             <Text style={styles.relaySubtitle}>{relaySubtitle}</Text>
+
+            {/* Dual-line status indicators */}
+            <View style={styles.lineBadgesRow}>
+              <View style={styles.lineBadgeItem}>
+                <View
+                  style={[
+                    styles.lineBadgeDot,
+                    { backgroundColor: highOn ? colors.green : colors.red },
+                  ]}
+                />
+                <Text style={styles.lineBadgeText}>
+                  High: {highOn ? "ON" : "OFF"}
+                </Text>
+              </View>
+              <View style={styles.lineBadgeItem}>
+                <View
+                  style={[
+                    styles.lineBadgeDot,
+                    { backgroundColor: lowOn ? colors.green : colors.red },
+                  ]}
+                />
+                <Text style={styles.lineBadgeText}>
+                  Low: {lowOn ? "ON" : "OFF"}
+                </Text>
+              </View>
+            </View>
           </View>
-          {/* Tap-to-toggle power button: green/ON, red/CLOSE, grey when the
-              device is unreachable (and then inert). */}
+          {/* Tap-to-toggle power button */}
           <TouchableOpacity
-            onPress={() => handleRelayToggle(!relayOn)}
+            onPress={() => toggleMaster(!relayOn)}
             disabled={relayControlDisabled}
             activeOpacity={0.7}
             style={[
@@ -580,8 +582,8 @@ export default function DashboardScreen() {
             accessibilityLabel="Master power relay"
             accessibilityState={{ disabled: relayControlDisabled }}
             accessibilityHint={
-              iotReachable
-                ? `Turns the master relay ${relayOn ? "off" : "on"}`
+              demoData || iotReachable
+                ? `Turns master power ${relayOn ? "off" : "on"}`
                 : "Unavailable — the IoT device is offline"
             }
           >
@@ -895,6 +897,36 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     relaySubtitle: {
       color: colors.sub,
       fontSize: 12 * fontScale,
+    },
+    lineBadgesRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginTop: 8,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: colors.border + "80",
+    },
+    lineBadgeItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surface,
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: 5,
+    },
+    lineBadgeDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+    },
+    lineBadgeText: {
+      fontSize: 10 * fontScale,
+      fontWeight: "600",
+      color: colors.text,
     },
     deviceList: {
       gap: 10,
