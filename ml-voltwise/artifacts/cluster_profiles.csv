@@ -1,0 +1,7 @@
+cluster,voltage_mean,current_mean,current_max,power_mean,power_max,power_min,power_std,energy_delta_wh,frequency_mean,power_factor_mean,anomaly_distance,count,dominant_appliance,interpretation
+0,237.27,3.13,3.13,639.54,641.57,637.53,1.23,5.28,60.02,0.86,0.54,29,Air Conditioner,High Continuous Load (Air Conditioner)
+1,238.81,0.09,0.22,24.28,70.84,7.18,17.61,0.13,60.08,0.99,1.22,16,Refrigerator,Low Load / Cycling (Refrigerator)
+2,237.78,2.64,19.19,505.15,3665.5,1.0,1015.15,5.0,60.0,0.93,0.0,1,Air Conditioner,High Inrush / Peak Surge (Air Conditioner)
+3,235.4,0.05,0.36,13.0,77.82,1.83,19.43,0.0,59.87,1.0,0.66,6,Refrigerator,Standby / Idle (Refrigerator)
+4,237.67,1.54,3.26,315.28,663.68,18.66,300.44,2.8,59.99,0.93,1.3,5,Refrigerator,Medium Load (Refrigerator)
+5,238.78,0.06,0.7,12.5,147.08,1.76,38.85,0.2,60.18,0.75,1.15,5,Refrigerator,Standby / Idle (Refrigerator)
