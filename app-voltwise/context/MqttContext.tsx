@@ -60,6 +60,18 @@ export interface MqttRelayState {
   lowOn?: boolean;
 }
 
+/** Retained safety configuration published by the firmware. */
+export interface MqttSafetyState {
+  enabled: boolean;
+  thresholdWatts: number;
+}
+
+/** Retained countdown configuration published by the firmware. */
+export interface MqttCountdownState {
+  enabled: boolean;
+  seconds: number;
+}
+
 /**
  * Backend-originated event (e.g. "new_load" when the load detector spots a
  * sustained watts step-up). Non-retained — only live listeners see it.
@@ -96,6 +108,10 @@ interface MqttContextValue {
   telemetryAt: number | null;
   /** Last-known relay state from the retained relay/state topic. */
   relayState: MqttRelayState | null;
+  /** Last-known safety cutoff configuration from retained safety/state topic. */
+  safetyState: MqttSafetyState | null;
+  /** Last-known auto-shutdown countdown configuration from retained countdown/state topic. */
+  countdownState: MqttCountdownState | null;
   /** From the retained status topic — cross-check with telemetryAt freshness. */
   deviceOnline: boolean;
   /** Latest backend event (new_load etc.), or null before the first one. */
@@ -129,6 +145,8 @@ const MqttContext = createContext<MqttContextValue>({
   telemetry: null,
   telemetryAt: null,
   relayState: null,
+  safetyState: null,
+  countdownState: null,
   deviceOnline: false,
   lastEvent: null,
   deviceUid: DEFAULT_DEVICE_UID,
@@ -149,6 +167,8 @@ export function MqttProvider({ children }: { children: ReactNode }) {
   const [telemetry, setTelemetry] = useState<MqttTelemetry | null>(null);
   const [telemetryAt, setTelemetryAt] = useState<number | null>(null);
   const [relayState, setRelayState] = useState<MqttRelayState | null>(null);
+  const [safetyState, setSafetyState] = useState<MqttSafetyState | null>(null);
+  const [countdownState, setCountdownState] = useState<MqttCountdownState | null>(null);
   const [deviceOnline, setDeviceOnline] = useState(false);
   const [lastEvent, setLastEvent] = useState<MqttEvent | null>(null);
   const [discoveredMap, setDiscoveredMap] = useState<Record<string, DiscoveredSensor>>({});
@@ -260,6 +280,29 @@ export function MqttProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        if (suffix === "safety/state") {
+          const parsed = JSON.parse(payload.toString());
+          if (typeof parsed.enabled === "boolean") {
+            setSafetyState({
+              enabled: parsed.enabled,
+              thresholdWatts:
+                typeof parsed.thresholdWatts === "number" ? parsed.thresholdWatts : 3000,
+            });
+          }
+          return;
+        }
+
+        if (suffix === "countdown/state") {
+          const parsed = JSON.parse(payload.toString());
+          if (typeof parsed.enabled === "boolean") {
+            setCountdownState({
+              enabled: parsed.enabled,
+              seconds: typeof parsed.seconds === "number" ? parsed.seconds : 1800,
+            });
+          }
+          return;
+        }
+
         if (suffix === "events") {
           const parsed = JSON.parse(payload.toString());
           if (typeof parsed.type !== "string") return;
@@ -314,7 +357,14 @@ export function MqttProvider({ children }: { children: ReactNode }) {
     if (!client || !connected) return;
 
     const topics = deviceTopics(deviceUid);
-    const subscribed = [topics.telemetry, topics.relayState, topics.status, topics.events];
+    const subscribed = [
+      topics.telemetry,
+      topics.relayState,
+      topics.safetyState,
+      topics.countdownState,
+      topics.status,
+      topics.events,
+    ];
     client.subscribe(subscribed, { qos: 1 });
 
     return () => {
@@ -336,6 +386,8 @@ export function MqttProvider({ children }: { children: ReactNode }) {
     setTelemetry(null);
     setTelemetryAt(null);
     setRelayState(null);
+    setSafetyState(null);
+    setCountdownState(null);
     setDeviceOnline(false);
     setLastEvent(null);
     await saveDeviceUid(uid).catch(() => {});
@@ -360,6 +412,8 @@ export function MqttProvider({ children }: { children: ReactNode }) {
       telemetry,
       telemetryAt,
       relayState,
+      safetyState,
+      countdownState,
       deviceOnline,
       lastEvent,
       deviceUid,
@@ -375,6 +429,8 @@ export function MqttProvider({ children }: { children: ReactNode }) {
       telemetry,
       telemetryAt,
       relayState,
+      safetyState,
+      countdownState,
       deviceOnline,
       lastEvent,
       deviceUid,

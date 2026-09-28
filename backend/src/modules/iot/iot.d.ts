@@ -13,6 +13,52 @@ export interface RelayCommandDto {
   line?: PowerLine;
 }
 
+export interface StartCollectionDto {
+  applianceName: string;
+  line?: PowerLine;
+  clearReadings?: boolean;
+}
+
+export interface CollectionSessionDto {
+  applianceName: string;
+  deviceId: number | null;
+  startedAt: string;
+  sampleCount: number;
+}
+
+export interface CollectionStartResponseDto {
+  session: CollectionSessionDto;
+  status: IotStatusDto;
+  clearedReadingsCount: number;
+}
+
+export interface CollectionStopResponseDto {
+  applianceName: string;
+  durationSeconds: number;
+  sampleCount: number;
+  status: IotStatusDto;
+}
+
+export interface SafetyCommandDto {
+  enabled: boolean;
+  thresholdWatts?: number;
+}
+
+export interface SafetyConfigDto {
+  enabled: boolean;
+  thresholdWatts: number;
+}
+
+export interface CountdownCommandDto {
+  enabled: boolean;
+  seconds?: number;
+}
+
+export interface CountdownConfigDto {
+  enabled: boolean;
+  seconds: number;
+}
+
 // Response of both POST /api/iot/relay and GET /api/iot/status.
 export interface IotStatusDto {
   // The device UID this backend ingests from (MQTT_DEVICE_UID). The app pairs
@@ -26,4 +72,9 @@ export interface IotStatusDto {
   relay: RelayState | null;
   lastTelemetry: TelemetryPayload | null;
   lastTelemetryAt: string | null;
+  activeCollection?: CollectionSessionDto | null;
+  safety?: SafetyConfigDto | null;
+  countdown?: CountdownConfigDto | null;
 }
+
+

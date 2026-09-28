@@ -10,6 +10,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import ConfirmModal from "../components/ConfirmModal";
@@ -19,7 +20,7 @@ import { useMqtt } from "../context/MqttContext";
 import { useTheme } from "../context/ThemeContext";
 import { useUnits } from "../context/UnitsContext";
 import { usePullToRefresh } from "../hooks/usePullToRefresh";
-import { api, type IotStatus } from "../lib/api";
+import { api, setSafetyCutoff, setCountdownTimer, type IotStatus } from "../lib/api";
 import {
   DEFAULT_DEVICE_UID,
   DEVICE_UID_HINT,
@@ -71,6 +72,8 @@ export default function IotSettingsScreen() {
     telemetry,
     telemetryAt,
     relayState,
+    safetyState,
+    countdownState,
     deviceOnline,
     deviceUid,
     isCustomUid,
@@ -92,6 +95,18 @@ export default function IotSettingsScreen() {
   const [relayError, setRelayError] = useState<string | null>(null);
   const [confirmCutoff, setConfirmCutoff] = useState(false);
   const relayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Safety Cutoff Protection
+  const [safetyLocal, setSafetyLocal] = useState<boolean | null>(null);
+  const [safetyThresholdLocal, setSafetyThresholdLocal] = useState<number | null>(null);
+  const [safetyPending, setSafetyPending] = useState(false);
+  const [safetyError, setSafetyError] = useState<string | null>(null);
+
+  // Auto-Shutdown Countdown Timer
+  const [countdownLocal, setCountdownLocal] = useState<boolean | null>(null);
+  const [countdownSecondsLocal, setCountdownSecondsLocal] = useState<number | null>(null);
+  const [countdownPending, setCountdownPending] = useState(false);
+  const [countdownError, setCountdownError] = useState<string | null>(null);
 
   // Pairing editor.
   const [uidModalVisible, setUidModalVisible] = useState(false);
@@ -127,6 +142,20 @@ export default function IotSettingsScreen() {
     setRelayLocal(null);
     setRelayPending(false);
   }, [relayState]);
+
+  useEffect(() => {
+    if (safetyState === null) return;
+    setSafetyLocal(null);
+    setSafetyThresholdLocal(null);
+    setSafetyPending(false);
+  }, [safetyState]);
+
+  useEffect(() => {
+    if (countdownState === null) return;
+    setCountdownLocal(null);
+    setCountdownSecondsLocal(null);
+    setCountdownPending(false);
+  }, [countdownState]);
 
   useEffect(
     () => () => {
@@ -224,6 +253,110 @@ export default function IotSettingsScreen() {
     if (relayOn) setConfirmCutoff(true);
     else void sendRelay(true);
   };
+
+  const effectiveSafetyEnabled =
+    safetyLocal !== null
+      ? safetyLocal
+      : safetyState?.enabled ?? status?.safety?.enabled ?? true;
+
+  const effectiveSafetyThreshold =
+    safetyThresholdLocal !== null
+      ? safetyThresholdLocal
+      : safetyState?.thresholdWatts ?? status?.safety?.thresholdWatts ?? 3000;
+
+  const handleToggleSafety = useCallback(
+    async (next: boolean) => {
+      setSafetyError(null);
+      setSafetyLocal(next);
+      setSafetyPending(true);
+
+      try {
+        const updated = await setSafetyCutoff(next, effectiveSafetyThreshold);
+        if (updated.safety) {
+          setStatus((prev) => (prev ? { ...prev, safety: updated.safety } : prev));
+        }
+      } catch (error) {
+        setSafetyLocal(null);
+        setSafetyError(error instanceof Error ? error.message : "Failed to toggle safety cutoff.");
+      } finally {
+        setSafetyPending(false);
+      }
+    },
+    [effectiveSafetyThreshold]
+  );
+
+  const handleChangeThreshold = useCallback(
+    async (watts: number) => {
+      setSafetyError(null);
+      setSafetyThresholdLocal(watts);
+      setSafetyPending(true);
+
+      try {
+        const updated = await setSafetyCutoff(effectiveSafetyEnabled, watts);
+        if (updated.safety) {
+          setStatus((prev) => (prev ? { ...prev, safety: updated.safety } : prev));
+        }
+      } catch (error) {
+        setSafetyThresholdLocal(null);
+        setSafetyError(error instanceof Error ? error.message : "Failed to update safety threshold.");
+      } finally {
+        setSafetyPending(false);
+      }
+    },
+    [effectiveSafetyEnabled]
+  );
+
+  const effectiveCountdownEnabled =
+    countdownLocal !== null
+      ? countdownLocal
+      : countdownState?.enabled ?? status?.countdown?.enabled ?? false;
+
+  const effectiveCountdownSeconds =
+    countdownSecondsLocal !== null
+      ? countdownSecondsLocal
+      : countdownState?.seconds ?? status?.countdown?.seconds ?? 1800;
+
+  const handleToggleCountdown = useCallback(
+    async (next: boolean) => {
+      setCountdownError(null);
+      setCountdownLocal(next);
+      setCountdownPending(true);
+
+      try {
+        const updated = await setCountdownTimer(next, effectiveCountdownSeconds);
+        if (updated.countdown) {
+          setStatus((prev) => (prev ? { ...prev, countdown: updated.countdown } : prev));
+        }
+      } catch (error) {
+        setCountdownLocal(null);
+        setCountdownError(error instanceof Error ? error.message : "Failed to toggle countdown timer.");
+      } finally {
+        setCountdownPending(false);
+      }
+    },
+    [effectiveCountdownSeconds]
+  );
+
+  const handleChangeCountdownSeconds = useCallback(
+    async (seconds: number) => {
+      setCountdownError(null);
+      setCountdownSecondsLocal(seconds);
+      setCountdownPending(true);
+
+      try {
+        const updated = await setCountdownTimer(effectiveCountdownEnabled, seconds);
+        if (updated.countdown) {
+          setStatus((prev) => (prev ? { ...prev, countdown: updated.countdown } : prev));
+        }
+      } catch (error) {
+        setCountdownSecondsLocal(null);
+        setCountdownError(error instanceof Error ? error.message : "Failed to set countdown duration.");
+      } finally {
+        setCountdownPending(false);
+      }
+    },
+    [effectiveCountdownEnabled]
+  );
 
   const openUidEditor = () => {
     setUidInput(deviceUid);
@@ -480,7 +613,221 @@ export default function IotSettingsScreen() {
           <Text style={styles.footnote}>
             {relayError !== null
               ? relayError
-              : "The firmware's over-power cutoff always wins — it cannot be overridden from here."}
+              : "Switch master power directly across both relay channels."}
+          </Text>
+        </View>
+
+        {/* ---- Safety Cutoff Protection ---- */}
+        <View style={styles.group}>
+          <Text style={styles.groupHeading}>Safety protection</Text>
+          <View style={styles.card}>
+            <View style={styles.relayRow}>
+              <View
+                style={[
+                  styles.rowIcon,
+                  {
+                    backgroundColor:
+                      (effectiveSafetyEnabled ? colors.green : colors.amber) + "26",
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={effectiveSafetyEnabled ? "shield-checkmark" : "shield-outline"}
+                  size={20}
+                  color={effectiveSafetyEnabled ? colors.green : colors.amber}
+                />
+              </View>
+              <View style={styles.rowBody}>
+                <View style={styles.heroTitleRow}>
+                  <Text style={styles.rowTitle}>Overload Cutoff</Text>
+                  <View
+                    style={[
+                      styles.safetyBadge,
+                      {
+                        backgroundColor:
+                          (effectiveSafetyEnabled ? colors.green : colors.amber) + "20",
+                        borderColor:
+                          (effectiveSafetyEnabled ? colors.green : colors.amber) + "40",
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.safetyBadgeText,
+                        { color: effectiveSafetyEnabled ? colors.green : colors.amber },
+                      ]}
+                    >
+                      {effectiveSafetyEnabled ? "ACTIVE" : "DISABLED"}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.rowSubtitle}>
+                  {effectiveSafetyEnabled
+                    ? `Auto-trips relay if sustained load exceeds ${effectiveSafetyThreshold.toLocaleString()} W`
+                    : "Overload cutoff is disabled. Relay will not auto-trip on high power."}
+                </Text>
+              </View>
+              {safetyPending ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : (
+                <Switch
+                  value={effectiveSafetyEnabled}
+                  onValueChange={handleToggleSafety}
+                  disabled={!relayReachable || safetyPending}
+                  trackColor={{ false: colors.border, true: colors.accent }}
+                  thumbColor={Platform.OS === "android" ? "#ffffff" : undefined}
+                />
+              )}
+            </View>
+
+            {effectiveSafetyEnabled && (
+              <View style={[styles.thresholdContainer, styles.rowDivider]}>
+                <Text style={styles.thresholdLabel}>Trigger Threshold:</Text>
+                <View style={styles.thresholdChipsRow}>
+                  {[1500, 2000, 2500, 3000, 3500].map((watts) => {
+                    const selected = effectiveSafetyThreshold === watts;
+                    return (
+                      <Pressable
+                        key={watts}
+                        style={[
+                          styles.thresholdChip,
+                          selected && {
+                            backgroundColor: colors.accent,
+                            borderColor: colors.accent,
+                          },
+                        ]}
+                        onPress={() => handleChangeThreshold(watts)}
+                        disabled={safetyPending || !relayReachable}
+                      >
+                        <Text
+                          style={[
+                            styles.thresholdChipText,
+                            selected && { color: colors.bg, fontWeight: "700" },
+                          ]}
+                        >
+                          {watts}W
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+          </View>
+          <Text style={styles.footnote}>
+            {safetyError !== null
+              ? safetyError
+              : "Disable this or raise the threshold if high-inrush appliances like air conditioners or refrigerators trip the relay during compressor startup."}
+          </Text>
+        </View>
+
+        {/* ---- Auto-Shutdown Countdown Timer ---- */}
+        <View style={styles.group}>
+          <Text style={styles.groupHeading}>Auto-shutdown timer</Text>
+          <View style={styles.card}>
+            <View style={styles.relayRow}>
+              <View
+                style={[
+                  styles.rowIcon,
+                  {
+                    backgroundColor:
+                      (effectiveCountdownEnabled ? colors.amber : colors.green) + "26",
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={effectiveCountdownEnabled ? "timer" : "timer-outline"}
+                  size={20}
+                  color={effectiveCountdownEnabled ? colors.amber : colors.green}
+                />
+              </View>
+              <View style={styles.rowBody}>
+                <View style={styles.heroTitleRow}>
+                  <Text style={styles.rowTitle}>Auto-Cutoff Timer</Text>
+                  <View
+                    style={[
+                      styles.safetyBadge,
+                      {
+                        backgroundColor:
+                          (effectiveCountdownEnabled ? colors.amber : colors.green) + "20",
+                        borderColor:
+                          (effectiveCountdownEnabled ? colors.amber : colors.green) + "40",
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.safetyBadgeText,
+                        { color: effectiveCountdownEnabled ? colors.amber : colors.green },
+                      ]}
+                    >
+                      {effectiveCountdownEnabled ? "ACTIVE" : "DISABLED"}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.rowSubtitle}>
+                  {effectiveCountdownEnabled
+                    ? `Auto-trips relay after ${effectiveCountdownSeconds < 60 ? `${effectiveCountdownSeconds}s` : `${Math.round(effectiveCountdownSeconds / 60)} min`} continuous load`
+                    : "Timer disabled. Power flows continuously without auto-shutdown."}
+                </Text>
+              </View>
+              {countdownPending ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : (
+                <Switch
+                  value={effectiveCountdownEnabled}
+                  onValueChange={handleToggleCountdown}
+                  disabled={!relayReachable || countdownPending}
+                  trackColor={{ false: colors.border, true: colors.accent }}
+                  thumbColor={Platform.OS === "android" ? "#ffffff" : undefined}
+                />
+              )}
+            </View>
+
+            {effectiveCountdownEnabled && (
+              <View style={[styles.thresholdContainer, styles.rowDivider]}>
+                <Text style={styles.thresholdLabel}>Countdown Duration:</Text>
+                <View style={styles.thresholdChipsRow}>
+                  {[
+                    { seconds: 30, label: "30s" },
+                    { seconds: 60, label: "1 min" },
+                    { seconds: 300, label: "5 min" },
+                    { seconds: 900, label: "15 min" },
+                    { seconds: 1800, label: "30 min" },
+                  ].map(({ seconds, label }) => {
+                    const selected = effectiveCountdownSeconds === seconds;
+                    return (
+                      <Pressable
+                        key={seconds}
+                        style={[
+                          styles.thresholdChip,
+                          selected && {
+                            backgroundColor: colors.accent,
+                            borderColor: colors.accent,
+                          },
+                        ]}
+                        onPress={() => handleChangeCountdownSeconds(seconds)}
+                        disabled={countdownPending || !relayReachable}
+                      >
+                        <Text
+                          style={[
+                            styles.thresholdChipText,
+                            selected && { color: colors.bg, fontWeight: "700" },
+                          ]}
+                        >
+                          {label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+          </View>
+          <Text style={styles.footnote}>
+            {countdownError !== null
+              ? countdownError
+              : "Automatically cuts relay power if current is continuously detected (> 0.05A) for the set duration. Keep DISABLED for continuous loads (refrigerators, cooling cycles) or data collection profiling."}
           </Text>
         </View>
 
@@ -1104,6 +1451,45 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     modalBtnText: {
       fontSize: 14 * fontScale,
       fontWeight: "700",
+    },
+    safetyBadge: {
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+      borderRadius: 6,
+      borderWidth: 1,
+    },
+    safetyBadgeText: {
+      fontSize: 10 * fontScale,
+      fontWeight: "700",
+      letterSpacing: 0.5,
+    },
+    thresholdContainer: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      gap: 8,
+    },
+    thresholdLabel: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      fontWeight: "600",
+    },
+    thresholdChipsRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+    thresholdChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    thresholdChipText: {
+      color: colors.text,
+      fontSize: 12 * fontScale,
+      fontWeight: "600",
     },
   });
 }

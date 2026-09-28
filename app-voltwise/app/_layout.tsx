@@ -83,6 +83,19 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen
+          name="data-collection"
+          options={{
+            headerShown: true,
+            title: "Data Collection",
+            headerStyle: { backgroundColor: colors.bg },
+            headerTintColor: colors.text,
+            headerTitleStyle: { fontWeight: "700", fontSize: 18 },
+            headerBackTitle: "",
+            presentation: "card",
+          }}
+        />
+
+        <Stack.Screen
           name="notification-settings"
           options={{
             headerShown: true,

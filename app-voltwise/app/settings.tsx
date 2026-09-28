@@ -46,6 +46,12 @@ const GROUPS: SettingGroup[] = [
     heading: "Data & Devices",
     items: [
       {
+        icon: "flask-outline",
+        title: "Data Collection",
+        subtitle: "Profile appliances, relay control & export CSV",
+        href: "/data-collection",
+      },
+      {
         icon: "hardware-chip-outline",
         title: "Sensor & IoT",
         subtitle: "Pair sensors and manage the MQTT bridge",
@@ -59,6 +65,7 @@ const GROUPS: SettingGroup[] = [
       },
     ],
   },
+
   {
     heading: "Account",
     items: [

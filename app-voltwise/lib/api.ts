@@ -187,6 +187,54 @@ export async function requestMasterShutdown(): Promise<boolean> {
 }
 
 /**
+ * Starts appliance data collection: purges previous readings in DB and turns ON the relay.
+ */
+export async function startDataCollection(payload: {
+  applianceName: string;
+  line?: "high" | "low" | "all";
+  clearReadings?: boolean;
+}): Promise<CollectionStartResponse> {
+  return api.post<CollectionStartResponse>("/iot/collection/start", payload);
+}
+
+/**
+ * Stops appliance data collection and turns OFF the relay.
+ */
+export async function stopDataCollection(line?: "high" | "low" | "all"): Promise<CollectionStopResponse> {
+  return api.post<CollectionStopResponse>("/iot/collection/stop", { line });
+}
+
+/**
+ * Purges all historical energy readings from the database.
+ */
+export async function resetDatabaseReadings(): Promise<{ count: number }> {
+  return api.delete<{ count: number }>("/iot/readings");
+}
+
+/**
+ * Enables or disables the hardware safety cutoff (over-power protection),
+ * optionally adjusting the threshold wattage.
+ */
+export async function setSafetyCutoff(
+  enabled: boolean,
+  thresholdWatts?: number
+): Promise<IotStatus> {
+  return api.post<IotStatus>("/iot/safety", { enabled, thresholdWatts });
+}
+
+/**
+ * Enables or disables the auto-shutdown countdown timer,
+ * optionally adjusting the duration in seconds.
+ */
+export async function setCountdownTimer(
+  enabled: boolean,
+  seconds?: number
+): Promise<IotStatus> {
+  return api.post<IotStatus>("/iot/countdown", { enabled, seconds });
+}
+
+
+/**
  * Resolves a server-relative asset path (e.g. "/uploads/device-3-....jpg")
  * against the backend host. Absolute http(s) and local file:// URIs pass
  * through untouched, so it is safe to call on any imageUri.
@@ -330,13 +378,45 @@ export interface RelayState {
   updatedAt: string;
 }
 
-/** Response of POST /api/iot/relay and GET /api/iot/status. */
+export interface CollectionSession {
+  applianceName: string;
+  deviceId: number | null;
+  startedAt: string;
+  sampleCount: number;
+}
+
+export interface CollectionStartResponse {
+  session: CollectionSession;
+  status: IotStatus;
+  clearedReadingsCount: number;
+}
+
+export interface CollectionStopResponse {
+  applianceName: string;
+  durationSeconds: number;
+  sampleCount: number;
+  status: IotStatus;
+}
+
+export interface SafetyConfig {
+  enabled: boolean;
+  thresholdWatts: number;
+}
+
+export interface CountdownConfig {
+  enabled: boolean;
+  seconds: number;
+}
+
+/** Response of POST /api/iot/relay, POST /api/iot/safety, and GET /api/iot/status. */
 export interface IotStatus {
   /** The sensor the backend ingests from — not necessarily the app's pairing. */
   deviceUid: string;
   online: boolean;
   brokerConnected: boolean;
   relay: RelayState | null;
+  safety?: SafetyConfig | null;
+  countdown?: CountdownConfig | null;
   lastTelemetry: {
     voltage?: number;
     current?: number;
@@ -346,7 +426,9 @@ export interface IotStatus {
     powerFactor?: number;
   } | null;
   lastTelemetryAt: string | null;
+  activeCollection?: CollectionSession | null;
 }
+
 
 /** GET/PUT /api/analytics/tariff — the user's currently effective rate plan. */
 export interface TariffInfo {

@@ -30,6 +30,24 @@ export interface TelemetryPayload {
   powerFactor?: number;
 }
 
+// Active data collection session for isolated appliance profiling
+export interface ActiveCollectionSession {
+  applianceName: string;
+  deviceId: number | null;
+  startedAt: string;
+  sampleCount: number;
+}
+
+export interface SafetyConfig {
+  enabled: boolean;
+  thresholdWatts: number;
+}
+
+export interface CountdownConfig {
+  enabled: boolean;
+  seconds: number;
+}
+
 // Last-known device state, fed by retained status/relay messages + telemetry.
 export interface IotState {
   // The UID this backend ingests from (MQTT_DEVICE_UID). Reported so the app
@@ -39,9 +57,20 @@ export interface IotState {
   brokerConnected: boolean;
   deviceOnline: boolean;
   relay: RelayState | null;
+  safety: SafetyConfig | null;
+  countdown: CountdownConfig | null;
   lastTelemetry: TelemetryPayload | null;
   lastTelemetryAt: string | null;
+  activeCollection?: ActiveCollectionSession | null;
 }
+
+let activeCollection: ActiveCollectionSession | null = null;
+
+export const setActiveCollection = (session: ActiveCollectionSession | null): void => {
+  activeCollection = session;
+};
+
+export const getActiveCollection = (): ActiveCollectionSession | null => activeCollection;
 
 // deviceUid is resolved from env on every read rather than captured here, so
 // the snapshot can never report a UID the topic helpers are no longer using.
@@ -49,9 +78,13 @@ const state: Omit<IotState, "deviceUid"> = {
   brokerConnected: false,
   deviceOnline: false,
   relay: null,
+  safety: { enabled: true, thresholdWatts: 3000 },
+  countdown: { enabled: false, seconds: 1800 },
   lastTelemetry: null,
   lastTelemetryAt: null,
 };
+
+
 
 let client: MqttClient | null = null;
 
@@ -141,7 +174,36 @@ export const handleMessage = async (
       return;
     }
 
+    if (incomingTopic === topic("safety/state")) {
+      const parsed = JSON.parse(payload.toString()) as {
+        enabled?: unknown;
+        thresholdWatts?: unknown;
+      };
+      if (typeof parsed.enabled === "boolean") {
+        state.safety = {
+          enabled: parsed.enabled,
+          thresholdWatts: typeof parsed.thresholdWatts === "number" ? parsed.thresholdWatts : 3000,
+        };
+      }
+      return;
+    }
+
+    if (incomingTopic === topic("countdown/state")) {
+      const parsed = JSON.parse(payload.toString()) as {
+        enabled?: unknown;
+        seconds?: unknown;
+      };
+      if (typeof parsed.enabled === "boolean") {
+        state.countdown = {
+          enabled: parsed.enabled,
+          seconds: typeof parsed.seconds === "number" ? parsed.seconds : 1800,
+        };
+      }
+      return;
+    }
+
     if (incomingTopic === topic("telemetry")) {
+
       const parsed = JSON.parse(payload.toString()) as Record<string, unknown>;
 
       const watts = asFiniteNumber(parsed.watts);
@@ -174,6 +236,10 @@ export const handleMessage = async (
         }
       }
 
+      if (activeCollection) {
+        activeCollection.sampleCount++;
+      }
+
       if (ingestUserId === null) return;
 
       // Optional throttle: skip the insert when the previous one is too
@@ -184,11 +250,13 @@ export const handleMessage = async (
       }
       lastInsertAtMs = now.getTime();
 
-      // deviceId null = whole-home aggregate reading (see EnergyReading dual-use).
+      const deviceIdToAssign = activeCollection ? activeCollection.deviceId : null;
+
+      // deviceId null = whole-home aggregate reading; non-null = tagged to appliance.
       await prisma.energyReading.create({
         data: {
           userId: ingestUserId,
-          deviceId: null,
+          deviceId: deviceIdToAssign,
           timestamp: now,
           watts: telemetry.watts,
           kwh: telemetry.kwh,
@@ -198,6 +266,7 @@ export const handleMessage = async (
           powerFactor: telemetry.powerFactor ?? null,
         },
       });
+
     }
   } catch (error) {
     console.error(`MQTT: failed to handle message on ${incomingTopic}:`, error);
@@ -274,7 +343,13 @@ export const initMqtt = async (): Promise<void> => {
     state.brokerConnected = true;
     console.log(`MQTT: connected to ${url}`);
     client!.subscribe(
-      [topic("telemetry"), topic("relay/state"), topic("status")],
+      [
+        topic("telemetry"),
+        topic("relay/state"),
+        topic("status"),
+        topic("safety/state"),
+        topic("countdown/state"),
+      ],
       { qos: 1 },
       (error) => {
         if (error) console.error("MQTT: subscribe failed:", error);
@@ -312,9 +387,53 @@ export const publishRelayCommand = (on: boolean, line?: PowerLine): void => {
   client.publish(topic("relay/set"), JSON.stringify(payload), { qos: 1 });
 };
 
+// Documentation only: Publishes a safety cutoff configuration command ({ enabled: boolean, thresholdWatts?: number })
+// to the device's safety/set topic at QoS 1.
+export const publishSafetyCommand = (enabled: boolean, thresholdWatts?: number): void => {
+  if (!client || !client.connected) {
+    throw new AppError(503, "IoT broker connection is not available.");
+  }
+
+  const payload: { enabled: boolean; thresholdWatts?: number } = { enabled };
+  if (thresholdWatts !== undefined) {
+    payload.thresholdWatts = thresholdWatts;
+  }
+  client.publish(topic("safety/set"), JSON.stringify(payload), { qos: 1 });
+
+  state.safety = {
+    enabled,
+    thresholdWatts: thresholdWatts ?? state.safety?.thresholdWatts ?? 3000,
+  };
+};
+
+// Documentation only: Publishes an auto-shutdown countdown configuration command ({ enabled: boolean, seconds?: number })
+// to the device's countdown/set topic at QoS 1.
+export const publishCountdownCommand = (enabled: boolean, seconds?: number): void => {
+  if (!client || !client.connected) {
+    throw new AppError(503, "IoT broker connection is not available.");
+  }
+
+  const payload: { enabled: boolean; seconds?: number } = { enabled };
+  if (seconds !== undefined) {
+    payload.seconds = seconds;
+  }
+  client.publish(topic("countdown/set"), JSON.stringify(payload), { qos: 1 });
+
+  state.countdown = {
+    enabled,
+    seconds: seconds ?? state.countdown?.seconds ?? 1800,
+  };
+};
+
+
 // Documentation only: Returns a snapshot of the last-known IoT state for the
 // status endpoint. Copied so callers can't mutate module state.
-export const getIotState = (): IotState => ({ deviceUid: deviceUid(), ...state });
+export const getIotState = (): IotState => ({
+  deviceUid: deviceUid(),
+  ...state,
+  activeCollection,
+});
+
 
 // Documentation only: Cleanly disconnects the MQTT client on shutdown.
 export const closeMqtt = (): void => {
