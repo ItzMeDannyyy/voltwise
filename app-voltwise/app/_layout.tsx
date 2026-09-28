@@ -7,6 +7,7 @@ import { AuthProvider } from "../context/AuthContext";
 import { DemoDataProvider } from "../context/DemoDataContext";
 import { MqttProvider } from "../context/MqttContext";
 import { NotificationProvider } from "../context/NotificationContext";
+import { PowerControlProvider } from "../context/PowerControlContext";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
 import { UnitsProvider } from "../context/UnitsContext";
 
@@ -82,6 +83,19 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen
+          name="data-collection"
+          options={{
+            headerShown: true,
+            title: "Data Collection",
+            headerStyle: { backgroundColor: colors.bg },
+            headerTintColor: colors.text,
+            headerTitleStyle: { fontWeight: "700", fontSize: 18 },
+            headerBackTitle: "",
+            presentation: "card",
+          }}
+        />
+
+        <Stack.Screen
           name="notification-settings"
           options={{
             headerShown: true,
@@ -143,7 +157,9 @@ export default function RootLayout() {
                   {/* Innermost, and dependency-free: a render-time presentation
                       switch the tab screens read. Nothing else consumes it. */}
                   <DemoDataProvider>
-                    <RootLayoutNav />
+                    <PowerControlProvider>
+                      <RootLayoutNav />
+                    </PowerControlProvider>
                   </DemoDataProvider>
                 </NotificationProvider>
               </MqttProvider>

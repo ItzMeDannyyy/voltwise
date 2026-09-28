@@ -283,6 +283,32 @@ const HOUR_SHARES = new Map<string, number[]>(
 /** The demo device inventory, in the order the Devices tab should list it. */
 export const DEMO_DEVICES: ApiDevice[] = PROFILES.map((profile) => profile.device);
 
+export interface DemoPowerLineOptions {
+  highOn?: boolean;
+  lowOn?: boolean;
+}
+
+/** Device line assignments matching physical hardware and breakers */
+export const DEMO_HIGH_LINE_IDS = new Set(["demo-1", "demo-2", "demo-4", "demo-7"]);
+export const DEMO_LOW_LINE_IDS = new Set(["demo-3", "demo-5", "demo-6"]);
+
+export function isDemoDevicePowered(deviceId: string, options?: DemoPowerLineOptions): boolean {
+  const highOn = options?.highOn ?? true;
+  const lowOn = options?.lowOn ?? true;
+  if (DEMO_HIGH_LINE_IDS.has(deviceId)) return highOn;
+  if (DEMO_LOW_LINE_IDS.has(deviceId)) return lowOn;
+  return highOn || lowOn;
+}
+
+export function getDemoCurrentWatts(options?: DemoPowerLineOptions): number {
+  const highOn = options?.highOn ?? true;
+  const lowOn = options?.lowOn ?? true;
+  return PROFILES.reduce((sum, profile) => {
+    const powered = isDemoDevicePowered(profile.device.id, { highOn, lowOn });
+    return sum + (powered ? profile.device.watts : 0);
+  }, 0);
+}
+
 /** Whole-home draw right now: the sum of everything currently running. */
 export const DEMO_CURRENT_WATTS = PROFILES.reduce(
   (sum, profile) => sum + profile.device.watts,
@@ -433,16 +459,26 @@ function dayTotal(now: Date): number {
  * consistent: V x A x PF lands on the same active power the device watts add up
  * to, so nobody doing the arithmetic on stage finds a contradiction.
  */
-export function demoLiveReading(now: Date = new Date()): Reading {
-  const watts = DEMO_CURRENT_WATTS;
-  const voltage = 228.4;
-  const powerFactor = 0.97;
+export function demoLiveReading(
+  now: Date = new Date(),
+  options?: DemoPowerLineOptions
+): Reading {
+  const highOn = options?.highOn ?? true;
+  const lowOn = options?.lowOn ?? true;
+  const masterOn = highOn || lowOn;
+
+  const watts = getDemoCurrentWatts(options);
+  const voltage = masterOn ? 228.4 : 0;
+  const powerFactor = watts > 0 ? 0.97 : 0;
+  const current = watts > 0 ? round(watts / (228.4 * powerFactor), 2) : 0;
+  const frequency = masterOn ? 59.98 : 0;
+
   return {
     voltage,
-    current: round(watts / (voltage * powerFactor), 2),
+    current,
     activePower: watts,
     energy: dayTotal(now),
-    frequency: 59.98,
+    frequency,
     powerFactor,
     timestamp: now.toISOString(),
   };
@@ -451,10 +487,16 @@ export function demoLiveReading(now: Date = new Date()): Reading {
 // ─── Screen payloads ─────────────────────────────────────────────────────────
 
 /** Everything GET /dashboard would return for a well-monitored home. */
-export function demoDashboard(state: RangeState, now: Date = new Date()): DashboardData {
+export function demoDashboard(
+  state: RangeState,
+  now: Date = new Date(),
+  options?: DemoPowerLineOptions
+): DashboardData {
   const { buckets, from, to } = resolveBuckets(state, now);
   const series = buildSeries(buckets, now);
   const labels = buckets.map((bucket) => bucket.label);
+
+  const activeWatts = getDemoCurrentWatts(options);
 
   // Whole-home history is the sum of the device lines, bucket by bucket —
   // derived rather than authored so the two can never drift apart.
@@ -466,21 +508,24 @@ export function demoDashboard(state: RangeState, now: Date = new Date()): Dashbo
   );
 
   return {
-    currentKw: round(DEMO_CURRENT_WATTS / 1000, 2),
+    currentKw: round(activeWatts / 1000, 2),
     totalTodayKwh: dayTotal(now),
-    devices: PROFILES.map((profile) => ({
-      id: profile.device.id,
-      name: profile.device.name,
-      watts: profile.device.watts,
-      active: profile.device.status === "ACTIVE",
-    })),
+    devices: PROFILES.map((profile) => {
+      const powered = isDemoDevicePowered(profile.device.id, options);
+      return {
+        id: profile.device.id,
+        name: profile.device.name,
+        watts: powered ? profile.device.watts : 0,
+        active: powered && profile.device.status === "ACTIVE",
+      };
+    }),
     history: { labels, data: totals },
     deviceHistory: {
       labels,
       series: series.map(({ total: _total, ...rest }) => rest),
     },
     topConsumers: topConsumersFrom(series),
-    reading: demoLiveReading(now),
+    reading: demoLiveReading(now, options),
     iotOnline: true,
     range: {
       period: state.period,
@@ -623,10 +668,13 @@ export function demoAnalytics(state: RangeState, now: Date = new Date()): Analyt
 /** The expanded-card reading for one demo device, or null if it isn't one. */
 export function demoDeviceReading(
   deviceId: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  options?: DemoPowerLineOptions
 ): ApiDeviceReading | null {
   const profile = PROFILES.find((entry) => entry.device.id === deviceId);
   if (!profile) return null;
+
+  const powered = isDemoDevicePowered(deviceId, options);
 
   const { buckets } = resolveBuckets(defaultRangeState("Day", undefined, now), now);
   const todayKwh = round(
@@ -643,14 +691,14 @@ export function demoDeviceReading(
   }
 
   return {
-    watts: profile.device.watts,
+    watts: powered ? profile.device.watts : 0,
     kwh: round(lifetimeKwh, 2),
-    todayKwh,
-    costToday: round(todayKwh * DEMO_RATE, 2),
-    voltage: profile.live.voltage,
-    current: profile.live.current,
-    frequency: profile.live.frequency,
-    powerFactor: profile.live.powerFactor,
+    todayKwh: powered ? todayKwh : 0,
+    costToday: powered ? round(todayKwh * DEMO_RATE, 2) : 0,
+    voltage: powered ? profile.live.voltage : 0,
+    current: powered ? profile.live.current : 0,
+    frequency: powered ? profile.live.frequency : 0,
+    powerFactor: powered ? profile.live.powerFactor : 0,
     timestamp: now.toISOString(),
   };
 }

@@ -50,6 +50,10 @@ export interface DeviceTopics {
   telemetry: string;
   relayState: string;
   relaySet: string;
+  safetyState: string;
+  safetySet: string;
+  countdownState: string;
+  countdownSet: string;
   status: string;
   events: string;
 }
@@ -61,6 +65,10 @@ export function deviceTopics(uid: string): DeviceTopics {
     telemetry: `${base}/telemetry`,
     relayState: `${base}/relay/state`,
     relaySet: `${base}/relay/set`,
+    safetyState: `${base}/safety/state`,
+    safetySet: `${base}/safety/set`,
+    countdownState: `${base}/countdown/state`,
+    countdownSet: `${base}/countdown/set`,
     status: `${base}/status`,
     events: `${base}/events`,
   };

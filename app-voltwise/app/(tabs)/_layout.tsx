@@ -12,10 +12,12 @@ import {
 import * as Haptics from "expo-haptics";
 import DemoFab from "../../components/DemoFab";
 import ConfirmModal from "../../components/ConfirmModal";
+import PowerControlModal from "../../components/PowerControlModal";
 import { api, ApiAlert, ALERTS_CHANGED_EVENT, emitAlertsChanged } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { useMqtt } from "../../context/MqttContext";
 import { useNotifications } from "../../context/NotificationContext";
+import { usePowerControl } from "../../context/PowerControlContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useThemedStyles } from "../../components/themed";
 import type { ThemeColors } from "../../constants/theme";
@@ -107,10 +109,60 @@ function NewLoadPrompt() {
   );
 }
 
+function CenterPowerTabButton({
+  onPress,
+  masterOn,
+}: {
+  onPress: () => void;
+  masterOn: boolean;
+}) {
+  const { colors, fontScale } = useTheme();
+  const styles = useThemedStyles(createCenterButtonStyles);
+
+  return (
+    <Pressable
+      style={styles.container}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+        onPress();
+      }}
+      accessibilityRole="button"
+      accessibilityLabel="Power control dual-line management"
+      accessibilityHint="Opens modal to control high-load, low-load, and master power"
+    >
+      <View
+        style={[
+          styles.circle,
+          {
+            backgroundColor: masterOn ? colors.accentSoft : colors.red + "1A",
+            borderColor: masterOn ? colors.accent : colors.red,
+            shadowColor: masterOn ? colors.accent : colors.red,
+          },
+        ]}
+      >
+        <Ionicons
+          name="power"
+          size={22}
+          color={masterOn ? colors.accent : colors.red}
+        />
+      </View>
+      <Text
+        style={[
+          styles.label,
+          { color: masterOn ? colors.accent : colors.sub },
+        ]}
+      >
+        Power
+      </Text>
+    </Pressable>
+  );
+}
+
 export default function TabLayout() {
   const { isAuthenticated, isBootstrapping } = useAuth();
   const { colors, fontScale } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const { masterOn, isModalVisible, openModal, closeModal } = usePowerControl();
 
   // Auth gate for the protected group: kick back to login on sign-out / 401
   // without requiring an app reload.
@@ -160,6 +212,24 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="power"
+        options={{
+          title: "Power",
+          tabBarButton: () => (
+            <CenterPowerTabButton
+              onPress={openModal}
+              masterOn={masterOn}
+            />
+          ),
+        }}
+        listeners={{
+          tabPress: (e) => {
+            e.preventDefault();
+            openModal();
+          },
+        }}
+      />
+      <Tabs.Screen
         name="alerts"
         options={{
           title: "Alerts",
@@ -183,6 +253,7 @@ export default function TabLayout() {
       </Tabs>
       <DemoFab />
       <NewLoadPrompt />
+      <PowerControlModal visible={isModalVisible} onClose={closeModal} />
     </View>
   );
 }
@@ -209,6 +280,34 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       fontSize: 10 * fontScale,
       fontWeight: "700",
       lineHeight: 14,
+    },
+  });
+}
+
+function createCenterButtonStyles(colors: ThemeColors, fontScale: number) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      top: Platform.OS === "ios" ? -12 : -8,
+    },
+    circle: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      borderWidth: 1.5,
+      alignItems: "center",
+      justifyContent: "center",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.3,
+      shadowRadius: 5,
+      elevation: 5,
+    },
+    label: {
+      fontSize: 10 * fontScale,
+      fontWeight: "600",
+      marginTop: 2,
     },
   });
 }

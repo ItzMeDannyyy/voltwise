@@ -21,13 +21,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { api, ApiDevice, ApiDeviceReading, resolveAssetUrl } from "../../lib/api";
-import { DEMO_DEVICES, demoDeviceReading } from "../../lib/demo-data";
+import { DEMO_DEVICES, DEMO_HIGH_LINE_IDS, DEMO_LOW_LINE_IDS, demoDeviceReading, isDemoDevicePowered } from "../../lib/demo-data";
 import { PullToRefresh, PullToRefreshList } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useTheme } from "../../context/ThemeContext";
 import { useUnits } from "../../context/UnitsContext";
 import { useMqtt } from "../../context/MqttContext";
 import { useDemoData } from "../../context/DemoDataContext";
+import { usePowerControl } from "../../context/PowerControlContext";
 import { linkHealth } from "../../lib/iot-prefs";
 import ConfirmModal from "../../components/ConfirmModal";
 import { useThemedStyles } from "../../components/themed";
@@ -102,6 +103,7 @@ export default function DevicesScreen() {
   const [formEnabled, setFormEnabled] = useState(true);
 
   const { relayState, connected, configured, deviceOnline, telemetryAt } = useMqtt();
+  const { masterOn, highOn, lowOn } = usePowerControl();
 
   // Mirrors the backend rule in devices.controller.ts: power counts as
   // available only on positive evidence — a live link AND a closed relay.
@@ -211,6 +213,14 @@ export default function DevicesScreen() {
       setMasterNoticeVisible(true);
       return;
     }
+    if (demoData && !isDemoDevicePowered(id, { highOn, lowOn })) {
+      const isHigh = DEMO_HIGH_LINE_IDS.has(id);
+      Alert.alert(
+        `${isHigh ? "High Load" : "Low Load"} Line Offline`,
+        `The ${isHigh ? "High" : "Low"} Voltage line is currently turned off in Power Control. Turn it back on to switch this appliance.`
+      );
+      return;
+    }
     // Sample devices are not rows in anyone's database: flip them locally and
     // stop before the PATCH.
     if (demoData) {
@@ -250,17 +260,28 @@ export default function DevicesScreen() {
       .catch(() => {});
   }
 
-  // ── Master-power display override ─────────────────────────────────────────
+  // ── Master-power & dual-line display override ─────────────────────────────
 
-  // While master power is off nothing downstream can be drawing current,
-  // whatever each device's stored `enabled` flag says. This is *display only* —
-  // the flag itself is deliberately left untouched in the database so every
-  // device comes back exactly as the user left it once power returns.
+  // While master power or a specific line is off, nothing downstream can be
+  // drawing current. This is *display only* — the flag itself is deliberately
+  // left untouched so every device returns to state once power returns.
   function effectiveStatus(device: Device): DeviceStatus {
+    if (demoData) {
+      if (!isDemoDevicePowered(device.id, { highOn, lowOn })) {
+        return "UNPOWERED";
+      }
+      return device.status;
+    }
     return masterPowerOff ? "UNPOWERED" : device.status;
   }
 
   function effectiveWatts(device: Device): number {
+    if (demoData) {
+      if (!isDemoDevicePowered(device.id, { highOn, lowOn })) {
+        return 0;
+      }
+      return device.watts;
+    }
     return masterPowerOff ? 0 : device.watts;
   }
 
@@ -462,7 +483,10 @@ export default function DevicesScreen() {
     const isExpanded = expandedId === device.id;
     const status = effectiveStatus(device);
     const watts = effectiveWatts(device);
-    const reading = demoData ? demoDeviceReading(device.id) : liveReadings[device.id];
+    const isUnpowered = masterPowerOff || (demoData && !isDemoDevicePowered(device.id, { highOn, lowOn }));
+    const reading = demoData
+      ? demoDeviceReading(device.id, undefined, { highOn, lowOn })
+      : liveReadings[device.id];
     const isLoading = demoData ? false : loadingReadings[device.id] ?? false;
 
     const elecMetrics =
@@ -512,26 +536,44 @@ export default function DevicesScreen() {
                   over it to catch the tap. */}
               <View>
                 <Switch
-                  value={masterPowerOff ? false : device.enabled}
+                  value={isUnpowered ? false : device.enabled}
                   onValueChange={(val) => handleToggle(device.id, val)}
-                  disabled={masterPowerOff}
+                  disabled={isUnpowered}
                   trackColor={{ false: colors.border, true: colors.accent }}
                   thumbColor={colors.text}
                   ios_backgroundColor={colors.border}
                 />
-                {masterPowerOff && (
+                {isUnpowered && (
                   <TouchableOpacity
                     style={StyleSheet.absoluteFill}
                     activeOpacity={1}
                     accessibilityRole="button"
-                    accessibilityLabel={`${MASTER_OFF_LABEL} — cannot switch on ${device.name}`}
-                    onPress={() => setMasterNoticeVisible(true)}
+                    accessibilityLabel={
+                      masterPowerOff
+                        ? `${MASTER_OFF_LABEL} — cannot switch on ${device.name}`
+                        : `Circuit offline — cannot switch on ${device.name}`
+                    }
+                    onPress={() => {
+                      if (masterPowerOff) {
+                        setMasterNoticeVisible(true);
+                      } else {
+                        const isHigh = DEMO_HIGH_LINE_IDS.has(device.id);
+                        Alert.alert(
+                          `${isHigh ? "High Load" : "Low Load"} Line Offline`,
+                          `The ${isHigh ? "High" : "Low"} Voltage line is currently turned off in Power Control. Turn it back on to switch this appliance.`
+                        );
+                      }
+                    }}
                   />
                 )}
               </View>
-              {masterPowerOff && (
+              {isUnpowered && (
                 <Text style={styles.masterOffText} numberOfLines={2}>
-                  {MASTER_OFF_LABEL}
+                  {masterPowerOff
+                    ? MASTER_OFF_LABEL
+                    : DEMO_HIGH_LINE_IDS.has(device.id)
+                      ? "High Line offline"
+                      : "Low Line offline"}
                 </Text>
               )}
             </View>

@@ -18,8 +18,14 @@ const prismaMock = {
   },
   energyReading: {
     create: jest.fn<AnyFn>(),
+    deleteMany: jest.fn<AnyFn>(),
+  },
+  device: {
+    findFirst: jest.fn<AnyFn>(),
+    create: jest.fn<AnyFn>(),
   },
 };
+
 
 jest.unstable_mockModule("../src/lib/prisma.ts", () => ({
   prisma: prismaMock,
@@ -51,6 +57,9 @@ const { AppError } = await import("../src/lib/AppError.ts");
 const TELEMETRY_TOPIC = "voltwise/esp32-01/telemetry";
 const RELAY_STATE_TOPIC = "voltwise/esp32-01/relay/state";
 const STATUS_TOPIC = "voltwise/esp32-01/status";
+const SAFETY_STATE_TOPIC = "voltwise/esp32-01/safety/state";
+const COUNTDOWN_STATE_TOPIC = "voltwise/esp32-01/countdown/state";
+
 
 // Minimal fake Express response that records status code + JSON body.
 function createRes() {
@@ -270,10 +279,11 @@ describe("initMqtt + relay command publishing", () => {
     connectHandler();
 
     expect(mqttClientMock.subscribe).toHaveBeenCalledWith(
-      [TELEMETRY_TOPIC, RELAY_STATE_TOPIC, STATUS_TOPIC],
+      [TELEMETRY_TOPIC, RELAY_STATE_TOPIC, STATUS_TOPIC, SAFETY_STATE_TOPIC, COUNTDOWN_STATE_TOPIC],
       { qos: 1 },
       expect.any(Function)
     );
+
   });
 
   it("publishes { on } to the relay/set topic at QoS 1 via the service", () => {
@@ -324,6 +334,50 @@ describe("iot controller", () => {
     );
   });
 
+  it("publishes line-specific command for high voltage line", async () => {
+    const req = { body: { on: false, line: "high" } } as unknown as Request;
+    const res = createRes();
+    const next = jest.fn<AnyFn>() as unknown as NextFunction;
+
+    await iotController.setRelay(req, res as unknown as Response, next);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ success: true });
+    expect(mqttClientMock.publish).toHaveBeenCalledWith(
+      "voltwise/esp32-01/relay/set",
+      JSON.stringify({ on: false, line: "high" }),
+      { qos: 1 }
+    );
+  });
+
+  it("publishes line-specific command for low voltage line", async () => {
+    const req = { body: { on: true, line: "low" } } as unknown as Request;
+    const res = createRes();
+    const next = jest.fn<AnyFn>() as unknown as NextFunction;
+
+    await iotController.setRelay(req, res as unknown as Response, next);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ success: true });
+    expect(mqttClientMock.publish).toHaveBeenCalledWith(
+      "voltwise/esp32-01/relay/set",
+      JSON.stringify({ on: true, line: "low" }),
+      { qos: 1 }
+    );
+  });
+
+  it("rejects an invalid line with 400", async () => {
+    const req = { body: { on: true, line: "invalid" } } as unknown as Request;
+    const res = createRes();
+    const next = jest.fn<AnyFn>() as unknown as NextFunction;
+
+    await iotController.setRelay(req, res as unknown as Response, next);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ success: false });
+    expect(mqttClientMock.publish).not.toHaveBeenCalled();
+  });
+
   it("returns the status snapshot from GET /api/iot/status", async () => {
     const req = {} as Request;
     const res = createRes();
@@ -341,4 +395,116 @@ describe("iot controller", () => {
       })
     );
   });
+
+  it("handles POST /api/iot/collection/start: purges readings, turns on relay, and returns session", async () => {
+    prismaMock.energyReading.deleteMany.mockResolvedValue({ count: 42 });
+    prismaMock.device.findFirst.mockResolvedValue({ id: 101, name: "Refrigerator" });
+
+    const req = {
+      user: { id: 7 },
+      body: { applianceName: "Refrigerator", line: "high", clearReadings: true },
+    } as unknown as Request;
+    const res = createRes();
+    const next = jest.fn<AnyFn>() as unknown as NextFunction;
+
+    await iotController.startCollection(req, res as unknown as Response, next);
+
+    expect(res.statusCode).toBe(200);
+    expect(prismaMock.energyReading.deleteMany).toHaveBeenCalled();
+    expect(mqttClientMock.publish).toHaveBeenCalledWith(
+      "voltwise/esp32-01/relay/set",
+      JSON.stringify({ on: true, line: "high" }),
+      { qos: 1 }
+    );
+    const body = res.body as { success: boolean; data: { session: { applianceName: string } } };
+    expect(body.success).toBe(true);
+    expect(body.data.session.applianceName).toBe("Refrigerator");
+  });
+
+  it("handles POST /api/iot/collection/stop: turns off relay and ends session", async () => {
+    const req = {
+      body: { line: "all" },
+    } as unknown as Request;
+    const res = createRes();
+    const next = jest.fn<AnyFn>() as unknown as NextFunction;
+
+    await iotController.stopCollection(req, res as unknown as Response, next);
+
+    expect(res.statusCode).toBe(200);
+    expect(mqttClientMock.publish).toHaveBeenCalledWith(
+      "voltwise/esp32-01/relay/set",
+      JSON.stringify({ on: false, line: "all" }),
+      { qos: 1 }
+    );
+
+    const body = res.body as { success: boolean; data: { durationSeconds: number } };
+    expect(body.success).toBe(true);
+  });
+
+  it("handles DELETE /api/iot/readings: purges all energy readings", async () => {
+    prismaMock.energyReading.deleteMany.mockResolvedValue({ count: 99 });
+    const req = {} as Request;
+    const res = createRes();
+    const next = jest.fn<AnyFn>() as unknown as NextFunction;
+
+    await iotController.resetReadings(req, res as unknown as Response, next);
+
+    expect(res.statusCode).toBe(200);
+    expect(prismaMock.energyReading.deleteMany).toHaveBeenCalled();
+    const body = res.body as { success: boolean; data: { count: number } };
+    expect(body.success).toBe(true);
+    expect(body.data.count).toBe(99);
+  });
+
+  it("handles POST /api/iot/safety: configures safety cutoff feature", async () => {
+    const req = {
+      body: { enabled: false, thresholdWatts: 3500 },
+    } as unknown as Request;
+    const res = createRes();
+    const next = jest.fn<AnyFn>() as unknown as NextFunction;
+
+    await iotController.setSafety(req, res as unknown as Response, next);
+
+    expect(res.statusCode).toBe(200);
+    expect(mqttClientMock.publish).toHaveBeenCalledWith(
+      "voltwise/esp32-01/safety/set",
+      JSON.stringify({ enabled: false, thresholdWatts: 3500 }),
+      { qos: 1 }
+    );
+    const body = res.body as { success: boolean; data: { safety: { enabled: boolean; thresholdWatts: number } } };
+    expect(body.success).toBe(true);
+    expect(body.data.safety.enabled).toBe(false);
+    expect(body.data.safety.thresholdWatts).toBe(3500);
+  });
+
+  it("handles POST /api/iot/countdown: configures auto-shutdown countdown timer", async () => {
+    const req = {
+      body: { enabled: true, seconds: 1800 },
+    } as unknown as Request;
+    const res = createRes();
+    const next = jest.fn<AnyFn>() as unknown as NextFunction;
+
+    await iotController.setCountdown(req, res as unknown as Response, next);
+
+    expect(res.statusCode).toBe(200);
+    expect(mqttClientMock.publish).toHaveBeenCalledWith(
+      "voltwise/esp32-01/countdown/set",
+      JSON.stringify({ enabled: true, seconds: 1800 }),
+      { qos: 1 }
+    );
+    const body = res.body as { success: boolean; data: { countdown: { enabled: boolean; seconds: number } } };
+    expect(body.success).toBe(true);
+    expect(body.data.countdown.enabled).toBe(true);
+    expect(body.data.countdown.seconds).toBe(1800);
+  });
+
+  it("handles incoming countdown/state topic from firmware", async () => {
+    const payload = Buffer.from(JSON.stringify({ enabled: true, seconds: 300 }));
+    await mqttLib.handleMessage("voltwise/esp32-01/countdown/state", payload);
+
+    const state = mqttLib.getIotState();
+    expect(state.countdown).toEqual({ enabled: true, seconds: 300 });
+  });
 });
+
+
