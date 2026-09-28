@@ -25,3 +25,5 @@ Thumbs.db
 password.txt
 
 dump.txt
+
+*.exe
