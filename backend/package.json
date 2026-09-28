@@ -17,6 +17,7 @@
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "build": "prisma generate",
     "start": "ts-node src/index.ts",
     "dev": "node --import ts-node/esm --watch src/index.ts",
     "seed": "node --import ts-node/esm prisma/seed.ts",
@@ -36,7 +37,10 @@
     "jsonwebtoken": "^9.0.3",
     "mqtt": "^5.15.2",
     "multer": "^2.2.0",
-    "pg": "^8.21.0"
+    "pg": "^8.21.0",
+    "prisma": "^7.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -47,7 +51,7 @@
     "@types/node": "^25.9.1",
     "@types/pg": "^8.20.0",
     "jest": "^30.4.2",
-    "prisma": "^7.8.0",
+    "prisma": "^7.10.0",
     "ts-jest": "^29.4.11",
     "ts-node-dev": "^2.0.0",
     "typescript": "^6.0.3"
