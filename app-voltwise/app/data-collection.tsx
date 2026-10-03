@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import ConfirmModal from "../components/ConfirmModal";
 import { ScreenContainer, useThemedStyles } from "../components/themed";
 import { useMqtt } from "../context/MqttContext";
@@ -25,7 +26,14 @@ import {
   resetDatabaseReadings,
   setSafetyCutoff,
   setCountdownTimer,
+  downloadDatabaseReadings,
 } from "../lib/api";
+import {
+  saveActiveSessionBackup,
+  loadActiveSessionBackup,
+  clearActiveSessionBackup,
+  type ActiveSessionBackup,
+} from "../lib/collection-recovery";
 import { saveExport, type SaveResult } from "../lib/export-file";
 import type { ThemeColors } from "../constants/theme";
 
@@ -160,6 +168,19 @@ export default function DataCollectionScreen() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [bufferedReadings, setBufferedReadings] = useState<TelemetryRecord[]>([]);
 
+  // Sleep & Keep Awake settings
+  const [keepAwakeEnabled, setKeepAwakeEnabled] = useState(true);
+  const [nightDimmer, setNightDimmer] = useState(false);
+  const [showOvernightTips, setShowOvernightTips] = useState(false);
+
+  // Persistence & Crash Recovery
+  const [recoveredSession, setRecoveredSession] = useState<ActiveSessionBackup | null>(null);
+  const [exportingRecovered, setExportingRecovered] = useState(false);
+  const [exportingDb, setExportingDb] = useState(false);
+
+  const sessionStartTimeRef = useRef<string | null>(null);
+  const lastSaveCountRef = useRef(0);
+
   // Confirmation modals
   const [confirmStartModal, setConfirmStartModal] = useState(false);
   const [confirmResetOnlyModal, setConfirmResetOnlyModal] = useState(false);
@@ -178,6 +199,47 @@ export default function DataCollectionScreen() {
   isCollectingRef.current = isCollecting;
   const applianceNameRef = useRef(applianceName);
   applianceNameRef.current = applianceName;
+
+  // Keep screen awake while collecting if enabled (prevents phone from sleeping after 30 mins)
+  useEffect(() => {
+    if (isCollecting && keepAwakeEnabled) {
+      void activateKeepAwakeAsync("voltwise-data-collection");
+    } else {
+      void deactivateKeepAwake("voltwise-data-collection");
+    }
+    return () => {
+      void deactivateKeepAwake("voltwise-data-collection");
+    };
+  }, [isCollecting, keepAwakeEnabled]);
+
+  // Load any unsaved backup on screen mount to recover from unexpected app restarts
+  useEffect(() => {
+    let mounted = true;
+    void loadActiveSessionBackup().then((backup) => {
+      if (mounted && backup && backup.records.length > 0) {
+        setRecoveredSession(backup);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Persist readings periodically (every 5 samples) to survive restarts
+  useEffect(() => {
+    if (!isCollecting || bufferedReadings.length === 0) return;
+    if (bufferedReadings.length - lastSaveCountRef.current >= 5) {
+      lastSaveCountRef.current = bufferedReadings.length;
+      void saveActiveSessionBackup({
+        applianceName: applianceNameRef.current.trim() || "Appliance",
+        targetLine,
+        startedAt: sessionStartTimeRef.current || new Date().toISOString(),
+        savedAt: new Date().toISOString(),
+        elapsedSeconds,
+        records: bufferedReadings,
+      });
+    }
+  }, [bufferedReadings, isCollecting, targetLine, elapsedSeconds]);
 
   // Animate recording dot
   useEffect(() => {
@@ -252,6 +314,9 @@ export default function DataCollectionScreen() {
     setCompletedSession(null);
     setBufferedReadings([]);
     setElapsedSeconds(0);
+    sessionStartTimeRef.current = new Date().toISOString();
+    lastSaveCountRef.current = 0;
+    void clearActiveSessionBackup();
 
     try {
       if (Platform.OS !== "web") {
@@ -322,6 +387,8 @@ export default function DataCollectionScreen() {
       }
 
       await stopDataCollection(targetLine);
+      await clearActiveSessionBackup();
+      setNightDimmer(false);
 
       const records = [...bufferedReadings];
       const count = records.length;
@@ -363,6 +430,96 @@ export default function DataCollectionScreen() {
       setNoticeMessage(error instanceof Error ? error.message : "Failed to stop data collection.");
     } finally {
       setStopping(false);
+    }
+  };
+
+  // Export recovered unsaved session from earlier crash or app restart
+  const handleExportRecovered = async () => {
+    if (!recoveredSession) return;
+    setExportingRecovered(true);
+    try {
+      const records = recoveredSession.records;
+      const csvString = generateCsv(records);
+      const cleanName =
+        recoveredSession.applianceName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_") || "recovered";
+      const timestampStr = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const filename = `voltwise_${cleanName}_recovered_${timestampStr}.csv`;
+
+      let saveRes: SaveResult | null = null;
+      try {
+        saveRes = await saveExport(filename, csvString, "csv");
+      } catch (err) {
+        console.warn("Export save error:", err);
+      }
+
+      await clearActiveSessionBackup();
+
+      const count = records.length;
+      const totalWatts = records.reduce((sum, r) => sum + r.watts, 0);
+      const avgWatts = count > 0 ? totalWatts / count : 0;
+      const maxWatts = records.reduce((max, r) => Math.max(max, r.watts), 0);
+      const finalKwh = count > 0 ? records[count - 1].kwh : 0;
+      const startKwh = count > 0 ? records[0].kwh : 0;
+      const consumedKwh = Math.max(0, finalKwh - startKwh);
+
+      setCompletedSession({
+        applianceName: recoveredSession.applianceName,
+        durationSeconds: recoveredSession.elapsedSeconds,
+        sampleCount: count,
+        avgWatts,
+        maxWatts,
+        totalKwh: consumedKwh,
+        csvContent: csvString,
+        filename,
+        exportResult: saveRes,
+      });
+
+      setRecoveredSession(null);
+      setNoticeMessage(`Recovered session (${count} samples) exported successfully!`);
+    } catch (err) {
+      setNoticeMessage(err instanceof Error ? err.message : "Failed to export recovered session.");
+    } finally {
+      setExportingRecovered(false);
+    }
+  };
+
+  // Discard recovered backup
+  const handleDiscardRecovered = async () => {
+    await clearActiveSessionBackup();
+    setRecoveredSession(null);
+    setNoticeMessage("Discarded unsaved session backup.");
+  };
+
+  // Resume recovered session
+  const handleResumeRecovered = () => {
+    if (!recoveredSession) return;
+    setApplianceName(recoveredSession.applianceName);
+    setTargetLine(recoveredSession.targetLine);
+    setBufferedReadings(recoveredSession.records);
+    setElapsedSeconds(recoveredSession.elapsedSeconds);
+    sessionStartTimeRef.current = recoveredSession.startedAt;
+    setIsCollecting(true);
+    setRecoveredSession(null);
+    setNoticeMessage(`Resumed collection with ${recoveredSession.records.length} existing samples.`);
+  };
+
+  // Download directly from server database (fallback if phone died overnight)
+  const handleExportServerDatabase = async () => {
+    setExportingDb(true);
+    try {
+      const csvText = await downloadDatabaseReadings("today");
+      if (!csvText || csvText.trim().split("\n").length <= 1) {
+        setNoticeMessage("No energy readings found in server database for today.");
+        return;
+      }
+      const timestampStr = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const filename = `voltwise_server_db_readings_${timestampStr}.csv`;
+      await saveExport(filename, csvText, "csv");
+      setNoticeMessage("Server database readings downloaded and ready to save.");
+    } catch (err) {
+      setNoticeMessage(err instanceof Error ? err.message : "Failed to download database readings.");
+    } finally {
+      setExportingDb(false);
     }
   };
 
@@ -408,6 +565,46 @@ export default function DataCollectionScreen() {
 
   return (
     <ScreenContainer edges={["bottom"]}>
+      {/* Night Dimmer Fullscreen Overlay when active */}
+      {isCollecting && nightDimmer && (
+        <View style={styles.nightDimmerOverlay}>
+          <View style={styles.nightDimmerContent}>
+            <Ionicons name="moon" size={36} color="#64748b" style={{ marginBottom: 12 }} />
+            <Text style={styles.nightDimmerTitle}>SLEEP LOGGING ACTIVE</Text>
+            <Text style={styles.nightDimmerSub}>Screen stay-awake locked · Phone will not sleep</Text>
+
+            <Text style={styles.nightDimmerTimer}>{formatTime(elapsedSeconds)}</Text>
+
+            <View style={styles.nightDimmerRow}>
+              <Text style={styles.nightDimmerStat}>
+                Appliance: <Text style={{ color: "#94a3b8" }}>{applianceName}</Text>
+              </Text>
+              <Text style={styles.nightDimmerStat}>
+                Samples: <Text style={{ color: "#94a3b8" }}>{bufferedReadings.length}</Text>
+              </Text>
+              <Text style={styles.nightDimmerStat}>
+                Power: <Text style={{ color: "#94a3b8" }}>{currentWatts.toFixed(1)}W</Text>
+              </Text>
+            </View>
+
+            <View style={styles.nightDimmerNotice}>
+              <Ionicons name="flash-outline" size={14} color="#64748b" />
+              <Text style={styles.nightDimmerNoticeText}>
+                Keep phone connected to charger overnight.
+              </Text>
+            </View>
+
+            <Pressable
+              style={styles.nightDimmerExitButton}
+              onPress={() => setNightDimmer(false)}
+            >
+              <Ionicons name="sunny-outline" size={16} color="#94a3b8" style={{ marginRight: 6 }} />
+              <Text style={styles.nightDimmerExitText}>Wake Screen / Exit Dimmer</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {/* ============================================================ */}
         {/* TOP PANEL: MANUAL RELAY CONTROL                             */}
@@ -605,6 +802,52 @@ export default function DataCollectionScreen() {
           </View>
         )}
 
+        {/* Unsaved Session Recovery Banner */}
+        {recoveredSession && !isCollecting && (
+          <View style={styles.recoveryCard}>
+            <View style={styles.recoveryHeader}>
+              <View style={styles.recoveryIconCircle}>
+                <Ionicons name="time" size={20} color={colors.accent} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.recoveryTitle}>Unsaved Session Recovered!</Text>
+                <Text style={styles.recoverySub}>
+                  Found {recoveredSession.records.length} samples for &quot;{recoveredSession.applianceName}&quot; ({formatTime(recoveredSession.elapsedSeconds)}) saved before the app stopped or restarted.
+                </Text>
+              </View>
+            </View>
+            <View style={styles.recoveryActions}>
+              <Pressable
+                style={styles.recoveryExportButton}
+                onPress={handleExportRecovered}
+                disabled={exportingRecovered}
+              >
+                {exportingRecovered ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="download-outline" size={15} color="#fff" style={{ marginRight: 6 }} />
+                    <Text style={styles.recoveryExportText}>Save CSV Now</Text>
+                  </>
+                )}
+              </Pressable>
+              <Pressable
+                style={styles.recoveryResumeButton}
+                onPress={handleResumeRecovered}
+              >
+                <Ionicons name="play" size={14} color={colors.text} style={{ marginRight: 4 }} />
+                <Text style={styles.recoveryResumeText}>Resume Session</Text>
+              </Pressable>
+              <Pressable
+                style={styles.recoveryDiscardButton}
+                onPress={handleDiscardRecovered}
+              >
+                <Text style={styles.recoveryDiscardText}>Discard</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
         {/* ============================================================ */}
         {/* ACTIVE RECORDING VIEW (WHEN COLLECTING)                      */}
         {/* ============================================================ */}
@@ -632,6 +875,32 @@ export default function DataCollectionScreen() {
                 <Text style={styles.activeApplianceText}>
                   Appliance: <Text style={{ fontWeight: "700" }}>{applianceName}</Text>
                 </Text>
+              </View>
+
+              {/* Screen Sleep Lock & Night Dimmer Bar */}
+              <View style={styles.recordingSleepBar}>
+                <View style={styles.sleepBarLeft}>
+                  <Ionicons
+                    name={keepAwakeEnabled ? "eye" : "eye-off-outline"}
+                    size={14}
+                    color={keepAwakeEnabled ? colors.green : colors.sub}
+                  />
+                  <Text
+                    style={[
+                      styles.sleepBarText,
+                      { color: keepAwakeEnabled ? colors.green : colors.sub },
+                    ]}
+                  >
+                    {keepAwakeEnabled ? "Phone Stay-Awake: ACTIVE" : "Awake Lock: OFF"}
+                  </Text>
+                </View>
+                <Pressable
+                  style={styles.nightDimmerBtn}
+                  onPress={() => setNightDimmer(true)}
+                >
+                  <Ionicons name="moon" size={13} color="#fff" style={{ marginRight: 5 }} />
+                  <Text style={styles.nightDimmerBtnText}>Night Dimmer</Text>
+                </Pressable>
               </View>
 
               {/* Big Stopwatch Timer & Samples counter */}
@@ -871,6 +1140,98 @@ export default function DataCollectionScreen() {
                 </View>
               </View>
 
+              {/* Keep Screen Awake Quick Toggle */}
+              <View style={styles.inputGroup}>
+                <View style={styles.safetyBox}>
+                  <View style={{ flex: 1, paddingRight: 10 }}>
+                    <View style={styles.safetyTitleRow}>
+                      <Ionicons
+                        name={keepAwakeEnabled ? "eye" : "eye-off-outline"}
+                        size={17}
+                        color={keepAwakeEnabled ? colors.green : colors.sub}
+                      />
+                      <Text style={styles.safetyBoxTitle}>Keep Phone Awake (No Sleep)</Text>
+                      <View
+                        style={[
+                          styles.safetySmallBadge,
+                          {
+                            backgroundColor:
+                              (keepAwakeEnabled ? colors.green : colors.sub) + "20",
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.safetySmallBadgeText,
+                            { color: keepAwakeEnabled ? colors.green : colors.sub },
+                          ]}
+                        >
+                          {keepAwakeEnabled ? "ON" : "OFF"}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.safetyBoxDesc}>
+                      {keepAwakeEnabled
+                        ? "Prevents phone screen from sleeping after 30 minutes. The app stays awake in foreground to collect data uninterrupted."
+                        : "Disabled. Screen will lock/sleep according to your Android/iOS timeout settings."}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={keepAwakeEnabled}
+                    onValueChange={setKeepAwakeEnabled}
+                    trackColor={{ false: colors.border, true: colors.accent }}
+                    thumbColor={Platform.OS === "android" ? "#ffffff" : undefined}
+                  />
+                </View>
+              </View>
+
+              {/* Overnight Data Collection Advice Accordion */}
+              <View style={styles.inputGroup}>
+                <Pressable
+                  style={styles.overnightTipsHeader}
+                  onPress={() => setShowOvernightTips((prev) => !prev)}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name="moon-outline" size={16} color={colors.accent} />
+                    <Text style={styles.overnightTipsHeaderText}>Overnight Logging Advice & Tips</Text>
+                  </View>
+                  <Ionicons
+                    name={showOvernightTips ? "chevron-up" : "chevron-down"}
+                    size={16}
+                    color={colors.sub}
+                  />
+                </Pressable>
+
+                {showOvernightTips && (
+                  <View style={styles.overnightTipsBody}>
+                    <View style={styles.tipRow}>
+                      <Ionicons name="battery-charging-outline" size={16} color={colors.green} />
+                      <Text style={styles.tipText}>
+                        <Text style={{ fontWeight: "700" }}>Plug in your phone:</Text> Multi-hour logging can drain battery. Keep phone connected to power.
+                      </Text>
+                    </View>
+                    <View style={styles.tipRow}>
+                      <Ionicons name="eye-outline" size={16} color={colors.accent} />
+                      <Text style={styles.tipText}>
+                        <Text style={{ fontWeight: "700" }}>Keep Stay-Awake ON:</Text> Prevents Android/iOS from suspending MQTT and React Native timers.
+                      </Text>
+                    </View>
+                    <View style={styles.tipRow}>
+                      <Ionicons name="moon" size={16} color={colors.amber} />
+                      <Text style={styles.tipText}>
+                        <Text style={{ fontWeight: "700" }}>Night Dimmer Mode:</Text> Once recording starts, tap &quot;Night Dimmer&quot; for an AMOLED black screen (zero screen glare &amp; prevents OLED burn-in).
+                      </Text>
+                    </View>
+                    <View style={styles.tipRow}>
+                      <Ionicons name="phone-portrait-outline" size={16} color={colors.sub} />
+                      <Text style={styles.tipText}>
+                        <Text style={{ fontWeight: "700" }}>Android Setting:</Text> Developer Options → enable &quot;Stay awake while charging&quot; for system-level guarantee.
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+
               {/* Aircon inrush tip banner */}
               {applianceName.toLowerCase().includes("air") && effectiveSafetyEnabled && (
                 <View style={styles.airconTipBanner}>
@@ -1015,6 +1376,37 @@ export default function DataCollectionScreen() {
             </View>
           </View>
         )}
+
+        {/* ============================================================ */}
+        {/* SERVER DATABASE BACKUP EXPORT & CRASH SALVAGE                */}
+        {/* ============================================================ */}
+        <View style={styles.section}>
+          <View style={styles.serverBackupCard}>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                <Ionicons name="cloud-download-outline" size={16} color={colors.accent} />
+                <Text style={styles.serverBackupTitle}>Server Database Backup Export</Text>
+              </View>
+              <Text style={styles.serverBackupSub}>
+                Did your phone reboot or die overnight? Download all readings logged directly by the IoT device to the database today.
+              </Text>
+            </View>
+            <Pressable
+              style={styles.serverBackupButton}
+              onPress={handleExportServerDatabase}
+              disabled={exportingDb || isCollecting}
+            >
+              {exportingDb ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="download-outline" size={14} color="#fff" style={{ marginRight: 4 }} />
+                  <Text style={styles.serverBackupButtonText}>Export DB</Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+        </View>
 
         {/* ============================================================ */}
         {/* STANDALONE DATABASE PURGE UTILITY                            */}
@@ -1691,6 +2083,275 @@ function createStyles(colors: ThemeColors) {
       fontSize: 12,
       lineHeight: 16,
       color: colors.text,
+    },
+
+    // Night Dimmer Fullscreen Overlay
+    nightDimmerOverlay: {
+      ...StyleSheet.absoluteFill,
+      backgroundColor: "#030303",
+      zIndex: 9999,
+      justifyContent: "center",
+      alignItems: "center",
+      padding: 24,
+    },
+    nightDimmerContent: {
+      alignItems: "center",
+      maxWidth: 340,
+      width: "100%",
+    },
+    nightDimmerTitle: {
+      fontSize: 16,
+      fontWeight: "800",
+      color: "#64748b",
+      letterSpacing: 1.5,
+      marginBottom: 4,
+    },
+    nightDimmerSub: {
+      fontSize: 12,
+      color: "#475569",
+      textAlign: "center",
+      marginBottom: 20,
+    },
+    nightDimmerTimer: {
+      fontSize: 54,
+      fontWeight: "800",
+      fontVariant: ["tabular-nums"],
+      color: "#64748b",
+      letterSpacing: 2,
+      marginBottom: 16,
+    },
+    nightDimmerRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "center",
+      gap: 14,
+      marginBottom: 20,
+    },
+    nightDimmerStat: {
+      fontSize: 12,
+      color: "#475569",
+      fontWeight: "600",
+    },
+    nightDimmerNotice: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      backgroundColor: "#0a0a0a",
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: "#1e293b",
+      marginBottom: 24,
+    },
+    nightDimmerNoticeText: {
+      fontSize: 11,
+      color: "#64748b",
+    },
+    nightDimmerExitButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: "#0f172a",
+      borderWidth: 1,
+      borderColor: "#334155",
+      paddingHorizontal: 20,
+      paddingVertical: 12,
+      borderRadius: 12,
+    },
+    nightDimmerExitText: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: "#94a3b8",
+    },
+
+    // Unsaved Session Recovery Card
+    recoveryCard: {
+      backgroundColor: colors.card,
+      borderRadius: 14,
+      padding: 16,
+      borderWidth: 1.5,
+      borderColor: colors.accent,
+      marginBottom: 16,
+    },
+    recoveryHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: 12,
+    },
+    recoveryIconCircle: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.accentSoft,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    recoveryTitle: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    recoverySub: {
+      fontSize: 12,
+      color: colors.sub,
+      lineHeight: 16,
+      marginTop: 2,
+    },
+    recoveryActions: {
+      flexDirection: "row",
+      gap: 8,
+    },
+    recoveryExportButton: {
+      flex: 1.2,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.accent,
+      borderRadius: 8,
+      paddingVertical: 9,
+    },
+    recoveryExportText: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: "#fff",
+    },
+    recoveryResumeButton: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.bg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      paddingVertical: 9,
+    },
+    recoveryResumeText: {
+      fontSize: 12,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    recoveryDiscardButton: {
+      paddingHorizontal: 12,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    recoveryDiscardText: {
+      fontSize: 12,
+      color: colors.sub,
+      fontWeight: "500",
+    },
+
+    // Sleep Lock & Night Dimmer Bar (Recording View)
+    recordingSleepBar: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      backgroundColor: colors.bg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      marginBottom: 16,
+    },
+    sleepBarLeft: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    sleepBarText: {
+      fontSize: 11,
+      fontWeight: "700",
+      letterSpacing: 0.3,
+    },
+    nightDimmerBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.accent,
+      borderRadius: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+    },
+    nightDimmerBtnText: {
+      fontSize: 11,
+      fontWeight: "700",
+      color: "#fff",
+    },
+
+    // Overnight Tips Accordion (Idle Form)
+    overnightTipsHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    overnightTipsHeaderText: {
+      fontSize: 12,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    overnightTipsBody: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderTopWidth: 0,
+      borderColor: colors.border,
+      borderBottomLeftRadius: 10,
+      borderBottomRightRadius: 10,
+      padding: 12,
+      gap: 8,
+    },
+    tipRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 8,
+    },
+    tipText: {
+      flex: 1,
+      fontSize: 11,
+      lineHeight: 16,
+      color: colors.text,
+    },
+
+    // Server Database Backup Card
+    serverBackupCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      backgroundColor: colors.card,
+      borderRadius: 12,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    serverBackupTitle: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    serverBackupSub: {
+      fontSize: 11,
+      color: colors.sub,
+      lineHeight: 15,
+      marginTop: 2,
+    },
+    serverBackupButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.accent,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 8,
+    },
+    serverBackupButtonText: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: "#fff",
     },
   });
 }

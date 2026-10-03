@@ -233,6 +233,11 @@ export async function setCountdownTimer(
   return api.post<IotStatus>("/iot/countdown", { enabled, seconds });
 }
 
+export async function downloadDatabaseReadings(
+  range: "today" | "7d" | "30d" | "all" = "today"
+): Promise<string> {
+  return api.getText(`/export/readings?range=${range}&format=csv`);
+}
 
 /**
  * Resolves a server-relative asset path (e.g. "/uploads/device-3-....jpg")
