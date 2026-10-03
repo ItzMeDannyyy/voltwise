@@ -13,6 +13,7 @@ import {
   Switch,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import ConfirmModal from "../components/ConfirmModal";
 import { PullToRefresh } from "../components/pull-to-refresh";
 import { ScreenContainer, useThemedStyles } from "../components/themed";
@@ -61,6 +62,7 @@ const STATUS_POLL_MS = 15_000;
 const RELAY_TIMEOUT_MS = 10_000;
 
 export default function IotSettingsScreen() {
+  const router = useRouter();
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { formatPower, formatEnergy } = useUnits();
@@ -852,6 +854,26 @@ export default function IotSettingsScreen() {
               </View>
               <Text style={styles.rowValue}>{deviceUid}</Text>
               <Ionicons name="chevron-forward" size={16} color={colors.sub} />
+            </Pressable>
+
+            <Pressable
+              style={[styles.row, styles.rowDivider]}
+              onPress={() => router.push("/iot-provision" as any)}
+              accessibilityRole="button"
+              accessibilityLabel="Connect sensor to Wi-Fi"
+            >
+              <View style={[styles.rowIcon, { backgroundColor: colors.accent + "20" }]}>
+                <Ionicons name="wifi" size={18} color={colors.accent} />
+              </View>
+              <View style={styles.rowBody}>
+                <Text style={[styles.rowTitle, { color: colors.accent, fontWeight: "700" }]}>
+                  Connect Sensor to Wi-Fi
+                </Text>
+                <Text style={styles.rowSubtitle}>
+                  Pair a new ESP32 or update Wi-Fi credentials
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.accent} />
             </Pressable>
 
             {isCustomUid && (

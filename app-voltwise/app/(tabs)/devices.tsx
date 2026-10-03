@@ -712,6 +712,13 @@ export default function DevicesScreen() {
               <Ionicons name="grid-outline" size={20} color={viewMode === "photo" ? colors.accent : colors.sub} />
             </TouchableOpacity>
             <TouchableOpacity
+              style={[styles.viewToggleBtn, { backgroundColor: colors.accentSoft, borderColor: colors.accent + "40" }]}
+              onPress={() => router.push("/iot-provision" as any)}
+              accessibilityLabel="Connect Sensor to Wi-Fi"
+            >
+              <Ionicons name="wifi" size={18} color={colors.accent} />
+            </TouchableOpacity>
+            <TouchableOpacity
               style={styles.addBtn}
               onPress={() => setModalVisible(true)}
               activeOpacity={0.8}

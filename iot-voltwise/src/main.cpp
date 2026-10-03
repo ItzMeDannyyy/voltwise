@@ -8,10 +8,15 @@
 #include <ArduinoJson.h>
 
 #include "secrets.h" // WiFi + HiveMQ credentials + DEVICE_UID (copy from secrets.h.example)
+#include "config_manager.h"
+#include "provisioning_server.h"
 
 // =========================
 // Pin Configuration
 // =========================
+
+// Factory Reset / Setup trigger button pin (ESP32 BOOT button is GPIO 0)
+const int RESET_BUTTON_PIN = 0;
 
 // PZEM UART pins
 const int PZEM_RX_PIN = 16; // ESP32 RX2 receives from PZEM TX
@@ -68,16 +73,28 @@ const unsigned long SHUTDOWN_COUNTDOWN_SECONDS = 30;
 // Network Configuration
 // =========================
 
-// Topics are compile-time concatenations of the device UID from secrets.h.
-// Contract shared with backend (MQTT_DEVICE_UID) and app (EXPO_PUBLIC_MQTT_DEVICE_UID).
-#define TOPIC_TELEMETRY       "voltwise/" DEVICE_UID "/telemetry"
-#define TOPIC_RELAY_STATE     "voltwise/" DEVICE_UID "/relay/state"
-#define TOPIC_RELAY_SET       "voltwise/" DEVICE_UID "/relay/set"
-#define TOPIC_SAFETY_STATE    "voltwise/" DEVICE_UID "/safety/state"
-#define TOPIC_SAFETY_SET      "voltwise/" DEVICE_UID "/safety/set"
-#define TOPIC_COUNTDOWN_STATE "voltwise/" DEVICE_UID "/countdown/state"
-#define TOPIC_COUNTDOWN_SET   "voltwise/" DEVICE_UID "/countdown/set"
-#define TOPIC_STATUS          "voltwise/" DEVICE_UID "/status"
+// Topics are dynamically constructed from the device UID (loaded from NVS or secrets.h).
+String deviceUidStr;
+String topicTelemetry;
+String topicRelayState;
+String topicRelaySet;
+String topicSafetyState;
+String topicSafetySet;
+String topicCountdownState;
+String topicCountdownSet;
+String topicStatus;
+
+void initTopics(const String& uid) {
+  deviceUidStr = uid;
+  topicTelemetry      = "voltwise/" + uid + "/telemetry";
+  topicRelayState     = "voltwise/" + uid + "/relay/state";
+  topicRelaySet       = "voltwise/" + uid + "/relay/set";
+  topicSafetyState    = "voltwise/" + uid + "/safety/state";
+  topicSafetySet      = "voltwise/" + uid + "/safety/set";
+  topicCountdownState = "voltwise/" + uid + "/countdown/state";
+  topicCountdownSet   = "voltwise/" + uid + "/countdown/set";
+  topicStatus         = "voltwise/" + uid + "/status";
+}
 
 
 // Re-issue WiFi.begin() this often while disconnected.
@@ -232,11 +249,52 @@ unsigned long mqttBackoffMs = MQTT_BACKOFF_MIN_MS;
 
 
 // =========================
+// Factory Reset / Setup Button Check
+// =========================
+
+void checkResetButton() {
+  static unsigned long buttonPressStart = 0;
+  static bool buttonWasPressed = false;
+
+  bool isPressed = (digitalRead(RESET_BUTTON_PIN) == LOW);
+
+  if (isPressed) {
+    if (!buttonWasPressed) {
+      buttonWasPressed = true;
+      buttonPressStart = millis();
+    } else {
+      if (millis() - buttonPressStart >= 3000) {
+        Serial.println();
+        Serial.println("==================================================");
+        Serial.println(">>> FACTORY RESET TRIGGERED BY BOOT BUTTON <<<");
+        Serial.println("  Clearing stored Wi-Fi credentials from NVS flash...");
+        ConfigManager::clearConfig();
+        Serial.println("  Starting Provisioning Hotspot...");
+        ProvisioningServer::start();
+        Serial.println("==================================================");
+        buttonWasPressed = false;
+        while (digitalRead(RESET_BUTTON_PIN) == LOW) {
+          delay(10);
+        }
+      }
+    }
+  } else {
+    buttonWasPressed = false;
+  }
+}
+
+
+// =========================
 // Main Setup
 // =========================
 
 void setup() {
   Serial.begin(115200);
+
+  // Initialize NVS storage
+  ConfigManager::begin();
+
+  pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
 
   setupRelays();
 
@@ -251,7 +309,18 @@ void setup() {
   Serial.println("Relay mapping: Pin 25 = Low Power Line, Pin 26 = High Power Line");
   Serial.println("All relays are ON at startup (power flowing).");
 
-  WiFi.mode(WIFI_STA);
+  String uid = ConfigManager::getDeviceUid();
+  initTopics(uid);
+  Serial.print("Device UID loaded: ");
+  Serial.println(uid);
+
+  String ssid = ConfigManager::getWifiSsid();
+  if (ssid.length() == 0) {
+    Serial.println("[WIFI] No Wi-Fi credentials configured. Launching setup AP...");
+    ProvisioningServer::start();
+  } else {
+    WiFi.mode(WIFI_STA);
+  }
 
   secureClient.setCACert(HIVEMQ_ROOT_CA);
   // secureClient.setInsecure(); // TLS debugging ONLY: skips cert validation.
@@ -271,6 +340,14 @@ void setup() {
 // =========================
 
 void loop() {
+  // Check for physical setup trigger (hold BOOT / GPIO 0 for 3 seconds)
+  checkResetButton();
+
+  // If provisioning AP is active, handle HTTP & DNS client requests
+  if (ProvisioningServer::active()) {
+    ProvisioningServer::handleClient();
+  }
+
   static unsigned long lastSensorReadTime = 0;
 
   unsigned long currentTime = millis();
@@ -678,9 +755,23 @@ const char* getRssiQuality(int rssi) {
 }
 
 void maintainWifi() {
+  String currentSsid = ConfigManager::getWifiSsid();
+  String currentPassword = ConfigManager::getWifiPassword();
+
+  if (currentSsid.length() == 0) {
+    if (!ProvisioningServer::active()) {
+      ProvisioningServer::start();
+    }
+    return;
+  }
+
   wl_status_t status = WiFi.status();
 
   if (status == WL_CONNECTED) {
+    if (ProvisioningServer::active()) {
+      ProvisioningServer::stop();
+    }
+
     if (!wifiWasConnected) {
       wifiWasConnected = true;
       wifiConnecting = false;
@@ -713,7 +804,7 @@ void maintainWifi() {
     Serial.println("==================================================");
     Serial.println(" !!! WiFi CONNECTION LOST! !!!");
     Serial.println("==================================================");
-    Serial.print  ("  SSID:       "); Serial.println(WIFI_SSID);
+    Serial.print  ("  SSID:       "); Serial.println(currentSsid);
     Serial.print  ("  Status:     "); Serial.println(getWifiStatusString(status));
     Serial.println("  Next Step:  Attempting reconnection...");
     Serial.println("==================================================");
@@ -734,7 +825,7 @@ void maintainWifi() {
       Serial.println("==================================================");
       Serial.println(" !!! WiFi CONNECTION FAILED! !!!");
       Serial.println("==================================================");
-      Serial.print  ("  SSID:       "); Serial.println(WIFI_SSID);
+      Serial.print  ("  SSID:       "); Serial.println(currentSsid);
       Serial.print  ("  Attempt:    #"); Serial.print(wifiAttemptCount); Serial.println(" failed");
       Serial.print  ("  Status:     "); Serial.println(getWifiStatusString(status));
       if (status == WL_CONNECT_FAILED) {
@@ -744,6 +835,13 @@ void maintainWifi() {
       } else {
         Serial.println("  Diagnosis:  Connection timed out after 15 seconds.");
       }
+
+      // If connection fails 3 times, launch setup hotspot so user can reconfigure
+      if (wifiAttemptCount >= 3 && !ProvisioningServer::active()) {
+        Serial.println("  Auto-Setup: Starting Provisioning Hotspot so you can reconfigure Wi-Fi from phone.");
+        ProvisioningServer::start();
+      }
+
       Serial.print  ("  Next Step:  Retrying in ");
       Serial.print  (WIFI_RETRY_INTERVAL_MS / 1000);
       Serial.println(" seconds...");
@@ -759,7 +857,7 @@ void maintainWifi() {
       lastWifiProgressPrint = now;
       unsigned long elapsedSec = (now - lastWifiAttempt) / 1000;
       Serial.print("[WIFI] Still connecting to \"");
-      Serial.print(WIFI_SSID);
+      Serial.print(currentSsid);
       Serial.print("\"... (");
       Serial.print(elapsedSec);
       Serial.println("s elapsed)");
@@ -780,13 +878,13 @@ void maintainWifi() {
   Serial.println();
   Serial.println("==================================================");
   Serial.print  (" >>> Connecting to WiFi: \"");
-  Serial.print  (WIFI_SSID);
+  Serial.print  (currentSsid);
   Serial.print  ("\" (Attempt #");
   Serial.print  (wifiAttemptCount);
   Serial.println(")... <<<");
   Serial.println("==================================================");
 
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.begin(currentSsid.c_str(), currentPassword.c_str());
 }
 
 
@@ -836,7 +934,7 @@ void maintainMqtt() {
     static unsigned long lastStatusHeartbeat = 0;
     if (now - lastStatusHeartbeat >= 15000) {
       lastStatusHeartbeat = now;
-      mqtt.publish(TOPIC_STATUS, "online", true);
+      mqtt.publish(topicStatus.c_str(), "online", true);
     }
     return;
   }
@@ -856,10 +954,10 @@ void maintainMqtt() {
   // LWT: the broker publishes retained "offline" on our status topic if this
   // client vanishes without a clean disconnect.
   bool connected = mqtt.connect(
-    DEVICE_UID,
+    deviceUidStr.c_str(),
     MQTT_USERNAME,
     MQTT_PASSWORD,
-    TOPIC_STATUS,
+    topicStatus.c_str(),
     1,      // willQoS
     true,   // willRetain
     "offline"
@@ -870,12 +968,12 @@ void maintainMqtt() {
     Serial.println();
     Serial.println("==================================================");
     Serial.println(" >>> MQTT BROKER CONNECTED SUCCESSFULLY! <<<");
-    Serial.print  ("  Device UID: "); Serial.println(DEVICE_UID);
+    Serial.print  ("  Device UID: "); Serial.println(deviceUidStr);
     Serial.print  ("  Host:       "); Serial.println(MQTT_HOST);
     Serial.println("==================================================");
 
     // Publish online status (retained) so backend & app discover the device
-    bool pubStatus = mqtt.publish(TOPIC_STATUS, "online", true);
+    bool pubStatus = mqtt.publish(topicStatus.c_str(), "online", true);
     Serial.print("[MQTT] Published 'online' status: ");
     Serial.println(pubStatus ? "SUCCESS" : "FAILED");
 
@@ -889,19 +987,19 @@ void maintainMqtt() {
     publishCountdownState();
 
     // Subscribe to remote relay control commands
-    mqtt.subscribe(TOPIC_RELAY_SET, 1);
+    mqtt.subscribe(topicRelaySet.c_str(), 1);
     Serial.print("[MQTT] Subscribed to command topic: ");
-    Serial.println(TOPIC_RELAY_SET);
+    Serial.println(topicRelaySet);
 
     // Subscribe to safety cutoff control commands
-    mqtt.subscribe(TOPIC_SAFETY_SET, 1);
+    mqtt.subscribe(topicSafetySet.c_str(), 1);
     Serial.print("[MQTT] Subscribed to safety topic: ");
-    Serial.println(TOPIC_SAFETY_SET);
+    Serial.println(topicSafetySet);
 
     // Subscribe to countdown control commands
-    mqtt.subscribe(TOPIC_COUNTDOWN_SET, 1);
+    mqtt.subscribe(topicCountdownSet.c_str(), 1);
     Serial.print("[MQTT] Subscribed to countdown topic: ");
-    Serial.println(TOPIC_COUNTDOWN_SET);
+    Serial.println(topicCountdownSet);
     Serial.println();
 
   } else {
@@ -920,7 +1018,7 @@ void maintainMqtt() {
 // Payload: {"on": true|false, "line": "high"|"low"|"all"}.
 // Pin 25 = Low Power Line, Pin 26 = High Power Line.
 void onMqttMessage(char* topic, byte* payload, unsigned int length) {
-  if (strcmp(topic, TOPIC_COUNTDOWN_SET) == 0) {
+  if (strcmp(topic, topicCountdownSet.c_str()) == 0) {
     JsonDocument doc;
     DeserializationError parseError = deserializeJson(doc, payload, length);
     if (!parseError && doc["enabled"].is<bool>()) {
@@ -946,7 +1044,7 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  if (strcmp(topic, TOPIC_SAFETY_SET) == 0) {
+  if (strcmp(topic, topicSafetySet.c_str()) == 0) {
     JsonDocument doc;
     DeserializationError parseError = deserializeJson(doc, payload, length);
     if (!parseError && doc["enabled"].is<bool>()) {
@@ -979,7 +1077,7 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  if (strcmp(topic, TOPIC_RELAY_SET) != 0) {
+  if (strcmp(topic, topicRelaySet.c_str()) != 0) {
     return;
   }
 
@@ -1044,7 +1142,7 @@ void publishTelemetry(PowerReadings readings) {
   char buffer[256];
   size_t length = serializeJson(doc, buffer, sizeof(buffer));
 
-  if (!mqtt.publish(TOPIC_TELEMETRY, (const uint8_t*)buffer, length, false)) {
+  if (!mqtt.publish(topicTelemetry.c_str(), (const uint8_t*)buffer, length, false)) {
     Serial.println("Telemetry publish failed (check MQTT buffer size / connection).");
   }
 }
@@ -1065,7 +1163,7 @@ void publishRelayState() {
   size_t length = serializeJson(doc, buffer, sizeof(buffer));
 
   // Retained: subscribers get the current relay state immediately on connect.
-  if (!mqtt.publish(TOPIC_RELAY_STATE, (const uint8_t*)buffer, length, true)) {
+  if (!mqtt.publish(topicRelayState.c_str(), (const uint8_t*)buffer, length, true)) {
     Serial.println("Relay state publish failed (check MQTT buffer size / connection).");
   }
 }
@@ -1084,7 +1182,7 @@ void publishSafetyState() {
   size_t length = serializeJson(doc, buffer, sizeof(buffer));
 
   // Retained: subscribers get the safety cutoff state immediately on connect.
-  if (!mqtt.publish(TOPIC_SAFETY_STATE, (const uint8_t*)buffer, length, true)) {
+  if (!mqtt.publish(topicSafetyState.c_str(), (const uint8_t*)buffer, length, true)) {
     Serial.println("Safety state publish failed (check MQTT buffer size / connection).");
   }
 }
@@ -1103,7 +1201,7 @@ void publishCountdownState() {
   size_t length = serializeJson(doc, buffer, sizeof(buffer));
 
   // Retained: subscribers get the countdown state immediately on connect.
-  if (!mqtt.publish(TOPIC_COUNTDOWN_STATE, (const uint8_t*)buffer, length, true)) {
+  if (!mqtt.publish(topicCountdownState.c_str(), (const uint8_t*)buffer, length, true)) {
     Serial.println("Countdown state publish failed (check MQTT buffer size / connection).");
   }
 }

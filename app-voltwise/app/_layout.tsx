@@ -71,6 +71,18 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen
+          name="iot-provision"
+          options={{
+            headerShown: true,
+            title: "Connect Device to Wi-Fi",
+            headerStyle: { backgroundColor: colors.bg },
+            headerTintColor: colors.text,
+            headerTitleStyle: { fontWeight: "700", fontSize: 18 },
+            headerBackTitle: "",
+            presentation: "card",
+          }}
+        />
+        <Stack.Screen
           name="data-settings"
           options={{
             headerShown: true,
