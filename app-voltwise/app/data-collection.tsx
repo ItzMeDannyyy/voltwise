@@ -860,7 +860,7 @@ export default function DataCollectionScreen() {
                   <Animated.View
                     style={[styles.recordingDot, { opacity: pulseAnim }]}
                   />
-                  <Text style={styles.recordingTitle}>RECORDING TELEMETRY</Text>
+                  <Text style={styles.recordingTitle}>RECORDING APPLIANCE USAGE</Text>
                 </View>
                 <View style={styles.targetBadge}>
                   <Text style={styles.targetBadgeText}>
@@ -1289,7 +1289,7 @@ export default function DataCollectionScreen() {
                 <View style={{ flex: 1, marginLeft: 10 }}>
                   <Text style={styles.summaryTitle}>Collection Complete & Saved!</Text>
                   <Text style={styles.summarySub}>
-                    Dataset ready for NILM & Machine Learning profiling.
+                    Appliance signature recorded and ready for smart device recognition.
                   </Text>
                 </View>
               </View>
@@ -1414,9 +1414,9 @@ export default function DataCollectionScreen() {
         <View style={styles.section}>
           <View style={styles.dangerZoneCard}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.dangerZoneTitle}>Reset Database Readings</Text>
+              <Text style={styles.dangerZoneTitle}>Reset Stored Readings</Text>
               <Text style={styles.dangerZoneSub}>
-                Purge all energy records without starting a collection session.
+                Clear all energy records without starting a collection session.
               </Text>
             </View>
             <Pressable
@@ -1427,7 +1427,7 @@ export default function DataCollectionScreen() {
               {resettingDb ? (
                 <ActivityIndicator size="small" color={colors.red} />
               ) : (
-                <Text style={styles.dangerResetButtonText}>Purge DB</Text>
+                <Text style={styles.dangerResetButtonText}>Clear History</Text>
               )}
             </Pressable>
           </View>
@@ -1439,8 +1439,8 @@ export default function DataCollectionScreen() {
         visible={confirmStartModal}
         icon="alert-circle"
         title="Start Data Collection?"
-        message={`This will permanently purge previous energy readings in the database, energize the relay module, and begin logging telemetry for "${applianceName}". Ready to proceed?`}
-        confirmText="Start & Turn ON Relay"
+        message={`This will clear previous energy readings, turn on power to the circuit, and begin recording power data for "${applianceName}". Ready to proceed?`}
+        confirmText="Start & Turn On Power"
         cancelText="Cancel"
         onConfirm={handleConfirmStart}
         onCancel={() => setConfirmStartModal(false)}
@@ -1451,9 +1451,9 @@ export default function DataCollectionScreen() {
         visible={confirmResetOnlyModal}
         destructive
         icon="trash"
-        title="Purge All Energy Readings?"
-        message="Are you sure you want to delete all historical energy readings from the database? This action cannot be undone."
-        confirmText="Yes, Purge Database"
+        title="Clear All Energy Readings?"
+        message="Are you sure you want to delete all historical energy readings from storage? This action cannot be undone."
+        confirmText="Yes, Clear History"
         cancelText="Cancel"
         onConfirm={handleConfirmResetOnly}
         onCancel={() => setConfirmResetOnlyModal(false)}

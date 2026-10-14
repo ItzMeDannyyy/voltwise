@@ -23,6 +23,11 @@ export interface PowerControlContextValue {
   /** Low Voltage / Low Load Line state (10A relays: Smart TV, Rice Cooker, Chargers, Lights) */
   lowOn: boolean;
 
+  /** True while the 3-second staggered inrush protection is actively energizing lines */
+  isStaggering: boolean;
+  /** Inrush protection stagger interval in seconds (default 3) */
+  staggerSeconds: number;
+
   /** True while a relay command is in flight */
   pending: boolean;
   /** Target currently executing a command, or null */
@@ -76,22 +81,50 @@ export function PowerControlProvider({ children }: { children: ReactNode }) {
   // Standalone states for Demo Mode
   const [demoHighOn, setDemoHighOn] = useState(true);
   const [demoLowOn, setDemoLowOn] = useState(true);
+  const [demoStaggering, setDemoStaggering] = useState(false);
+  const demoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Stagger state: either hardware reports staggering over MQTT, or Demo Mode stagger is active
+  const isHardwareStaggering = relayState?.staggering === true;
+  const isStaggering = demoData ? demoStaggering : isHardwareStaggering;
+  const staggerSeconds = relayState?.staggerSeconds ?? 3;
 
   // Reconcile optimistic values when the firmware confirms state over MQTT
   useEffect(() => {
     if (relayState === null) return;
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    setLocalHighOn(null);
-    setLocalLowOn(null);
-    setPending(false);
-    setPendingTarget(null);
+
+    if (relayState.staggering) {
+      // In the middle of staggered power-up!
+      // Low line is confirmed ON, High line is scheduled in 3s.
+      // Keep pending active to prevent user double-clicks and avoid false "OFF" flicker.
+      setLocalLowOn(true);
+      setLocalHighOn(false);
+      setPending(true);
+      setPendingTarget("all");
+
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => {
+        setLocalHighOn(null);
+        setLocalLowOn(null);
+        setPending(false);
+        setPendingTarget(null);
+      }, (relayState.staggerSeconds ?? 3) * 1000 + 2000);
+    } else {
+      // Normal confirmation or stagger completed
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      setLocalHighOn(null);
+      setLocalLowOn(null);
+      setPending(false);
+      setPendingTarget(null);
+    }
   }, [relayState]);
 
   useEffect(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (demoTimeoutRef.current) clearTimeout(demoTimeoutRef.current);
     };
   }, []);
 
@@ -110,7 +143,7 @@ export function PowerControlProvider({ children }: { children: ReactNode }) {
     return relayState?.on ?? true;
   }, [demoData, demoLowOn, localLowOn, relayState]);
 
-  const effectiveMasterOn = effectiveHighOn || effectiveLowOn;
+  const effectiveMasterOn = effectiveHighOn || effectiveLowOn || isStaggering;
 
   const openModal = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -133,16 +166,41 @@ export function PowerControlProvider({ children }: { children: ReactNode }) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
       setError(null);
 
-      // 1. Sample Data Demo Mode: instant local toggle to demo the feature
+      // 1. Sample Data Demo Mode: match 3-second stagger feature!
       if (demoData) {
-        setDemoHighOn(next);
-        setDemoLowOn(next);
+        if (next) {
+          setDemoLowOn(true);
+          setDemoHighOn(false);
+          setDemoStaggering(true);
+          setPending(true);
+          setPendingTarget("all");
+          if (demoTimeoutRef.current) clearTimeout(demoTimeoutRef.current);
+          demoTimeoutRef.current = setTimeout(() => {
+            setDemoHighOn(true);
+            setDemoStaggering(false);
+            setPending(false);
+            setPendingTarget(null);
+          }, 3000);
+        } else {
+          if (demoTimeoutRef.current) clearTimeout(demoTimeoutRef.current);
+          setDemoStaggering(false);
+          setDemoHighOn(false);
+          setDemoLowOn(false);
+          setPending(false);
+          setPendingTarget(null);
+        }
         return;
       }
 
       // 2. Hardware Live Mode: dispatch to ESP32 dual relays via MQTT
-      setLocalHighOn(next);
-      setLocalLowOn(next);
+      if (next) {
+        // Toggling Master ON: Low line energizes immediately, High line staggers in 3s
+        setLocalLowOn(true);
+        setLocalHighOn(false);
+      } else {
+        setLocalLowOn(false);
+        setLocalHighOn(false);
+      }
       setPending(true);
       setPendingTarget("all");
 
@@ -260,6 +318,8 @@ export function PowerControlProvider({ children }: { children: ReactNode }) {
       masterOn: effectiveMasterOn,
       highOn: effectiveHighOn,
       lowOn: effectiveLowOn,
+      isStaggering,
+      staggerSeconds,
       pending,
       pendingTarget,
       error,
@@ -277,6 +337,8 @@ export function PowerControlProvider({ children }: { children: ReactNode }) {
       effectiveMasterOn,
       effectiveHighOn,
       effectiveLowOn,
+      isStaggering,
+      staggerSeconds,
       pending,
       pendingTarget,
       error,

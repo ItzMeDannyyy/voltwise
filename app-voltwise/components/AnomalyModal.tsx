@@ -142,7 +142,7 @@ export function AnomalyModal({
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.skipBtn} onPress={onSkip}>
-            <Text style={styles.skipText}>Skip Alert</Text>
+            <Text style={styles.skipText}>{showCountdown ? "Keep Power On" : "Dismiss"}</Text>
           </TouchableOpacity>
         </View>
       </View>

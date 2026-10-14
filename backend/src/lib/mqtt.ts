@@ -17,6 +17,8 @@ export interface RelayState {
   reason: string; // "boot" | "remote" | "overpower" | "countdown"
   highOn?: boolean;
   lowOn?: boolean;
+  staggering?: boolean;
+  staggerSeconds?: number;
   updatedAt: string;
 }
 
@@ -162,6 +164,8 @@ export const handleMessage = async (
         reason?: unknown;
         highOn?: unknown;
         lowOn?: unknown;
+        staggering?: unknown;
+        staggerSeconds?: unknown;
       };
       if (typeof parsed.on !== "boolean") return;
       state.relay = {
@@ -169,6 +173,8 @@ export const handleMessage = async (
         reason: typeof parsed.reason === "string" ? parsed.reason : "unknown",
         highOn: typeof parsed.highOn === "boolean" ? parsed.highOn : parsed.on,
         lowOn: typeof parsed.lowOn === "boolean" ? parsed.lowOn : parsed.on,
+        staggering: typeof parsed.staggering === "boolean" ? parsed.staggering : false,
+        staggerSeconds: typeof parsed.staggerSeconds === "number" ? parsed.staggerSeconds : 3,
         updatedAt: new Date().toISOString(),
       };
       return;

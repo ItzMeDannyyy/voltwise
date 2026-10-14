@@ -133,6 +133,8 @@ export default function DashboardScreen() {
     masterOn,
     highOn,
     lowOn,
+    isStaggering,
+    staggerSeconds,
     pending: powerPending,
     isOffline: powerOffline,
     toggleMaster,
@@ -312,9 +314,9 @@ export default function DashboardScreen() {
 
   // Master relay display state driven by unified PowerControlContext
   const relayOn = masterOn;
-  const relayPending = powerPending;
+  const relayPending = powerPending || isStaggering;
   const relayReasonLabel = relayOn
-    ? "Power is flowing to your loads"
+    ? "Power is connected to your appliances"
     : RELAY_REASON_LABELS[relayState?.reason ?? ""] ?? "All circuits powered off";
 
   // Button is ONLY clickable if in Demo Mode OR if IoT is reachable:
@@ -324,25 +326,35 @@ export default function DashboardScreen() {
     ? iotState === "unknown"
       ? "..."
       : "OFFLINE"
-    : relayOn
-      ? "ON"
-      : "CLOSE";
+    : isStaggering
+      ? "WAIT"
+      : relayPending
+        ? "..."
+        : relayOn
+          ? "ON"
+          : "TURN ON";
 
   const relaySubtitle = demoData
-    ? `Sample Data Demo — ${relayOn ? "whole-home power simulated" : "all circuits de-energized"}`
+    ? isStaggering
+      ? `Sample Data Demo — Inrush protection active (Line 1 energizing in ${staggerSeconds || 3}s)...`
+      : `Sample Data Demo — ${relayOn ? "whole-home power simulated" : "all circuits turned off"}`
     : !iotReachable
       ? iotState === "unknown"
         ? "Checking device..."
         : `${iotState === "offline" ? "Device offline" : "No live link to device"} · control unavailable`
-      : relayPending
-        ? "Waiting for device confirmation..."
-        : relayReasonLabel;
+      : isStaggering
+        ? `Inrush protection active — Line 1 energizing in ${staggerSeconds || 3}s...`
+        : relayPending
+          ? "Waiting for device confirmation..."
+          : relayReasonLabel;
 
   const relayTint = !iotReachable && !demoData
     ? colors.sub
-    : relayOn
-      ? colors.accent
-      : colors.red;
+    : isStaggering
+      ? colors.yellow
+      : relayOn
+        ? colors.accent
+        : colors.red;
 
   const iotPill: { label: string; status: PillStatus } =
     iotState === "live"
@@ -545,11 +557,17 @@ export default function DashboardScreen() {
                 <View
                   style={[
                     styles.lineBadgeDot,
-                    { backgroundColor: highOn ? colors.green : colors.red },
+                    {
+                      backgroundColor: isStaggering
+                        ? colors.yellow
+                        : highOn
+                          ? colors.green
+                          : colors.red,
+                    },
                   ]}
                 />
                 <Text style={styles.lineBadgeText}>
-                  High: {highOn ? "ON" : "OFF"}
+                  High: {isStaggering ? `WAIT (${staggerSeconds || 3}s)` : highOn ? "ON" : "OFF"}
                 </Text>
               </View>
               <View style={styles.lineBadgeItem}>

@@ -293,8 +293,8 @@ export default function IotProvisionScreen() {
                 <Text style={styles.instructionBadge}>1</Text>
                 <Text style={styles.instructionText}>
                   Ensure your VoltWise device is powered on. If the hotspot is not
-                  visible, hold the <Text style={styles.bold}>BOOT</Text> button on
-                  the ESP32 for 3 seconds.
+                  visible, hold the <Text style={styles.bold}>Setup</Text> button (marked BOOT on
+                  the device) for 3 seconds.
                 </Text>
               </View>
 
@@ -506,7 +506,7 @@ export default function IotProvisionScreen() {
                 />
               </View>
               <Text style={styles.hintText}>
-                Identifies this sensor on HiveMQ Cloud. Defaults to the hardware factory ID.
+                Identifies this sensor in your VoltWise cloud account. Defaults to the hardware factory ID.
               </Text>
             </View>
 

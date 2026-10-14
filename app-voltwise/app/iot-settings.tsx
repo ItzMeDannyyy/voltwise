@@ -430,7 +430,7 @@ export default function IotSettingsScreen() {
               styles={styles}
               colors={colors}
               icon="phone-portrait-outline"
-              label="This app to broker"
+              label="App to cloud connection"
               value={connected ? "Connected" : configured ? "Disconnected" : "Disabled"}
               tone={connected ? "good" : configured ? "bad" : "muted"}
             />
@@ -438,7 +438,7 @@ export default function IotSettingsScreen() {
               styles={styles}
               colors={colors}
               icon="server-outline"
-              label="Server to broker"
+              label="Server to cloud connection"
               value={
                 statusError !== null
                   ? "Server unreachable"
@@ -482,7 +482,7 @@ export default function IotSettingsScreen() {
                 style={[styles.row, styles.rowDivider]}
                 onPress={reconnect}
                 accessibilityRole="button"
-                accessibilityLabel="Reconnect to the broker"
+                accessibilityLabel="Reconnect to cloud"
               >
                 <View style={styles.rowIcon}>
                   <Ionicons name="refresh" size={18} color={colors.accent} />
@@ -490,7 +490,7 @@ export default function IotSettingsScreen() {
                 <View style={styles.rowBody}>
                   <Text style={[styles.rowTitle, { color: colors.accent }]}>Reconnect</Text>
                   <Text style={styles.rowSubtitle}>
-                    Drop the broker connection and dial in again
+                    Disconnect and test cloud connection again
                   </Text>
                 </View>
               </Pressable>
@@ -498,7 +498,7 @@ export default function IotSettingsScreen() {
           </View>
 
           {lastError !== null && (
-            <Text style={styles.footnote}>Last broker error: {lastError}</Text>
+            <Text style={styles.footnote}>Last connection error: {lastError}</Text>
           )}
         </View>
 
@@ -896,7 +896,7 @@ export default function IotSettingsScreen() {
 
           {/* Discovery is passive: every board's status topic is retained, so
               subscribing to the wildcard lists them without asking anything. */}
-          <Text style={[styles.groupHeading, styles.subHeading]}>Sensors on the broker</Text>
+          <Text style={[styles.groupHeading, styles.subHeading]}>Sensors on network</Text>
           <View style={styles.card}>
             {discovered.length === 0 ? (
               <View style={styles.empty}>
@@ -904,9 +904,9 @@ export default function IotSettingsScreen() {
                 <Text style={styles.emptyText}>
                   {configured
                     ? connected
-                      ? "No sensors have announced themselves yet. A board appears here the first time it connects."
-                      : "Connect to the broker to see the sensors on it."
-                    : "Broker credentials are not built into this app, so sensors cannot be discovered."}
+                      ? "No sensors have announced themselves yet. A device appears here the first time it connects."
+                      : "Connect to the cloud to see sensors on the network."
+                    : "Cloud credentials are not configured, so sensors cannot be discovered automatically."}
                 </Text>
               </View>
             ) : (
@@ -959,7 +959,7 @@ export default function IotSettingsScreen() {
             )}
           </View>
           <Text style={styles.footnote}>
-            The ID must match DEVICE_UID in the sensor&apos;s firmware. Changing it here only
+            The ID must match the Sensor ID on your physical device label or setup guide. Changing it here only
             affects this device — the server keeps recording from the sensor it was configured
             with.
           </Text>
@@ -969,7 +969,7 @@ export default function IotSettingsScreen() {
         <View style={styles.group}>
           <Text style={styles.groupHeading}>Diagnostics</Text>
           <View style={styles.card}>
-            <InfoRow styles={styles} label="Broker" value={broker ?? "Not configured"} />
+            <InfoRow styles={styles} label="Cloud Server" value={broker ?? "Not configured"} />
             <InfoRow
               styles={styles}
               label="Server records from"
@@ -1017,7 +1017,7 @@ export default function IotSettingsScreen() {
 
               <Text style={styles.modalTitle}>Sensor ID</Text>
               <Text style={styles.modalMessage}>
-                Enter the DEVICE_UID the board publishes under. This device will follow that
+                Enter the Sensor ID found on your hardware monitor or packaging. This device will follow that
                 sensor instead.
               </Text>
 

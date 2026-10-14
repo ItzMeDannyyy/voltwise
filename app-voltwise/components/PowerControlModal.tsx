@@ -8,7 +8,6 @@ import {
   Pressable,
   ScrollView,
   Platform,
-  Switch,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
@@ -22,6 +21,94 @@ export interface PowerControlModalProps {
   onClose: () => void;
 }
 
+interface PowerSwitchProps {
+  on: boolean;
+  offline: boolean;
+  pending: boolean;
+  staggering?: boolean;
+  onPress: () => void;
+  disabled?: boolean;
+  accessibilityLabel: string;
+  colors: ThemeColors;
+  fontScale: number;
+  styles: ReturnType<typeof createStyles>;
+}
+
+function PowerSwitch({
+  on,
+  offline,
+  pending,
+  staggering,
+  onPress,
+  disabled,
+  accessibilityLabel,
+  colors,
+  fontScale,
+  styles,
+}: PowerSwitchProps) {
+  const switchColor = offline
+    ? colors.sub
+    : staggering
+      ? colors.amber
+      : on
+        ? colors.green
+        : colors.red;
+
+  const switchBg = offline
+    ? colors.surface
+    : staggering
+      ? colors.amber + "1F"
+      : on
+        ? colors.green + "1F"
+        : colors.red + "1F";
+
+  const label = offline ? "OFFLINE" : staggering ? "WAIT 3s" : on ? "ON" : "OFF";
+  const labelFontSize = (offline || staggering ? 9 : 11) * fontScale;
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.powerSwitchBtn,
+        {
+          borderColor: offline ? colors.border : switchColor,
+          backgroundColor: switchBg,
+          opacity: offline ? 0.45 : disabled && !pending ? 0.6 : 1,
+        },
+      ]}
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled: Boolean(disabled), checked: on }}
+    >
+      {pending ? (
+        <ActivityIndicator size="small" color={switchColor} />
+      ) : (
+        <>
+          <Ionicons
+            name={offline ? "cloud-offline" : "power"}
+            size={offline ? 18 : 20}
+            color={switchColor}
+          />
+          <Text
+            style={[
+              styles.powerSwitchLabel,
+              {
+                color: switchColor,
+                fontSize: labelFontSize,
+              },
+            ]}
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+        </>
+      )}
+    </TouchableOpacity>
+  );
+}
+
 export default function PowerControlModal({ visible, onClose }: PowerControlModalProps) {
   const { colors, fontScale } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -30,6 +117,8 @@ export default function PowerControlModal({ visible, onClose }: PowerControlModa
     masterOn,
     highOn,
     lowOn,
+    isStaggering,
+    staggerSeconds,
     pending,
     pendingTarget,
     error,
@@ -42,20 +131,28 @@ export default function PowerControlModal({ visible, onClose }: PowerControlModa
   } = usePowerControl();
 
   const isAllOn = highOn && lowOn;
-  const isAllOff = !highOn && !lowOn;
-  const isPartial = !isAllOn && !isAllOff;
+  const isAllOff = !highOn && !lowOn && !isStaggering;
+  const isPartial = !isAllOn && !isAllOff && !isStaggering;
 
-  const statusLabel = isAllOn
-    ? "Both Lines Active"
-    : isPartial
-      ? "Partial Load Active"
-      : "All Lines De-energized";
+  const statusLabel = !canControl
+    ? "Sensors Offline"
+    : isStaggering
+      ? `Inrush Protection: Staggering (${staggerSeconds}s)...`
+      : isAllOn
+        ? "Both Lines Active"
+        : isPartial
+          ? "Partial Power Active"
+          : "All Circuits Turned Off";
 
-  const statusColor = isAllOn
-    ? colors.accent
-    : isPartial
+  const statusColor = !canControl
+    ? colors.sub
+    : isStaggering
       ? colors.amber
-      : colors.red;
+      : isAllOn
+        ? colors.green
+        : isPartial
+          ? colors.amber
+          : colors.red;
 
   // Buttons and switches are disabled when offline and not in demo mode
   const controlsDisabled = !canControl || pending;
@@ -203,21 +300,44 @@ export default function PowerControlModal({ visible, onClose }: PowerControlModa
             {/* ========================================================================= */}
             {/* MASTER POWER CARD (SIMULTANEOUS CONTROL) */}
             {/* ========================================================================= */}
-            <View style={[styles.masterCard, { borderColor: masterOn ? colors.accent + "50" : colors.border }]}>
-              <View style={styles.masterCardHeader}>
+            <View
+              style={[
+                styles.masterCard,
+                {
+                  borderColor: !canControl
+                    ? colors.border
+                    : masterOn
+                      ? colors.green + "50"
+                      : colors.border,
+                },
+              ]}
+            >
+              <View style={styles.masterCardContent}>
                 <View
                   style={[
                     styles.masterIconHalo,
                     {
-                      backgroundColor: masterOn ? colors.accentSoft : colors.surface,
-                      borderColor: masterOn ? colors.accent : colors.border,
+                      backgroundColor: !canControl
+                        ? colors.surface
+                        : isStaggering
+                          ? "#f59e0b20"
+                          : masterOn
+                            ? colors.green + "20"
+                            : colors.surface,
+                      borderColor: !canControl
+                        ? colors.border
+                        : isStaggering
+                          ? "#f59e0b"
+                          : masterOn
+                            ? colors.green
+                            : colors.border,
                     },
                   ]}
                 >
                   <Ionicons
-                    name="power"
-                    size={28}
-                    color={masterOn ? colors.accent : colors.inactive}
+                    name={!canControl ? "cloud-offline" : "flash"}
+                    size={22}
+                    color={!canControl ? colors.inactive : isStaggering ? "#f59e0b" : masterOn ? colors.green : colors.inactive}
                   />
                 </View>
 
@@ -228,87 +348,64 @@ export default function PowerControlModal({ visible, onClose }: PowerControlModa
                       style={[
                         styles.badge,
                         {
-                          backgroundColor: masterOn ? colors.accent + "22" : colors.red + "22",
-                          borderColor: masterOn ? colors.accent : colors.red,
+                          backgroundColor: !canControl
+                            ? colors.surface
+                            : isStaggering
+                              ? "#f59e0b22"
+                              : masterOn
+                                ? colors.green + "22"
+                                : colors.red + "22",
+                          borderColor: !canControl
+                            ? colors.border
+                            : isStaggering
+                              ? "#f59e0b"
+                              : masterOn
+                                ? colors.green
+                                : colors.red,
                         },
                       ]}
                     >
                       <Text
                         style={[
                           styles.badgeText,
-                          { color: masterOn ? colors.accent : colors.red },
+                          {
+                            color: !canControl
+                              ? colors.sub
+                              : isStaggering
+                                ? "#f59e0b"
+                                : masterOn
+                                  ? colors.green
+                                  : colors.red,
+                          },
                         ]}
                       >
-                        {masterOn ? "MAIN ON" : "MAIN OFF"}
+                        {!canControl ? "OFFLINE" : isStaggering ? "STAGGERING" : masterOn ? "MAIN ON" : "MAIN OFF"}
                       </Text>
                     </View>
                   </View>
                   <Text style={styles.masterDesc}>
-                    Simultaneously turn ON or OFF all relays across both High & Low voltage lines
+                    Simultaneously control all relays across Line 1 & Line 2
                   </Text>
                 </View>
-              </View>
 
-              <TouchableOpacity
-                style={[
-                  styles.masterActionButton,
-                  {
-                    backgroundColor: !canControl
-                      ? colors.surface
+                <PowerSwitch
+                  on={masterOn}
+                  offline={!canControl}
+                  pending={(pending && pendingTarget === "all") || isStaggering}
+                  onPress={() => toggleMaster()}
+                  disabled={controlsDisabled}
+                  accessibilityLabel={
+                    !canControl
+                      ? "Master power offline"
                       : masterOn
-                        ? colors.red + "18"
-                        : colors.accent + "20",
-                    borderColor: !canControl
-                      ? colors.border
-                      : masterOn
-                        ? colors.red
-                        : colors.accent,
-                    opacity: !canControl ? 0.45 : 1,
-                  },
-                ]}
-                onPress={() => toggleMaster()}
-                disabled={controlsDisabled}
-                accessibilityRole="button"
-                accessibilityLabel="Toggle master power"
-              >
-                {pending && pendingTarget === "all" ? (
-                  <ActivityIndicator size="small" color={masterOn ? colors.red : colors.accent} />
-                ) : !canControl ? (
-                  <>
-                    <Ionicons
-                      name="cloud-offline"
-                      size={18}
-                      color={colors.sub}
-                      style={{ marginRight: 8 }}
-                    />
-                    <Text
-                      style={[
-                        styles.masterActionText,
-                        { color: colors.sub },
-                      ]}
-                    >
-                      Controls Offline (Locked)
-                    </Text>
-                  </>
-                ) : (
-                  <>
-                    <Ionicons
-                      name="power"
-                      size={18}
-                      color={masterOn ? colors.red : colors.accent}
-                      style={{ marginRight: 8 }}
-                    />
-                    <Text
-                      style={[
-                        styles.masterActionText,
-                        { color: masterOn ? colors.red : colors.accent },
-                      ]}
-                    >
-                      {masterOn ? "Cut All Power (Master Shutdown)" : "Energize All Circuits"}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
+                        ? "Turn off master power"
+                        : "Turn on master power"
+                  }
+                  colors={colors}
+                  fontScale={fontScale}
+                  styles={styles}
+                />
+              </View>
             </View>
 
             {/* Section Divider */}
@@ -320,63 +417,141 @@ export default function PowerControlModal({ visible, onClose }: PowerControlModa
             {/* ========================================================================= */}
             {/* LINE 1: HIGH VOLTAGE / HIGH LOAD LINE */}
             {/* ========================================================================= */}
-            <View style={[styles.lineCard, { borderColor: highOn ? colors.accent + "40" : colors.border }]}>
+            <View
+              style={[
+                styles.lineCard,
+                {
+                  borderColor: !canControl
+                    ? colors.border
+                    : isStaggering
+                      ? "#f59e0b"
+                      : highOn
+                        ? colors.green + "40"
+                        : colors.border,
+                },
+              ]}
+            >
               <View style={styles.lineCardTop}>
-                <View style={[styles.lineIconWrap, { backgroundColor: highOn ? "#f59e0b20" : colors.surface }]}>
-                  <Ionicons name="flame" size={22} color={highOn ? "#f59e0b" : colors.inactive} />
+                <View
+                  style={[
+                    styles.lineIconWrap,
+                    {
+                      backgroundColor: !canControl
+                        ? colors.surface
+                        : isStaggering || highOn
+                          ? "#f59e0b20"
+                          : colors.surface,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="flame"
+                    size={22}
+                    color={!canControl ? colors.inactive : isStaggering || highOn ? "#f59e0b" : colors.inactive}
+                  />
                 </View>
 
                 <View style={styles.lineInfo}>
                   <View style={styles.lineTitleRow}>
-                    <Text style={styles.lineTitle}>High Load Voltage Line</Text>
+                    <Text style={styles.lineTitle}>Heavy Appliances (Line 1)</Text>
                     <View
                       style={[
                         styles.miniBadge,
                         {
-                          backgroundColor: highOn ? colors.green + "20" : colors.red + "20",
-                          borderColor: highOn ? colors.green : colors.red,
+                          backgroundColor: !canControl
+                            ? colors.surface
+                            : isStaggering
+                              ? "#f59e0b20"
+                              : highOn
+                                ? colors.green + "20"
+                                : colors.red + "20",
+                          borderColor: !canControl
+                            ? colors.border
+                            : isStaggering
+                              ? "#f59e0b"
+                              : highOn
+                                ? colors.green
+                                : colors.red,
                         },
                       ]}
                     >
-                      <Text style={[styles.miniBadgeText, { color: highOn ? colors.green : colors.red }]}>
-                        {highOn ? "ACTIVE" : "OFF"}
+                      <Text
+                        style={[
+                          styles.miniBadgeText,
+                          {
+                            color: !canControl
+                              ? colors.sub
+                              : isStaggering
+                                ? "#f59e0b"
+                                : highOn
+                                  ? colors.green
+                                  : colors.red,
+                          },
+                        ]}
+                      >
+                        {!canControl ? "OFFLINE" : isStaggering ? "INRUSH WAIT (3s)" : highOn ? "ACTIVE" : "OFF"}
                       </Text>
                     </View>
                   </View>
-                  <Text style={styles.lineRating}>Outlet 1 • 2× 30A Relays</Text>
+                  <Text style={styles.lineRating}>Outlet 1 • Heavy Duty (Up to 30A)</Text>
                 </View>
 
-                {pending && pendingTarget === "high" ? (
-                  <ActivityIndicator size="small" color={colors.accent} />
-                ) : (
-                  <Switch
-                    value={highOn}
-                    onValueChange={(val) => toggleHighLine(val)}
-                    disabled={controlsDisabled}
-                    trackColor={{ false: colors.border, true: colors.accent }}
-                    thumbColor={Platform.OS === "android" ? (highOn ? colors.card : colors.sub) : colors.white}
-                  />
-                )}
+                {/* Power Switch on the Right Side */}
+                <PowerSwitch
+                  on={highOn}
+                  offline={!canControl}
+                  pending={pending && pendingTarget === "high"}
+                  staggering={isStaggering}
+                  onPress={() => toggleHighLine()}
+                  disabled={controlsDisabled}
+                  accessibilityLabel={
+                    !canControl
+                      ? "Heavy Appliances Line 1 is offline"
+                      : isStaggering
+                        ? "Heavy Appliances Line 1 waiting for inrush delay"
+                        : highOn
+                          ? "Turn off Heavy Appliances Line 1"
+                          : "Turn on Heavy Appliances Line 1"
+                  }
+                  colors={colors}
+                  fontScale={fontScale}
+                  styles={styles}
+                />
               </View>
 
               {/* Connected Appliances Chips */}
               <View style={styles.chipsRow}>
-                <View style={[styles.chip, !highOn && styles.chipDimmed]}>
-                  <Ionicons name="snow-outline" size={12} color={highOn ? colors.sub : colors.inactive} style={{ marginRight: 4 }} />
-                  <Text style={[styles.chipText, !highOn && styles.chipTextDimmed]}>
-                    Aircon (1,180W){!highOn ? " • Off" : ""}
+                <View style={[styles.chip, (!highOn && !isStaggering || !canControl) && styles.chipDimmed]}>
+                  <Ionicons
+                    name="snow-outline"
+                    size={12}
+                    color={canControl && (highOn || isStaggering) ? colors.sub : colors.inactive}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={[styles.chipText, (!highOn && !isStaggering || !canControl) && styles.chipTextDimmed]}>
+                    Aircon (1,180W){!canControl ? " • Offline" : isStaggering ? " • In 3s" : !highOn ? " • Off" : ""}
                   </Text>
                 </View>
-                <View style={[styles.chip, !highOn && styles.chipDimmed]}>
-                  <Ionicons name="cube-outline" size={12} color={highOn ? colors.sub : colors.inactive} style={{ marginRight: 4 }} />
-                  <Text style={[styles.chipText, !highOn && styles.chipTextDimmed]}>
-                    Refrigerator (165W){!highOn ? " • Off" : ""}
+                <View style={[styles.chip, (!highOn && !isStaggering || !canControl) && styles.chipDimmed]}>
+                  <Ionicons
+                    name="cube-outline"
+                    size={12}
+                    color={canControl && (highOn || isStaggering) ? colors.sub : colors.inactive}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={[styles.chipText, (!highOn && !isStaggering || !canControl) && styles.chipTextDimmed]}>
+                    Refrigerator (165W){!canControl ? " • Offline" : isStaggering ? " • In 3s" : !highOn ? " • Off" : ""}
                   </Text>
                 </View>
-                <View style={[styles.chip, !highOn && styles.chipDimmed]}>
-                  <Ionicons name="water-outline" size={12} color={highOn ? colors.sub : colors.inactive} style={{ marginRight: 4 }} />
-                  <Text style={[styles.chipText, !highOn && styles.chipTextDimmed]}>
-                    Water Pump{!highOn ? " • Off" : ""}
+                <View style={[styles.chip, (!highOn && !isStaggering || !canControl) && styles.chipDimmed]}>
+                  <Ionicons
+                    name="water-outline"
+                    size={12}
+                    color={canControl && (highOn || isStaggering) ? colors.sub : colors.inactive}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={[styles.chipText, (!highOn && !isStaggering || !canControl) && styles.chipTextDimmed]}>
+                    Water Pump{!canControl ? " • Offline" : isStaggering ? " • In 3s" : !highOn ? " • Off" : ""}
                   </Text>
                 </View>
               </View>
@@ -385,63 +560,130 @@ export default function PowerControlModal({ visible, onClose }: PowerControlModa
             {/* ========================================================================= */}
             {/* LINE 2: LOW VOLTAGE / LOW LOAD LINE */}
             {/* ========================================================================= */}
-            <View style={[styles.lineCard, { borderColor: lowOn ? colors.accent + "40" : colors.border }]}>
+            <View
+              style={[
+                styles.lineCard,
+                {
+                  borderColor: !canControl
+                    ? colors.border
+                    : lowOn
+                      ? colors.green + "40"
+                      : colors.border,
+                },
+              ]}
+            >
               <View style={styles.lineCardTop}>
-                <View style={[styles.lineIconWrap, { backgroundColor: lowOn ? colors.accentSoft : colors.surface }]}>
-                  <Ionicons name="bulb" size={22} color={lowOn ? colors.accent : colors.inactive} />
+                <View
+                  style={[
+                    styles.lineIconWrap,
+                    {
+                      backgroundColor: !canControl
+                        ? colors.surface
+                        : lowOn
+                          ? colors.accentSoft
+                          : colors.surface,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="bulb"
+                    size={22}
+                    color={!canControl ? colors.inactive : lowOn ? colors.accent : colors.inactive}
+                  />
                 </View>
 
                 <View style={styles.lineInfo}>
                   <View style={styles.lineTitleRow}>
-                    <Text style={styles.lineTitle}>Low Load Voltage Line</Text>
+                    <Text style={styles.lineTitle}>Lighting & Standard Outlets (Line 2)</Text>
                     <View
                       style={[
                         styles.miniBadge,
                         {
-                          backgroundColor: lowOn ? colors.green + "20" : colors.red + "20",
-                          borderColor: lowOn ? colors.green : colors.red,
+                          backgroundColor: !canControl
+                            ? colors.surface
+                            : lowOn
+                              ? colors.green + "20"
+                              : colors.red + "20",
+                          borderColor: !canControl
+                            ? colors.border
+                            : lowOn
+                              ? colors.green
+                              : colors.red,
                         },
                       ]}
                     >
-                      <Text style={[styles.miniBadgeText, { color: lowOn ? colors.green : colors.red }]}>
-                        {lowOn ? "ACTIVE" : "OFF"}
+                      <Text
+                        style={[
+                          styles.miniBadgeText,
+                          {
+                            color: !canControl
+                              ? colors.sub
+                              : lowOn
+                                ? colors.green
+                                : colors.red,
+                          },
+                        ]}
+                      >
+                        {!canControl ? "OFFLINE" : lowOn ? "ACTIVE" : "OFF"}
                       </Text>
                     </View>
                   </View>
-                  <Text style={styles.lineRating}>Outlet 2 • 2× 10A Relays</Text>
+                  <Text style={styles.lineRating}>Outlet 2 • Standard Duty (Up to 10A)</Text>
                 </View>
 
-                {pending && pendingTarget === "low" ? (
-                  <ActivityIndicator size="small" color={colors.accent} />
-                ) : (
-                  <Switch
-                    value={lowOn}
-                    onValueChange={(val) => toggleLowLine(val)}
-                    disabled={controlsDisabled}
-                    trackColor={{ false: colors.border, true: colors.accent }}
-                    thumbColor={Platform.OS === "android" ? (lowOn ? colors.card : colors.sub) : colors.white}
-                  />
-                )}
+                {/* Power Switch on the Right Side */}
+                <PowerSwitch
+                  on={lowOn}
+                  offline={!canControl}
+                  pending={pending && pendingTarget === "low"}
+                  onPress={() => toggleLowLine()}
+                  disabled={controlsDisabled}
+                  accessibilityLabel={
+                    !canControl
+                      ? "Lighting Line 2 is offline"
+                      : lowOn
+                        ? "Turn off Lighting Line 2"
+                        : "Turn on Lighting Line 2"
+                  }
+                  colors={colors}
+                  fontScale={fontScale}
+                  styles={styles}
+                />
               </View>
 
               {/* Connected Appliances Chips */}
               <View style={styles.chipsRow}>
-                <View style={[styles.chip, !lowOn && styles.chipDimmed]}>
-                  <Ionicons name="tv-outline" size={12} color={lowOn ? colors.sub : colors.inactive} style={{ marginRight: 4 }} />
-                  <Text style={[styles.chipText, !lowOn && styles.chipTextDimmed]}>
-                    Smart TV (95W){!lowOn ? " • Off" : ""}
+                <View style={[styles.chip, (!lowOn || !canControl) && styles.chipDimmed]}>
+                  <Ionicons
+                    name="tv-outline"
+                    size={12}
+                    color={canControl && lowOn ? colors.sub : colors.inactive}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={[styles.chipText, (!lowOn || !canControl) && styles.chipTextDimmed]}>
+                    Smart TV (95W){!canControl ? " • Offline" : !lowOn ? " • Off" : ""}
                   </Text>
                 </View>
-                <View style={[styles.chip, !lowOn && styles.chipDimmed]}>
-                  <Ionicons name="restaurant-outline" size={12} color={lowOn ? colors.sub : colors.inactive} style={{ marginRight: 4 }} />
-                  <Text style={[styles.chipText, !lowOn && styles.chipTextDimmed]}>
-                    Rice Cooker{!lowOn ? " • Off" : ""}
+                <View style={[styles.chip, (!lowOn || !canControl) && styles.chipDimmed]}>
+                  <Ionicons
+                    name="restaurant-outline"
+                    size={12}
+                    color={canControl && lowOn ? colors.sub : colors.inactive}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={[styles.chipText, (!lowOn || !canControl) && styles.chipTextDimmed]}>
+                    Rice Cooker{!canControl ? " • Offline" : !lowOn ? " • Off" : ""}
                   </Text>
                 </View>
-                <View style={[styles.chip, !lowOn && styles.chipDimmed]}>
-                  <Ionicons name="phone-portrait-outline" size={12} color={lowOn ? colors.sub : colors.inactive} style={{ marginRight: 4 }} />
-                  <Text style={[styles.chipText, !lowOn && styles.chipTextDimmed]}>
-                    Chargers & Lights (288W){!lowOn ? " • Off" : ""}
+                <View style={[styles.chip, (!lowOn || !canControl) && styles.chipDimmed]}>
+                  <Ionicons
+                    name="phone-portrait-outline"
+                    size={12}
+                    color={canControl && lowOn ? colors.sub : colors.inactive}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={[styles.chipText, (!lowOn || !canControl) && styles.chipTextDimmed]}>
+                    Chargers & Lights (288W){!canControl ? " • Offline" : !lowOn ? " • Off" : ""}
                   </Text>
                 </View>
               </View>
@@ -452,7 +694,7 @@ export default function PowerControlModal({ visible, onClose }: PowerControlModa
             {/* ========================================================================= */}
             <View style={styles.telemetryCard}>
               <View style={styles.telemetryItem}>
-                <Text style={styles.telemetryLabel}>Aggregate Load</Text>
+                <Text style={styles.telemetryLabel}>Total Power Draw</Text>
                 <Text style={styles.telemetryValue}>{currentWatts}</Text>
               </View>
               <View style={styles.telemetryDivider} />
@@ -478,8 +720,8 @@ export default function PowerControlModal({ visible, onClose }: PowerControlModa
                 {isDemoMode
                   ? "Interactive demo: switching lines recalculates aggregate power draw and current in real time."
                   : !canControl
-                    ? "Hardware offline: switches are locked to prevent desync. Turn on Sample Data in the Demo FAB to demonstrate."
-                    : "Sequential reconnection active: Relay switching maintains a safety delay to prevent inrush breaker trips."}
+                    ? "Hardware offline: switches are locked to prevent desync. Tap the Demo sparkle button at the bottom right to test controls."
+                    : "Sequential reconnection active: Relay switching maintains a safety delay to prevent tripping your circuit breaker."}
               </Text>
             </View>
           </ScrollView>
@@ -641,65 +883,67 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       backgroundColor: colors.surface,
       borderRadius: 18,
       borderWidth: 1.5,
-      padding: 16,
+      padding: 14,
       marginBottom: 20,
     },
-    masterCardHeader: {
+    masterCardContent: {
       flexDirection: "row",
       alignItems: "center",
-      marginBottom: 14,
     },
     masterIconHalo: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       borderWidth: 1.5,
       alignItems: "center",
       justifyContent: "center",
-      marginRight: 14,
+      marginRight: 10,
     },
     masterTextWrap: {
       flex: 1,
+      marginRight: 8,
     },
     masterTitleRow: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
-      marginBottom: 4,
+      flexWrap: "wrap",
+      gap: 6,
+      marginBottom: 2,
     },
     masterTitle: {
-      fontSize: 16 * fontScale,
+      fontSize: 15 * fontScale,
       fontWeight: "700",
       color: colors.text,
     },
     masterDesc: {
       fontSize: 11 * fontScale,
       color: colors.sub,
-      lineHeight: 16,
+      lineHeight: 15,
     },
     badge: {
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: 8,
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+      borderRadius: 6,
       borderWidth: 1,
     },
     badgeText: {
-      fontSize: 10 * fontScale,
+      fontSize: 9 * fontScale,
       fontWeight: "800",
       letterSpacing: 0.4,
     },
-    masterActionButton: {
-      flexDirection: "row",
+    powerSwitchBtn: {
+      width: 64,
+      height: 52,
+      borderRadius: 14,
+      borderWidth: 1.5,
       alignItems: "center",
       justifyContent: "center",
-      paddingVertical: 12,
-      borderRadius: 12,
-      borderWidth: 1.5,
+      gap: 2,
     },
-    masterActionText: {
-      fontSize: 13 * fontScale,
-      fontWeight: "700",
-      letterSpacing: 0.2,
+    powerSwitchLabel: {
+      fontSize: 10 * fontScale,
+      fontWeight: "800",
+      letterSpacing: 0.5,
     },
     sectionHeader: {
       marginBottom: 12,
@@ -733,7 +977,7 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       borderRadius: 12,
       alignItems: "center",
       justifyContent: "center",
-      marginRight: 12,
+      marginRight: 10,
     },
     lineInfo: {
       flex: 1,
@@ -742,6 +986,8 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     lineTitleRow: {
       flexDirection: "row",
       alignItems: "center",
+      flexWrap: "wrap",
+      gap: 6,
       marginBottom: 2,
     },
     lineTitle: {

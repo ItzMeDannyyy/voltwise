@@ -64,6 +64,13 @@ function getStatusColors(colors: ThemeColors): Record<DeviceStatus, string> {
   };
 }
 
+const STATUS_LABELS: Record<DeviceStatus, string> = {
+  ACTIVE: "ACTIVE",
+  IDLE: "IDLE",
+  OFF: "OFF",
+  UNPOWERED: "CIRCUIT OFF",
+};
+
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
 // Shown on every card and in the blocked-toggle dialog, so the two can never
@@ -216,8 +223,8 @@ export default function DevicesScreen() {
     if (demoData && !isDemoDevicePowered(id, { highOn, lowOn })) {
       const isHigh = DEMO_HIGH_LINE_IDS.has(id);
       Alert.alert(
-        `${isHigh ? "High Load" : "Low Load"} Line Offline`,
-        `The ${isHigh ? "High" : "Low"} Voltage line is currently turned off in Power Control. Turn it back on to switch this appliance.`
+        `${isHigh ? "Heavy Appliance" : "Standard Load"} Line Offline`,
+        `The ${isHigh ? "Heavy Appliance (Line 1)" : "Standard Load (Line 2)"} circuit is currently turned off in Power Controls. Turn it back on to switch this appliance.`
       );
       return;
     }
@@ -524,7 +531,7 @@ export default function DevicesScreen() {
               <Text style={styles.deviceRoom}>{device.room}</Text>
               <View style={[styles.statusPill, { backgroundColor: STATUS_COLORS[status] + "22" }]}>
                 <Text style={[styles.statusPillText, { color: STATUS_COLORS[status] }]}>
-                  {status}
+                  {STATUS_LABELS[status]}
                 </Text>
               </View>
             </View>
@@ -559,8 +566,8 @@ export default function DevicesScreen() {
                       } else {
                         const isHigh = DEMO_HIGH_LINE_IDS.has(device.id);
                         Alert.alert(
-                          `${isHigh ? "High Load" : "Low Load"} Line Offline`,
-                          `The ${isHigh ? "High" : "Low"} Voltage line is currently turned off in Power Control. Turn it back on to switch this appliance.`
+                          `${isHigh ? "Heavy Appliance" : "Standard Load"} Line Offline`,
+                          `The ${isHigh ? "Heavy Appliance (Line 1)" : "Standard Load (Line 2)"} circuit is currently turned off in Power Controls. Turn it back on to switch this appliance.`
                         );
                       }
                     }}
@@ -638,7 +645,7 @@ export default function DevicesScreen() {
           <View style={styles.photoCardMeta}>
             <View style={[styles.statusPill, { backgroundColor: STATUS_COLORS[status] + "22" }]}>
               <Text style={[styles.statusPillText, { color: STATUS_COLORS[status] }]}>
-                {status}
+                {STATUS_LABELS[status]}
               </Text>
             </View>
             <Text style={styles.watts}>{formatPower(effectiveWatts(device))}</Text>
@@ -873,7 +880,7 @@ export default function DevicesScreen() {
               </View>
 
               <View style={styles.enabledRow}>
-                <Text style={styles.fieldLabel}>Enabled</Text>
+                <Text style={styles.fieldLabel}>Device is Currently Switched On</Text>
                 <Switch
                   value={formEnabled}
                   onValueChange={setFormEnabled}

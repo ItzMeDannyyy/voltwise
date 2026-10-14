@@ -90,13 +90,13 @@ function NewLoadPrompt() {
   if (!visible) return null;
 
   const wattsLabel =
-    lastEvent.deltaWatts !== undefined ? `~${Math.round(lastEvent.deltaWatts)} W` : "A load";
+    lastEvent.deltaWatts !== undefined ? `An appliance (~${Math.round(lastEvent.deltaWatts)} W)` : "An appliance";
 
   return (
     <ConfirmModal
       visible
       icon="flash-outline"
-      title="New load detected"
+      title="New appliance detected"
       message={`${wattsLabel} just switched on. Add it as a device to track its usage?`}
       confirmText="Add device"
       cancelText="Dismiss"

@@ -25,19 +25,32 @@ const int PZEM_TX_PIN = 17; // ESP32 TX2 sends to PZEM RX
 // Relay pins (2-channel relay module)
 // Pin 25: Low Voltage / Low Load line (e.g. 10A relays: Outlets, Smart TV, Rice Cooker, Chargers, Lights)
 // Pin 26: High Voltage / High Load line (e.g. 30A relays: Aircon, Refrigerator, Heavy loads)
-const int RELAY_LOW_PIN  = 25;
+const int RELAY_LOW_PIN = 25;
 const int RELAY_HIGH_PIN = 26;
 
 const int NUM_RELAYS = 2;
 
 const int RELAY_PINS[NUM_RELAYS] = {
-  RELAY_LOW_PIN,
-  RELAY_HIGH_PIN
-};
+    RELAY_LOW_PIN,
+    RELAY_HIGH_PIN};
 
 // Most relay modules are active LOW.
 // If your relay turns ON when you write HIGH, change this to false.
 const bool RELAY_ACTIVE_LOW = true;
+
+// Staggered Relay Power-Up Configuration
+// When activating power (e.g. boot or remote "all" command), the Low Load Line (Pin 25)
+// turns ON first. The High Load Line (Pin 26) turns ON after INTERVAL_TIME seconds to
+// mitigate inrush current transients and prevent ESP32 brownout resets.
+// Change 3 to 5 (or any desired seconds) as needed without breaking anything.
+#define INTERVAL_TIME 3
+
+// Smart Hybrid Network Power Configuration
+// At boot, relays remain safely OFF while the ESP32 initializes and searches for Wi-Fi.
+// If Wi-Fi connects within NETWORK_CONNECT_TIMEOUT_SEC, power is energized immediately (staggered).
+// If no network connects after NETWORK_CONNECT_TIMEOUT_SEC, the system falls back to Autonomous Mode
+// and energizes power anyway so appliances/house are never left without electricity.
+#define NETWORK_CONNECT_TIMEOUT_SEC 15
 
 // Safety threshold example.
 // Change this based on your actual circuit/load rating.
@@ -68,7 +81,6 @@ float currentDetectThresholdAmps = 0.05;
 const float CURRENT_DETECT_THRESHOLD_AMPS = 0.05;
 const unsigned long SHUTDOWN_COUNTDOWN_SECONDS = 30;
 
-
 // =========================
 // Network Configuration
 // =========================
@@ -84,21 +96,24 @@ String topicCountdownState;
 String topicCountdownSet;
 String topicStatus;
 
-void initTopics(const String& uid) {
+void initTopics(const String &uid)
+{
   deviceUidStr = uid;
-  topicTelemetry      = "voltwise/" + uid + "/telemetry";
-  topicRelayState     = "voltwise/" + uid + "/relay/state";
-  topicRelaySet       = "voltwise/" + uid + "/relay/set";
-  topicSafetyState    = "voltwise/" + uid + "/safety/state";
-  topicSafetySet      = "voltwise/" + uid + "/safety/set";
+  topicTelemetry = "voltwise/" + uid + "/telemetry";
+  topicRelayState = "voltwise/" + uid + "/relay/state";
+  topicRelaySet = "voltwise/" + uid + "/relay/set";
+  topicSafetyState = "voltwise/" + uid + "/safety/state";
+  topicSafetySet = "voltwise/" + uid + "/safety/set";
   topicCountdownState = "voltwise/" + uid + "/countdown/state";
-  topicCountdownSet   = "voltwise/" + uid + "/countdown/set";
-  topicStatus         = "voltwise/" + uid + "/status";
+  topicCountdownSet = "voltwise/" + uid + "/countdown/set";
+  topicStatus = "voltwise/" + uid + "/status";
 }
 
-
-// Re-issue WiFi.begin() this often while disconnected.
-const unsigned long WIFI_RETRY_INTERVAL_MS = 15000;
+// Wi-Fi Connection Attempt Configuration
+// State 1: Stored credentials exist -> 3 attempts x at least 5 seconds = 15 seconds total before offline fallback.
+const int MAX_WIFI_BOOT_ATTEMPTS = 3;
+const unsigned long WIFI_BOOT_ATTEMPT_TIMEOUT_MS = 5000;    // 5 seconds per boot attempt
+const unsigned long WIFI_OFFLINE_RETRY_INTERVAL_MS = 60000; // 60s quiet background retry in offline mode
 
 // MQTT reconnect backoff: start at 5 s, double up to 60 s, reset on success.
 const unsigned long MQTT_BACKOFF_MIN_MS = 5000;
@@ -145,13 +160,11 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 -----END CERTIFICATE-----
 )CERT";
 
-
 // =========================
 // PZEM Object
 // =========================
 
 PZEM004Tv30 pzem(Serial2, PZEM_RX_PIN, PZEM_TX_PIN);
-
 
 // =========================
 // Network Objects
@@ -160,12 +173,12 @@ PZEM004Tv30 pzem(Serial2, PZEM_RX_PIN, PZEM_TX_PIN);
 WiFiClientSecure secureClient;
 PubSubClient mqtt(secureClient);
 
-
 // =========================
 // Data Structure
 // =========================
 
-struct PowerReadings {
+struct PowerReadings
+{
   float voltage;
   float current;
   float power;
@@ -174,16 +187,17 @@ struct PowerReadings {
   float powerFactor;
 };
 
-
 // =========================
 // Function Prototypes
 // =========================
 
 void setupRelays();
-void applyRelays(bool on, const char* reason);
-void applyLineRelay(const char* line, bool on, const char* reason);
+void applyRelays(bool on, const char *reason);
+void applyLineRelay(const char *line, bool on, const char *reason);
 void setRelay(int relayNumber, bool turnOn);
 void writeRelayPin(int pin, bool turnOn);
+void tickStaggeredPowerActivation();
+void checkSmartHybridBootPower();
 
 PowerReadings readPowerSensor();
 bool readingsAreValid(PowerReadings readings);
@@ -197,18 +211,16 @@ void tickShutdownCountdown();
 int getRelayOnState();
 int getRelayOffState();
 
-const char* getWifiStatusString(wl_status_t status);
-const char* getRssiQuality(int rssi);
+const char *getWifiStatusString(wl_status_t status);
+const char *getRssiQuality(int rssi);
 void maintainWifi();
 void maintainTimeSync();
 void maintainMqtt();
-void onMqttMessage(char* topic, byte* payload, unsigned int length);
+void onMqttMessage(char *topic, byte *payload, unsigned int length);
 void publishTelemetry(PowerReadings readings);
 void publishRelayState();
 void publishSafetyState();
 void publishCountdownState();
-
-
 
 // =========================
 // Relay / Safety State
@@ -217,10 +229,19 @@ void publishCountdownState();
 bool relaysAreOn = false;
 bool highLineOn = false;
 bool lowLineOn = false;
-const char* relayReason = "boot";    // "boot" | "remote" | "overpower" | "countdown"
+const char *relayReason = "boot"; // "boot" | "remote" | "overpower" | "countdown"
+
+// Staggered power-up state for High Load Line (Pin 26)
+bool highLinePendingOn = false;
+unsigned long highLinePendingStartTime = 0;
+const char *pendingHighLineReason = "";
+
+// Smart Hybrid boot power state
+bool bootPowerEnergized = false;
+unsigned long bootStartTime = 0;
 
 bool countdownActive = false;
-bool powerShutDown = false;          // latched until reboot or a remote ON command
+bool powerShutDown = false; // latched until reboot or a remote ON command
 unsigned long countdownEndTime = 0;
 long lastPrintedSecond = -1;
 
@@ -231,13 +252,13 @@ long lastPrintedSecond = -1;
 // is NEVER suppressed by this flag.
 bool remoteOverride = false;
 
-
 // =========================
 // Network State
 // =========================
 
 bool wifiWasConnected = false;
 bool wifiConnecting = false;
+bool offlineModeActive = false;
 int wifiAttemptCount = 0;
 unsigned long lastWifiAttempt = 0;
 unsigned long lastWifiProgressPrint = 0;
@@ -247,23 +268,28 @@ bool timeSynced = false;
 unsigned long lastMqttAttempt = 0;
 unsigned long mqttBackoffMs = MQTT_BACKOFF_MIN_MS;
 
-
 // =========================
 // Factory Reset / Setup Button Check
 // =========================
 
-void checkResetButton() {
+void checkResetButton()
+{
   static unsigned long buttonPressStart = 0;
   static bool buttonWasPressed = false;
 
   bool isPressed = (digitalRead(RESET_BUTTON_PIN) == LOW);
 
-  if (isPressed) {
-    if (!buttonWasPressed) {
+  if (isPressed)
+  {
+    if (!buttonWasPressed)
+    {
       buttonWasPressed = true;
       buttonPressStart = millis();
-    } else {
-      if (millis() - buttonPressStart >= 3000) {
+    }
+    else
+    {
+      if (millis() - buttonPressStart >= 3000)
+      {
         Serial.println();
         Serial.println("==================================================");
         Serial.println(">>> FACTORY RESET TRIGGERED BY BOOT BUTTON <<<");
@@ -273,22 +299,25 @@ void checkResetButton() {
         ProvisioningServer::start();
         Serial.println("==================================================");
         buttonWasPressed = false;
-        while (digitalRead(RESET_BUTTON_PIN) == LOW) {
+        while (digitalRead(RESET_BUTTON_PIN) == LOW)
+        {
           delay(10);
         }
       }
     }
-  } else {
+  }
+  else
+  {
     buttonWasPressed = false;
   }
 }
-
 
 // =========================
 // Main Setup
 // =========================
 
-void setup() {
+void setup()
+{
   Serial.begin(115200);
 
   // Initialize NVS storage
@@ -298,16 +327,19 @@ void setup() {
 
   setupRelays();
 
-  // Loads are wired through COM + NO, so the relays must be energized for
-  // power to flow. The countdown / over-power safety opens them to cut power.
-  // Turn them on BEFORE the (multi-second) WiFi/TLS bring-up so power flows
-  // immediately and the relays don't chatter during boot.
-  applyRelays(true, "boot");
+  // Smart Hybrid: Relays remain safely OFF at power-on to eliminate relay coil current draw
+  // during ESP32 initialization and initial Wi-Fi RF power surge.
+  // The system waits up to NETWORK_CONNECT_TIMEOUT_SEC for Wi-Fi. If Wi-Fi connects, power energizes.
+  // If timeout expires without Wi-Fi, it autonomously falls back to energizing power anyway.
+  bootStartTime = millis();
+  bootPowerEnergized = false;
 
   Serial.println();
   Serial.println("ESP32 + PZEM-004T + 2-Channel Relay Started");
   Serial.println("Relay mapping: Pin 25 = Low Power Line, Pin 26 = High Power Line");
-  Serial.println("All relays are ON at startup (power flowing).");
+  Serial.print  ("Smart Hybrid Active: Relays held OFF. Waiting up to ");
+  Serial.print  (NETWORK_CONNECT_TIMEOUT_SEC);
+  Serial.println("s for Wi-Fi before autonomous power-up.");
 
   String uid = ConfigManager::getDeviceUid();
   initTopics(uid);
@@ -315,11 +347,31 @@ void setup() {
   Serial.println(uid);
 
   String ssid = ConfigManager::getWifiSsid();
-  if (ssid.length() == 0) {
-    Serial.println("[WIFI] No Wi-Fi credentials configured. Launching setup AP...");
+  if (ssid.length() == 0)
+  {
+    Serial.println();
+    Serial.println("==================================================");
+    Serial.println(" [BOOT STATE 2: NO STORED WI-FI CREDENTIALS]");
+    Serial.println(" No credentials in flash. Directing to Provisioning...");
+    Serial.println(" Hotspot AP active: Connect to VoltWise-Setup-xxxx");
+    Serial.println(" Open http://192.168.4.1/ in browser to configure.");
+    Serial.println("==================================================");
     ProvisioningServer::start();
-  } else {
+  }
+  else
+  {
+    Serial.println();
+    Serial.println("==================================================");
+    Serial.println(" [BOOT STATE 1: STORED WI-FI CREDENTIALS FOUND]");
+    Serial.print  (" Stored SSID: \"");
+    Serial.print  (ssid);
+    Serial.println("\"");
+    Serial.println(" Connection budget: 3 attempts x 5s = 15s total.");
+    Serial.println(" Fallback: Autonomous offline mode + Provisioning Hotspot if all 3 fail.");
+    Serial.println("==================================================");
     WiFi.mode(WIFI_STA);
+    // Cap Wi-Fi TX power to 15dBm to eliminate RF current spikes from overloading HLK-PM01 (600mA)
+    WiFi.setTxPower(WIFI_POWER_15dBm);
   }
 
   secureClient.setCACert(HIVEMQ_ROOT_CA);
@@ -334,17 +386,18 @@ void setup() {
   mqtt.setSocketTimeout(10);
 }
 
-
 // =========================
 // Main Loop
 // =========================
 
-void loop() {
+void loop()
+{
   // Check for physical setup trigger (hold BOOT / GPIO 0 for 3 seconds)
   checkResetButton();
 
   // If provisioning AP is active, handle HTTP & DNS client requests
-  if (ProvisioningServer::active()) {
+  if (ProvisioningServer::active())
+  {
     ProvisioningServer::handleClient();
   }
 
@@ -352,45 +405,63 @@ void loop() {
 
   unsigned long currentTime = millis();
 
-  if (currentTime - lastSensorReadTime >= SENSOR_READ_INTERVAL_MS) {
+  if (currentTime - lastSensorReadTime >= SENSOR_READ_INTERVAL_MS)
+  {
     lastSensorReadTime = currentTime;
 
     // Retry a few times before giving up — a single dropped Modbus frame
     // shouldn't be reported as a hard failure.
     PowerReadings readings;
     bool valid = false;
-    for (int attempt = 1; attempt <= SENSOR_READ_RETRIES; attempt++) {
+    for (int attempt = 1; attempt <= SENSOR_READ_RETRIES; attempt++)
+    {
+      if (ProvisioningServer::active())
+      {
+        ProvisioningServer::handleClient();
+      }
       readings = readPowerSensor();
-      if (readingsAreValid(readings)) {
+      if (readingsAreValid(readings))
+      {
         valid = true;
         break;
       }
-      if (DIAGNOSTIC_MODE) {
+      if (DIAGNOSTIC_MODE)
+      {
         Serial.print("Read attempt ");
         Serial.print(attempt);
         Serial.println(" failed (NaN). Retrying...");
       }
     }
 
-    if (valid) {
+    if (valid)
+    {
       printReadings(readings);
       publishTelemetry(readings);
       handlePowerSafety(readings);
       updateShutdownCountdown(readings);
-    } else {
+    }
+    else
+    {
       Serial.println("Sensor reading failed. Check PZEM wiring, AC input, RX/TX, and GND.");
-      if (DIAGNOSTIC_MODE) {
+      if (DIAGNOSTIC_MODE)
+      {
         printDiagnostics(readings);
       }
       // CRITICAL: Even if the PZEM sensor has no AC mains voltage connected (e.g. testing on USB),
       // we still publish baseline telemetry so the backend and mobile app recognize the device
       // as LIVE and ONLINE rather than displaying "Device offline".
-      PowerReadings zeroReadings = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+      PowerReadings zeroReadings = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
       publishTelemetry(zeroReadings);
     }
 
     Serial.println("----------------------------------");
   }
+
+  // Smart Hybrid: checks if Wi-Fi connected or 15s timeout reached to energize power
+  checkSmartHybridBootPower();
+
+  // Non-blocking staggered relay power activation for High Load Line (Pin 26)
+  tickStaggeredPowerActivation();
 
   // Runs every loop pass (not just on sensor reads) so the countdown prints
   // once per second and the cutoff fires on time.
@@ -401,8 +472,12 @@ void loop() {
   maintainWifi();
   maintainTimeSync();
   maintainMqtt();
-}
 
+  if (ProvisioningServer::active())
+  {
+    ProvisioningServer::handleClient();
+  }
+}
 
 // =========================
 // Relay Functions
@@ -413,59 +488,115 @@ void loop() {
 // optocoupler/LED circuit when driven HIGH (5V - 3.3V = 1.7V), causing the LED to stay
 // dimly lit ("low light"). Setting the pin to INPUT (High-Impedance / tri-state) mode
 // completely cuts the path to ground, reducing current to 0 and turning the LED 100% OFF.
-void writeRelayPin(int pin, bool turnOn) {
-  if (RELAY_ACTIVE_LOW) {
-    if (turnOn) {
+void writeRelayPin(int pin, bool turnOn)
+{
+  if (RELAY_ACTIVE_LOW)
+  {
+    if (turnOn)
+    {
       pinMode(pin, OUTPUT);
       digitalWrite(pin, LOW);
-    } else {
+    }
+    else
+    {
       digitalWrite(pin, HIGH);
       pinMode(pin, INPUT); // High-Z: completely cuts off any leakage current
     }
-  } else {
+  }
+  else
+  {
     pinMode(pin, OUTPUT);
     digitalWrite(pin, turnOn ? HIGH : LOW);
   }
 }
 
-
-void setupRelays() {
+void setupRelays()
+{
+  highLinePendingOn = false;
   writeRelayPin(RELAY_LOW_PIN, false);
   writeRelayPin(RELAY_HIGH_PIN, false);
 }
 
-
 // Single choke point for relay changes: drives the pins, records the state +
 // reason, and publishes the retained relay/state topic. Idempotent, so a QoS 1
 // redelivery of the same command is harmless.
-void applyRelays(bool on, const char* reason) {
-  writeRelayPin(RELAY_LOW_PIN, on);
-  writeRelayPin(RELAY_HIGH_PIN, on);
+// Implements staggered power-up via INTERVAL_TIME macro (in seconds).
+void applyRelays(bool on, const char *reason)
+{
+  if (on)
+  {
+    // 1. Immediately energize Low Load Line (Pin 25)
+    writeRelayPin(RELAY_LOW_PIN, true);
+    lowLineOn = true;
 
-  relaysAreOn = on;
-  highLineOn = on;
-  lowLineOn = on;
-  relayReason = reason;
+#if INTERVAL_TIME > 0
+    // 2. Schedule High Load Line (Pin 26) after INTERVAL_TIME seconds
+    writeRelayPin(RELAY_HIGH_PIN, false);
+    highLineOn = false;
+    highLinePendingOn = true;
+    highLinePendingStartTime = millis();
+    pendingHighLineReason = reason;
 
-  Serial.println("----------------------------------");
-  Serial.print("All relays (Low Line Pin 25 & High Line Pin 26) turned ");
-  Serial.print(on ? "ON" : "OFF");
-  Serial.print(" (Reason: ");
-  Serial.print(reason);
-  Serial.println(").");
-  Serial.println("----------------------------------");
+    relaysAreOn = true;
+    relayReason = reason;
+
+    Serial.println("----------------------------------");
+    Serial.print("Low Load Line (Pin 25) turned ON (Reason: ");
+    Serial.print(reason);
+    Serial.println(").");
+    Serial.print("Staggering power: High Load Line (Pin 26) will turn ON in ");
+    Serial.print(INTERVAL_TIME);
+    Serial.println(" seconds to mitigate inrush current.");
+    Serial.println("----------------------------------");
+#else
+    // If INTERVAL_TIME is 0, energize both immediately
+    highLinePendingOn = false;
+    writeRelayPin(RELAY_HIGH_PIN, true);
+    highLineOn = true;
+    relaysAreOn = true;
+    relayReason = reason;
+
+    Serial.println("----------------------------------");
+    Serial.print("All relays (Low Line Pin 25 & High Line Pin 26) turned ON (Reason: ");
+    Serial.print(reason);
+    Serial.println(").");
+    Serial.println("----------------------------------");
+#endif
+  }
+  else
+  {
+    // Cut all power immediately: cancel any pending staggered activation
+    highLinePendingOn = false;
+    writeRelayPin(RELAY_LOW_PIN, false);
+    writeRelayPin(RELAY_HIGH_PIN, false);
+
+    relaysAreOn = false;
+    highLineOn = false;
+    lowLineOn = false;
+    relayReason = reason;
+
+    Serial.println("----------------------------------");
+    Serial.print("All relays (Low Line Pin 25 & High Line Pin 26) turned OFF (Reason: ");
+    Serial.print(reason);
+    Serial.println(").");
+    Serial.println("----------------------------------");
+  }
 
   publishRelayState();
 }
 
-
-void applyLineRelay(const char* line, bool on, const char* reason) {
-  if (strcmp(line, "high") == 0) {
+void applyLineRelay(const char *line, bool on, const char *reason)
+{
+  if (strcmp(line, "high") == 0)
+  {
+    highLinePendingOn = false; // Explicit manual/remote command overrides any pending auto-stagger
     writeRelayPin(RELAY_HIGH_PIN, on);
     highLineOn = on;
     Serial.print("High Voltage Line (Pin 26) turned ");
     Serial.println(on ? "ON" : "OFF");
-  } else if (strcmp(line, "low") == 0) {
+  }
+  else if (strcmp(line, "low") == 0)
+  {
     writeRelayPin(RELAY_LOW_PIN, on);
     lowLineOn = on;
     Serial.print("Low Voltage Line (Pin 25) turned ");
@@ -478,43 +609,137 @@ void applyLineRelay(const char* line, bool on, const char* reason) {
   publishRelayState();
 }
 
+// Non-blocking timer handler for staggered activation of the High Load Line (Pin 26).
+// Called on every loop() pass.
+void tickStaggeredPowerActivation()
+{
+#if INTERVAL_TIME > 0
+  if (!highLinePendingOn)
+  {
+    return;
+  }
 
-void setRelay(int relayNumber, bool turnOn) {
-  if (relayNumber == 1) {
+  if (millis() - highLinePendingStartTime >= (unsigned long)(INTERVAL_TIME * 1000UL))
+  {
+    highLinePendingOn = false;
+    writeRelayPin(RELAY_HIGH_PIN, true);
+    highLineOn = true;
+    relaysAreOn = true;
+
+    Serial.println();
+    Serial.println("==================================================");
+    Serial.print(" [STAGGERED POWER] ");
+    Serial.print(INTERVAL_TIME);
+    Serial.println("s Interval Elapsed!");
+    Serial.print(" High Load Line (Pin 26) turned ON. Reason: ");
+    Serial.println(pendingHighLineReason);
+    Serial.println(" Both lines (Pin 25 & 26) are now fully ENERGIZED.");
+    Serial.println("==================================================");
+    Serial.println();
+
+    publishRelayState();
+  }
+#endif
+}
+
+// Smart Hybrid Boot Power Handler:
+// State 1: Stored Wi-Fi credentials exist -> Attempts connection for up to 15s (3 attempts x 5s).
+//   - If Wi-Fi connects, energizes power immediately (Pin 25, then Pin 26 after 3s).
+//   - If all 3 attempts fail / 15s timeout reached, poof! Fallback to Autonomous Offline Mode.
+// State 2: No Wi-Fi credentials stored -> In Provisioning Mode. Relays stay OFF until set up.
+void checkSmartHybridBootPower()
+{
+  if (bootPowerEnergized)
+  {
+    return;
+  }
+
+  // State 2: If no Wi-Fi credentials are stored, device is in Provisioning mode.
+  // Keep relays safely OFF while the user sets up Wi-Fi in the portal.
+  String ssid = ConfigManager::getWifiSsid();
+  if (ssid.length() == 0)
+  {
+    return;
+  }
+
+  // State 1 - Case A: Wi-Fi connected successfully within the 3 attempts!
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    bootPowerEnergized = true;
+    Serial.println();
+    Serial.println("==================================================");
+    Serial.println(" [BOOT] Wi-Fi Connected! Energizing Power Lines (Staggered)...");
+    Serial.println("==================================================");
+    applyRelays(true, "network_connected");
+    return;
+  }
+
+  // State 1 - Case B: 15s Timeout / 3 failed attempts reached -> "poof offline mode fallback"
+  if (offlineModeActive || (millis() - bootStartTime >= (unsigned long)(NETWORK_CONNECT_TIMEOUT_SEC * 1000UL)))
+  {
+    bootPowerEnergized = true;
+    offlineModeActive = true;
+    wifiConnecting = false;
+    WiFi.disconnect(true); // Halt all STA station channel-hopping sweeps immediately
+    Serial.println();
+    Serial.println("==================================================");
+    Serial.println(" [BOOT] 3 Attempts (15s total) Elapsed without Wi-Fi.");
+    Serial.println(" Poof! Entering Autonomous Offline Mode (Staggered Power-Up).");
+    Serial.println(" Starting Provisioning Hotspot so you can access the portal...");
+    Serial.println("==================================================");
+    applyRelays(true, "offline_fallback");
+    if (!ProvisioningServer::active())
+    {
+      ProvisioningServer::start();
+    }
+    return;
+  }
+}
+
+void setRelay(int relayNumber, bool turnOn)
+{
+  if (relayNumber == 1)
+  {
     applyLineRelay("low", turnOn, "manual");
-  } else if (relayNumber == 2) {
+  }
+  else if (relayNumber == 2)
+  {
     applyLineRelay("high", turnOn, "manual");
-  } else {
+  }
+  else
+  {
     Serial.print("Invalid relay number: ");
     Serial.print(relayNumber);
     Serial.println(". Use 1 (Low Line / Pin 25) or 2 (High Line / Pin 26).");
   }
 }
 
-
-int getRelayOnState() {
-  if (RELAY_ACTIVE_LOW) {
+int getRelayOnState()
+{
+  if (RELAY_ACTIVE_LOW)
+  {
     return LOW;
   }
 
   return HIGH;
 }
 
-
-int getRelayOffState() {
-  if (RELAY_ACTIVE_LOW) {
+int getRelayOffState()
+{
+  if (RELAY_ACTIVE_LOW)
+  {
     return HIGH;
   }
 
   return LOW;
 }
 
-
 // =========================
 // PZEM Sensor Functions
 // =========================
 
-PowerReadings readPowerSensor() {
+PowerReadings readPowerSensor()
+{
   PowerReadings readings;
 
   readings.voltage = pzem.voltage();
@@ -527,37 +752,43 @@ PowerReadings readPowerSensor() {
   return readings;
 }
 
-
-bool readingsAreValid(PowerReadings readings) {
-  if (isnan(readings.voltage)) {
+bool readingsAreValid(PowerReadings readings)
+{
+  if (isnan(readings.voltage))
+  {
     return false;
   }
 
-  if (isnan(readings.current)) {
+  if (isnan(readings.current))
+  {
     return false;
   }
 
-  if (isnan(readings.power)) {
+  if (isnan(readings.power))
+  {
     return false;
   }
 
-  if (isnan(readings.energy)) {
+  if (isnan(readings.energy))
+  {
     return false;
   }
 
-  if (isnan(readings.frequency)) {
+  if (isnan(readings.frequency))
+  {
     return false;
   }
 
-  if (isnan(readings.powerFactor)) {
+  if (isnan(readings.powerFactor))
+  {
     return false;
   }
 
   return true;
 }
 
-
-void printReadings(PowerReadings readings) {
+void printReadings(PowerReadings readings)
+{
   Serial.print("Voltage: ");
   Serial.print(readings.voltage);
   Serial.println(" V");
@@ -582,7 +813,6 @@ void printReadings(PowerReadings readings) {
   Serial.println(readings.powerFactor);
 }
 
-
 // Prints each raw field individually plus the PZEM slave address so you can
 // tell WHERE the failure is:
 //   - Address reads 0x00 / 0xFF (or nan) AND every field nan  -> UART link is
@@ -591,7 +821,8 @@ void printReadings(PowerReadings readings) {
 //     the PZEM just isn't powered by AC: check live mains on the voltage terminals.
 //   - Only some fields nan                                      -> intermittent
 //     wiring/noise: reseat connectors, shorten UART wires, add common ground.
-void printDiagnostics(PowerReadings readings) {
+void printDiagnostics(PowerReadings readings)
+{
   Serial.println(">>> DIAGNOSTICS <<<");
 
   uint8_t address = pzem.readAddress();
@@ -599,37 +830,49 @@ void printDiagnostics(PowerReadings readings) {
   Serial.println(address, HEX);
   Serial.println("  (default is 0xF8. 0x00/0xFF usually means no UART reply.)");
 
-  Serial.print("  voltage     = "); Serial.println(readings.voltage);
-  Serial.print("  current     = "); Serial.println(readings.current);
-  Serial.print("  power       = "); Serial.println(readings.power);
-  Serial.print("  energy      = "); Serial.println(readings.energy, 3);
-  Serial.print("  frequency   = "); Serial.println(readings.frequency);
-  Serial.print("  powerFactor = "); Serial.println(readings.powerFactor);
+  Serial.print("  voltage     = ");
+  Serial.println(readings.voltage);
+  Serial.print("  current     = ");
+  Serial.println(readings.current);
+  Serial.print("  power       = ");
+  Serial.println(readings.power);
+  Serial.print("  energy      = ");
+  Serial.println(readings.energy, 3);
+  Serial.print("  frequency   = ");
+  Serial.println(readings.frequency);
+  Serial.print("  powerFactor = ");
+  Serial.println(readings.powerFactor);
 
-  if (address == 0x00 || address == 0xFF) {
+  if (address == 0x00 || address == 0xFF)
+  {
     Serial.println("HINT: No UART reply. Check TX<->RX crossover, converter HV/LV/GND power, and baud (should be 9600).");
-  } else {
+  }
+  else
+  {
     Serial.println("HINT: UART link OK. NaN fields mean the PZEM has no AC power -> check live mains on the voltage terminals.");
   }
 }
-
 
 // =========================
 // Safety / Control Logic
 // =========================
 
-void handlePowerSafety(PowerReadings readings) {
+void handlePowerSafety(PowerReadings readings)
+{
   // If safety cutoff is toggled OFF by the user, do not trip
-  if (!safetyCutoffEnabled) {
+  if (!safetyCutoffEnabled)
+  {
     return;
   }
 
   static int overpowerConsecutiveReads = 0;
 
-  if (readings.power > maxAllowedPowerWatts) {
+  if (readings.power > maxAllowedPowerWatts)
+  {
     overpowerConsecutiveReads++;
     // Inrush surge tolerance: require 2 consecutive reads (> 2-4 seconds) to trigger cutoff
-    if (overpowerConsecutiveReads >= 2) {
+    if (overpowerConsecutiveReads >= 2)
+    {
       Serial.println("WARNING: Power sustained above threshold!");
       Serial.println("Turning all relays OFF for safety.");
 
@@ -640,12 +883,12 @@ void handlePowerSafety(PowerReadings readings) {
       countdownActive = false;
       applyRelays(false, "overpower");
     }
-  } else {
+  }
+  else
+  {
     overpowerConsecutiveReads = 0;
   }
 }
-
-
 
 // =========================
 // Shutdown Countdown
@@ -654,16 +897,20 @@ void handlePowerSafety(PowerReadings readings) {
 // Called once per sensor read: starts the countdown when current appears,
 // cancels it if the current disappears before time runs out.
 // Dynamically enabled/disabled and configured via MQTT countdown/set.
-void updateShutdownCountdown(PowerReadings readings) {
-  if (!shutdownCountdownEnabled) {
-    if (countdownActive) {
+void updateShutdownCountdown(PowerReadings readings)
+{
+  if (!shutdownCountdownEnabled)
+  {
+    if (countdownActive)
+    {
       countdownActive = false;
       Serial.println("Shutdown countdown disabled. Active countdown cancelled.");
     }
     return;
   }
 
-  if (powerShutDown) {
+  if (powerShutDown)
+  {
     return;
   }
 
@@ -671,15 +918,18 @@ void updateShutdownCountdown(PowerReadings readings) {
 
   // After a remote ON, don't re-arm the countdown until the current has
   // dropped below the threshold once — see the remoteOverride comment above.
-  if (remoteOverride) {
-    if (!currentDetected) {
+  if (remoteOverride)
+  {
+    if (!currentDetected)
+    {
       remoteOverride = false;
       Serial.println("Current dropped below threshold. Remote override cleared; auto-shutdown re-armed.");
     }
     return;
   }
 
-  if (currentDetected && !countdownActive) {
+  if (currentDetected && !countdownActive)
+  {
     countdownActive = true;
     countdownEndTime = millis() + shutdownCountdownSeconds * 1000UL;
     lastPrintedSecond = -1;
@@ -689,23 +939,27 @@ void updateShutdownCountdown(PowerReadings readings) {
     Serial.print(" A). Power will shut down in ");
     Serial.print(shutdownCountdownSeconds);
     Serial.println(" seconds!");
-  } else if (!currentDetected && countdownActive) {
+  }
+  else if (!currentDetected && countdownActive)
+  {
     countdownActive = false;
     Serial.println("Current no longer detected. Shutdown countdown cancelled.");
   }
 }
 
-
 // Called every loop pass: prints the remaining seconds once per second and
 // cuts the relays when the countdown reaches zero.
-void tickShutdownCountdown() {
-  if (!shutdownCountdownEnabled || !countdownActive) {
+void tickShutdownCountdown()
+{
+  if (!shutdownCountdownEnabled || !countdownActive)
+  {
     return;
   }
 
   long remainingMs = (long)(countdownEndTime - millis());
 
-  if (remainingMs <= 0) {
+  if (remainingMs <= 0)
+  {
     countdownActive = false;
     powerShutDown = true;
 
@@ -714,9 +968,10 @@ void tickShutdownCountdown() {
     return;
   }
 
-  long remainingSeconds = (remainingMs + 999) / 1000;  // round up
+  long remainingSeconds = (remainingMs + 999) / 1000; // round up
 
-  if (remainingSeconds != lastPrintedSecond) {
+  if (remainingSeconds != lastPrintedSecond)
+  {
     lastPrintedSecond = remainingSeconds;
     Serial.print("Shutting down power in ");
     Serial.print(remainingSeconds);
@@ -724,7 +979,6 @@ void tickShutdownCountdown() {
   }
 }
 
-
 // =========================
 // WiFi / Time / MQTT
 // =========================
@@ -733,33 +987,51 @@ void tickShutdownCountdown() {
 // WiFi / Time / MQTT
 // =========================
 
-const char* getWifiStatusString(wl_status_t status) {
-  switch (status) {
-    case WL_IDLE_STATUS:     return "IDLE (Changing state)";
-    case WL_NO_SSID_AVAIL:   return "SSID NOT FOUND (Network unavailable)";
-    case WL_SCAN_COMPLETED:  return "SCAN COMPLETED";
-    case WL_CONNECTED:       return "CONNECTED";
-    case WL_CONNECT_FAILED:  return "CONNECT FAILED (Invalid password or rejected)";
-    case WL_CONNECTION_LOST: return "CONNECTION LOST";
-    case WL_DISCONNECTED:    return "DISCONNECTED";
-    default:                 return "UNKNOWN";
+const char *getWifiStatusString(wl_status_t status)
+{
+  switch (status)
+  {
+  case WL_IDLE_STATUS:
+    return "IDLE (Changing state)";
+  case WL_NO_SSID_AVAIL:
+    return "SSID NOT FOUND (Network unavailable)";
+  case WL_SCAN_COMPLETED:
+    return "SCAN COMPLETED";
+  case WL_CONNECTED:
+    return "CONNECTED";
+  case WL_CONNECT_FAILED:
+    return "CONNECT FAILED (Invalid password or rejected)";
+  case WL_CONNECTION_LOST:
+    return "CONNECTION LOST";
+  case WL_DISCONNECTED:
+    return "DISCONNECTED";
+  default:
+    return "UNKNOWN";
   }
 }
 
-const char* getRssiQuality(int rssi) {
-  if (rssi >= -55) return "Excellent";
-  if (rssi >= -67) return "Very Good";
-  if (rssi >= -75) return "Good";
-  if (rssi >= -85) return "Fair";
+const char *getRssiQuality(int rssi)
+{
+  if (rssi >= -55)
+    return "Excellent";
+  if (rssi >= -67)
+    return "Very Good";
+  if (rssi >= -75)
+    return "Good";
+  if (rssi >= -85)
+    return "Fair";
   return "Weak";
 }
 
-void maintainWifi() {
+void maintainWifi()
+{
   String currentSsid = ConfigManager::getWifiSsid();
   String currentPassword = ConfigManager::getWifiPassword();
 
-  if (currentSsid.length() == 0) {
-    if (!ProvisioningServer::active()) {
+  if (currentSsid.length() == 0)
+  {
+    if (!ProvisioningServer::active())
+    {
       ProvisioningServer::start();
     }
     return;
@@ -767,12 +1039,15 @@ void maintainWifi() {
 
   wl_status_t status = WiFi.status();
 
-  if (status == WL_CONNECTED) {
-    if (ProvisioningServer::active()) {
+  if (status == WL_CONNECTED)
+  {
+    if (ProvisioningServer::active())
+    {
       ProvisioningServer::stop();
     }
 
-    if (!wifiWasConnected) {
+    if (!wifiWasConnected)
+    {
       wifiWasConnected = true;
       wifiConnecting = false;
       wifiAttemptCount = 0;
@@ -782,12 +1057,21 @@ void maintainWifi() {
       Serial.println("==================================================");
       Serial.println(" >>> WiFi CONNECTED SUCCESSFULLY! <<<");
       Serial.println("==================================================");
-      Serial.print  ("  SSID:        "); Serial.println(WiFi.SSID());
-      Serial.print  ("  IP Address:  "); Serial.println(WiFi.localIP());
-      Serial.print  ("  Subnet Mask: "); Serial.println(WiFi.subnetMask());
-      Serial.print  ("  Gateway IP:  "); Serial.println(WiFi.gatewayIP());
-      Serial.print  ("  Signal:      "); Serial.print(rssi); Serial.print(" dBm ("); Serial.print(getRssiQuality(rssi)); Serial.println(")");
-      Serial.print  ("  MAC Address: "); Serial.println(WiFi.macAddress());
+      Serial.print("  SSID:        ");
+      Serial.println(WiFi.SSID());
+      Serial.print("  IP Address:  ");
+      Serial.println(WiFi.localIP());
+      Serial.print("  Subnet Mask: ");
+      Serial.println(WiFi.subnetMask());
+      Serial.print("  Gateway IP:  ");
+      Serial.println(WiFi.gatewayIP());
+      Serial.print("  Signal:      ");
+      Serial.print(rssi);
+      Serial.print(" dBm (");
+      Serial.print(getRssiQuality(rssi));
+      Serial.println(")");
+      Serial.print("  MAC Address: ");
+      Serial.println(WiFi.macAddress());
       Serial.println("==================================================");
       Serial.println();
     }
@@ -795,113 +1079,166 @@ void maintainWifi() {
   }
 
   // Detect WiFi disconnection
-  if (wifiWasConnected) {
+  if (wifiWasConnected)
+  {
     wifiWasConnected = false;
     wifiConnecting = false;
-    lastWifiAttempt = 0; // Trigger immediate reconnect attempt
+    WiFi.disconnect(true); // Halt all STA station channel-hopping sweeps immediately
+    lastWifiAttempt = millis();
 
     Serial.println();
     Serial.println("==================================================");
     Serial.println(" !!! WiFi CONNECTION LOST! !!!");
-    Serial.println("==================================================");
-    Serial.print  ("  SSID:       "); Serial.println(currentSsid);
-    Serial.print  ("  Status:     "); Serial.println(getWifiStatusString(status));
-    Serial.println("  Next Step:  Attempting reconnection...");
+    Serial.println("  Appliances remain continuously powered.");
+    Serial.println("  Entering offline fallback: Starting Provisioning Hotspot...");
     Serial.println("==================================================");
     Serial.println();
+    offlineModeActive = true;
+    if (!ProvisioningServer::active())
+    {
+      ProvisioningServer::start();
+    }
   }
 
   unsigned long now = millis();
 
   // Handle active connection attempt timeout or explicit failure
-  if (wifiConnecting) {
-    bool timedOut = (now - lastWifiAttempt >= WIFI_RETRY_INTERVAL_MS);
+  if (wifiConnecting)
+  {
+    bool timedOut = (now - lastWifiAttempt >= WIFI_BOOT_ATTEMPT_TIMEOUT_MS);
     bool explicitFail = (status == WL_CONNECT_FAILED || status == WL_NO_SSID_AVAIL);
 
-    if (timedOut || explicitFail) {
+    if (timedOut || explicitFail)
+    {
       wifiConnecting = false;
 
       Serial.println();
-      Serial.println("==================================================");
-      Serial.println(" !!! WiFi CONNECTION FAILED! !!!");
-      Serial.println("==================================================");
-      Serial.print  ("  SSID:       "); Serial.println(currentSsid);
-      Serial.print  ("  Attempt:    #"); Serial.print(wifiAttemptCount); Serial.println(" failed");
-      Serial.print  ("  Status:     "); Serial.println(getWifiStatusString(status));
-      if (status == WL_CONNECT_FAILED) {
-        Serial.println("  Diagnosis:  Password may be incorrect or rejected by AP.");
-      } else if (status == WL_NO_SSID_AVAIL) {
-        Serial.println("  Diagnosis:  SSID not found. Check router or 2.4 GHz band.");
-      } else {
-        Serial.println("  Diagnosis:  Connection timed out after 15 seconds.");
+      Serial.println("--------------------------------------------------");
+      Serial.print(" [WIFI] Attempt #");
+      Serial.print(wifiAttemptCount);
+      Serial.print(" of ");
+      Serial.print(MAX_WIFI_BOOT_ATTEMPTS);
+      Serial.print(" failed (Status: ");
+      Serial.print(getWifiStatusString(status));
+      Serial.println(").");
+      Serial.println("--------------------------------------------------");
+
+      // State 1: If we have not reached 3 attempts yet, immediately start next attempt
+      if (wifiAttemptCount < MAX_WIFI_BOOT_ATTEMPTS && !offlineModeActive)
+      {
+        wifiAttemptCount++;
+        lastWifiAttempt = now;
+        wifiConnecting = true;
+
+        Serial.println();
+        Serial.println("==================================================");
+        Serial.print(" >>> Starting Wi-Fi Attempt #");
+        Serial.print(wifiAttemptCount);
+        Serial.print(" of ");
+        Serial.print(MAX_WIFI_BOOT_ATTEMPTS);
+        Serial.println(" (duration: 5s)... <<<");
+        Serial.println("==================================================");
+
+        WiFi.disconnect();
+        WiFi.setTxPower(WIFI_POWER_15dBm);
+        WiFi.begin(currentSsid.c_str(), currentPassword.c_str());
+        return;
       }
+      else
+      {
+        // 3 attempts have failed (15s total)! "poof offline mode fallback"
+        wifiConnecting = false;
+        WiFi.disconnect(true); // Halt all STA station channel-hopping sweeps immediately
+        if (!offlineModeActive)
+        {
+          offlineModeActive = true;
+          Serial.println();
+          Serial.println("==================================================");
+          Serial.print(" [OFFLINE FALLBACK] All ");
+          Serial.print(MAX_WIFI_BOOT_ATTEMPTS);
+          Serial.println(" attempts failed (15s total).");
+          Serial.println(" Poof! Entering Autonomous Offline Mode.");
+          Serial.println(" Energizing power lines now (Low Line, then High Line after 3s).");
+          Serial.println(" Starting Provisioning Hotspot so you can access the portal...");
+          Serial.println("==================================================");
 
-      // If connection fails 3 times, launch setup hotspot so user can reconfigure
-      if (wifiAttemptCount >= 3 && !ProvisioningServer::active()) {
-        Serial.println("  Auto-Setup: Starting Provisioning Hotspot so you can reconfigure Wi-Fi from phone.");
-        ProvisioningServer::start();
+          if (!bootPowerEnergized)
+          {
+            bootPowerEnergized = true;
+            applyRelays(true, "offline_fallback");
+          }
+
+          if (!ProvisioningServer::active())
+          {
+            ProvisioningServer::start();
+          }
+        }
+
+        lastWifiAttempt = now;
+        return;
       }
+    }
 
-      Serial.print  ("  Next Step:  Retrying in ");
-      Serial.print  (WIFI_RETRY_INTERVAL_MS / 1000);
-      Serial.println(" seconds...");
-      Serial.println("==================================================");
-      Serial.println();
+    return;
+  }
 
-      lastWifiAttempt = now;
+  // --- OFFLINE MODE: BACKGROUND RETRY ---
+  if (offlineModeActive)
+  {
+    // If the provisioning portal is running, keep AP solid and undisturbed
+    if (ProvisioningServer::active())
+    {
       return;
     }
 
-    // Periodic progress reminder every 5s while waiting
-    if (now - lastWifiProgressPrint >= 5000) {
-      lastWifiProgressPrint = now;
-      unsigned long elapsedSec = (now - lastWifiAttempt) / 1000;
-      Serial.print("[WIFI] Still connecting to \"");
-      Serial.print(currentSsid);
-      Serial.print("\"... (");
-      Serial.print(elapsedSec);
-      Serial.println("s elapsed)");
+    if (lastWifiAttempt != 0 && (now - lastWifiAttempt < WIFI_OFFLINE_RETRY_INTERVAL_MS))
+    {
+      return;
     }
+
+    lastWifiAttempt = now;
+    wifiConnecting = true;
+    Serial.println();
+    Serial.println("[OFFLINE MODE] Attempting quiet background Wi-Fi reconnect...");
+    WiFi.setTxPower(WIFI_POWER_15dBm);
+    WiFi.begin(currentSsid.c_str(), currentPassword.c_str());
     return;
   }
 
-  // Backoff between retry attempts
-  if (lastWifiAttempt != 0 && now - lastWifiAttempt < WIFI_RETRY_INTERVAL_MS) {
-    return;
-  }
-
+  // --- INITIAL FIRST ATTEMPT (Attempt #1 of 3) ---
   lastWifiAttempt = now;
-  lastWifiProgressPrint = now;
   wifiConnecting = true;
-  wifiAttemptCount++;
+  wifiAttemptCount = 1;
 
   Serial.println();
   Serial.println("==================================================");
-  Serial.print  (" >>> Connecting to WiFi: \"");
-  Serial.print  (currentSsid);
-  Serial.print  ("\" (Attempt #");
-  Serial.print  (wifiAttemptCount);
-  Serial.println(")... <<<");
+  Serial.print(" >>> Starting Wi-Fi Attempt #1 of ");
+  Serial.print(MAX_WIFI_BOOT_ATTEMPTS);
+  Serial.println(" (duration: 5s)... <<<");
   Serial.println("==================================================");
 
+  WiFi.setTxPower(WIFI_POWER_15dBm);
   WiFi.begin(currentSsid.c_str(), currentPassword.c_str());
 }
 
-
-void maintainTimeSync() {
-  if (timeSynced || WiFi.status() != WL_CONNECTED) {
+void maintainTimeSync()
+{
+  if (timeSynced || WiFi.status() != WL_CONNECTED)
+  {
     return;
   }
 
   static unsigned long ntpStartTime = 0;
-  if (!ntpStarted) {
+  if (!ntpStarted)
+  {
     ntpStarted = true;
     ntpStartTime = millis();
     configTime(0, 0, "pool.ntp.org", "time.google.com");
     Serial.println("Syncing clock via NTP (required for TLS)...");
   }
 
-  if (time(nullptr) > MIN_VALID_EPOCH) {
+  if (time(nullptr) > MIN_VALID_EPOCH)
+  {
     timeSynced = true;
     Serial.println("Clock synced via NTP. TLS connections are now possible.");
     return;
@@ -909,7 +1246,8 @@ void maintainTimeSync() {
 
   // Fallback: If NTP takes more than 8 seconds (e.g. UDP port 123 blocked by router/hotspot),
   // set a known valid epoch time so TLS certificate validation succeeds and MQTT can connect.
-  if (millis() - ntpStartTime > 8000) {
+  if (millis() - ntpStartTime > 8000)
+  {
     timeSynced = true;
     struct timeval tv;
     tv.tv_sec = 1715000000; // May 2024 (well within ISRG Root X1 cert validity 2015-2035)
@@ -919,57 +1257,63 @@ void maintainTimeSync() {
   }
 }
 
-
-void maintainMqtt() {
-  if (WiFi.status() != WL_CONNECTED || !timeSynced) {
+void maintainMqtt()
+{
+  if (WiFi.status() != WL_CONNECTED || !timeSynced)
+  {
     return;
   }
 
   unsigned long now = millis();
 
-  if (mqtt.connected()) {
+  if (mqtt.connected())
+  {
     mqtt.loop();
 
     // Re-assert online status heartbeat every 15 seconds to ensure backend & app know device is live
     static unsigned long lastStatusHeartbeat = 0;
-    if (now - lastStatusHeartbeat >= 15000) {
+    if (now - lastStatusHeartbeat >= 15000)
+    {
       lastStatusHeartbeat = now;
       mqtt.publish(topicStatus.c_str(), "online", true);
     }
     return;
   }
 
-  if (lastMqttAttempt != 0 && now - lastMqttAttempt < mqttBackoffMs) {
+  if (lastMqttAttempt != 0 && now - lastMqttAttempt < mqttBackoffMs)
+  {
     return;
   }
   lastMqttAttempt = now;
 
   Serial.println();
   Serial.println("==================================================");
-  Serial.print  (" [MQTT] Connecting to broker ");
-  Serial.print  (MQTT_HOST);
+  Serial.print(" [MQTT] Connecting to broker ");
+  Serial.print(MQTT_HOST);
   Serial.println("...");
   Serial.println("==================================================");
 
   // LWT: the broker publishes retained "offline" on our status topic if this
   // client vanishes without a clean disconnect.
   bool connected = mqtt.connect(
-    deviceUidStr.c_str(),
-    MQTT_USERNAME,
-    MQTT_PASSWORD,
-    topicStatus.c_str(),
-    1,      // willQoS
-    true,   // willRetain
-    "offline"
-  );
+      deviceUidStr.c_str(),
+      MQTT_USERNAME,
+      MQTT_PASSWORD,
+      topicStatus.c_str(),
+      1,    // willQoS
+      true, // willRetain
+      "offline");
 
-  if (connected) {
+  if (connected)
+  {
     mqttBackoffMs = MQTT_BACKOFF_MIN_MS;
     Serial.println();
     Serial.println("==================================================");
     Serial.println(" >>> MQTT BROKER CONNECTED SUCCESSFULLY! <<<");
-    Serial.print  ("  Device UID: "); Serial.println(deviceUidStr);
-    Serial.print  ("  Host:       "); Serial.println(MQTT_HOST);
+    Serial.print("  Device UID: ");
+    Serial.println(deviceUidStr);
+    Serial.print("  Host:       ");
+    Serial.println(MQTT_HOST);
     Serial.println("==================================================");
 
     // Publish online status (retained) so backend & app discover the device
@@ -1001,8 +1345,9 @@ void maintainMqtt() {
     Serial.print("[MQTT] Subscribed to countdown topic: ");
     Serial.println(topicCountdownSet);
     Serial.println();
-
-  } else {
+  }
+  else
+  {
     Serial.print("MQTT connect failed (state ");
     Serial.print(mqtt.state());
     Serial.print("). Retrying in ");
@@ -1013,120 +1358,144 @@ void maintainMqtt() {
   }
 }
 
-
 // Handles remote relay commands published to voltwise/<uid>/relay/set.
 // Payload: {"on": true|false, "line": "high"|"low"|"all"}.
 // Pin 25 = Low Power Line, Pin 26 = High Power Line.
-void onMqttMessage(char* topic, byte* payload, unsigned int length) {
-  if (strcmp(topic, topicCountdownSet.c_str()) == 0) {
+void onMqttMessage(char *topic, byte *payload, unsigned int length)
+{
+  if (strcmp(topic, topicCountdownSet.c_str()) == 0)
+  {
     JsonDocument doc;
     DeserializationError parseError = deserializeJson(doc, payload, length);
-    if (!parseError && doc["enabled"].is<bool>()) {
+    if (!parseError && doc["enabled"].is<bool>())
+    {
       shutdownCountdownEnabled = doc["enabled"].as<bool>();
-      if (doc["seconds"].is<unsigned long>()) {
+      if (doc["seconds"].is<unsigned long>())
+      {
         shutdownCountdownSeconds = doc["seconds"].as<unsigned long>();
       }
-      if (!shutdownCountdownEnabled) {
+      if (!shutdownCountdownEnabled)
+      {
         countdownActive = false;
       }
       Serial.println();
       Serial.println("==================================================");
-      Serial.print  (" [MQTT] Shutdown Countdown Config Updated: ");
+      Serial.print(" [MQTT] Shutdown Countdown Config Updated: ");
       Serial.println(shutdownCountdownEnabled ? "ENABLED" : "DISABLED");
-      Serial.print  ("  Countdown Seconds: ");
+      Serial.print("  Countdown Seconds: ");
       Serial.println(shutdownCountdownSeconds);
       Serial.println("==================================================");
 
       publishCountdownState();
-    } else {
+    }
+    else
+    {
       Serial.println("Ignoring malformed countdown config command.");
     }
     return;
   }
 
-  if (strcmp(topic, topicSafetySet.c_str()) == 0) {
+  if (strcmp(topic, topicSafetySet.c_str()) == 0)
+  {
     JsonDocument doc;
     DeserializationError parseError = deserializeJson(doc, payload, length);
-    if (!parseError && doc["enabled"].is<bool>()) {
+    if (!parseError && doc["enabled"].is<bool>())
+    {
       safetyCutoffEnabled = doc["enabled"].as<bool>();
-      if (doc["thresholdWatts"].is<float>()) {
+      if (doc["thresholdWatts"].is<float>())
+      {
         maxAllowedPowerWatts = doc["thresholdWatts"].as<float>();
       }
-      if (doc["countdownEnabled"].is<bool>()) {
+      if (doc["countdownEnabled"].is<bool>())
+      {
         shutdownCountdownEnabled = doc["countdownEnabled"].as<bool>();
-        if (doc["countdownSeconds"].is<unsigned long>()) {
+        if (doc["countdownSeconds"].is<unsigned long>())
+        {
           shutdownCountdownSeconds = doc["countdownSeconds"].as<unsigned long>();
         }
-        if (!shutdownCountdownEnabled) {
+        if (!shutdownCountdownEnabled)
+        {
           countdownActive = false;
         }
         publishCountdownState();
       }
       Serial.println();
       Serial.println("==================================================");
-      Serial.print  (" [MQTT] Safety Cutoff Config Updated: ");
+      Serial.print(" [MQTT] Safety Cutoff Config Updated: ");
       Serial.println(safetyCutoffEnabled ? "ENABLED" : "DISABLED");
-      Serial.print  ("  Threshold Watts: ");
+      Serial.print("  Threshold Watts: ");
       Serial.println(maxAllowedPowerWatts);
       Serial.println("==================================================");
 
       publishSafetyState();
-    } else {
+    }
+    else
+    {
       Serial.println("Ignoring malformed safety config command.");
     }
     return;
   }
 
-  if (strcmp(topic, topicRelaySet.c_str()) != 0) {
+  if (strcmp(topic, topicRelaySet.c_str()) != 0)
+  {
     return;
   }
 
-
   JsonDocument doc;
   DeserializationError parseError = deserializeJson(doc, payload, length);
-  if (parseError || !doc["on"].is<bool>()) {
+  if (parseError || !doc["on"].is<bool>())
+  {
     Serial.println("Ignoring malformed relay command.");
     return;
   }
 
   bool turnOn = doc["on"].as<bool>();
-  const char* line = doc["line"] | "all";
+  const char *line = doc["line"] | "all";
 
   Serial.println();
   Serial.println("==================================================");
-  Serial.print  (" [MQTT] Remote Relay Command: ");
-  Serial.print  (turnOn ? "TURN ON" : "TURN OFF");
-  Serial.print  (" | Target Line: ");
+  Serial.print(" [MQTT] Remote Relay Command: ");
+  Serial.print(turnOn ? "TURN ON" : "TURN OFF");
+  Serial.print(" | Target Line: ");
   Serial.println(line);
   Serial.println("==================================================");
 
-  if (turnOn) {
+  if (turnOn)
+  {
     // The user explicitly wants power back: clear the shutdown latch and stop
     // the countdown from instantly re-cutting it (see remoteOverride).
     powerShutDown = false;
     countdownActive = false;
     remoteOverride = true;
-  } else if (strcmp(line, "all") == 0) {
+  }
+  else if (strcmp(line, "all") == 0)
+  {
     // Cut all power: latch shutdown so auto-restart doesn't turn it back on
     powerShutDown = true;
     countdownActive = false;
   }
 
-  if (strcmp(line, "high") == 0) {
+  if (strcmp(line, "high") == 0)
+  {
     // High Load Voltage line -> Pin 26
     applyLineRelay("high", turnOn, "remote");
-  } else if (strcmp(line, "low") == 0) {
+  }
+  else if (strcmp(line, "low") == 0)
+  {
     // Low Load Voltage line -> Pin 25
     applyLineRelay("low", turnOn, "remote");
-  } else {
+  }
+  else
+  {
     // "all" or Cut all power -> both Pin 25 and Pin 26
     applyRelays(turnOn, "remote");
   }
 }
 
-
-void publishTelemetry(PowerReadings readings) {
-  if (!mqtt.connected()) {
+void publishTelemetry(PowerReadings readings)
+{
+  if (!mqtt.connected())
+  {
     return;
   }
 
@@ -1142,14 +1511,16 @@ void publishTelemetry(PowerReadings readings) {
   char buffer[256];
   size_t length = serializeJson(doc, buffer, sizeof(buffer));
 
-  if (!mqtt.publish(topicTelemetry.c_str(), (const uint8_t*)buffer, length, false)) {
+  if (!mqtt.publish(topicTelemetry.c_str(), (const uint8_t *)buffer, length, false))
+  {
     Serial.println("Telemetry publish failed (check MQTT buffer size / connection).");
   }
 }
 
-
-void publishRelayState() {
-  if (!mqtt.connected()) {
+void publishRelayState()
+{
+  if (!mqtt.connected())
+  {
     return;
   }
 
@@ -1157,20 +1528,24 @@ void publishRelayState() {
   doc["on"] = relaysAreOn;
   doc["highOn"] = highLineOn;
   doc["lowOn"] = lowLineOn;
+  doc["staggering"] = highLinePendingOn;
+  doc["staggerSeconds"] = INTERVAL_TIME;
   doc["reason"] = relayReason;
 
-  char buffer[128];
+  char buffer[160];
   size_t length = serializeJson(doc, buffer, sizeof(buffer));
 
   // Retained: subscribers get the current relay state immediately on connect.
-  if (!mqtt.publish(topicRelayState.c_str(), (const uint8_t*)buffer, length, true)) {
+  if (!mqtt.publish(topicRelayState.c_str(), (const uint8_t *)buffer, length, true))
+  {
     Serial.println("Relay state publish failed (check MQTT buffer size / connection).");
   }
 }
 
-
-void publishSafetyState() {
-  if (!mqtt.connected()) {
+void publishSafetyState()
+{
+  if (!mqtt.connected())
+  {
     return;
   }
 
@@ -1182,14 +1557,16 @@ void publishSafetyState() {
   size_t length = serializeJson(doc, buffer, sizeof(buffer));
 
   // Retained: subscribers get the safety cutoff state immediately on connect.
-  if (!mqtt.publish(topicSafetyState.c_str(), (const uint8_t*)buffer, length, true)) {
+  if (!mqtt.publish(topicSafetyState.c_str(), (const uint8_t *)buffer, length, true))
+  {
     Serial.println("Safety state publish failed (check MQTT buffer size / connection).");
   }
 }
 
-
-void publishCountdownState() {
-  if (!mqtt.connected()) {
+void publishCountdownState()
+{
+  if (!mqtt.connected())
+  {
     return;
   }
 
@@ -1201,9 +1578,8 @@ void publishCountdownState() {
   size_t length = serializeJson(doc, buffer, sizeof(buffer));
 
   // Retained: subscribers get the countdown state immediately on connect.
-  if (!mqtt.publish(topicCountdownState.c_str(), (const uint8_t*)buffer, length, true)) {
+  if (!mqtt.publish(topicCountdownState.c_str(), (const uint8_t *)buffer, length, true))
+  {
     Serial.println("Countdown state publish failed (check MQTT buffer size / connection).");
   }
 }
-
-

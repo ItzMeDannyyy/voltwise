@@ -58,6 +58,10 @@ export interface MqttRelayState {
   reason: string;
   highOn?: boolean;
   lowOn?: boolean;
+  /** True while the High Load line (Pin 26) is in its inrush mitigation stagger delay */
+  staggering?: boolean;
+  /** Duration of the stagger delay in seconds (default 3) */
+  staggerSeconds?: number;
 }
 
 /** Retained safety configuration published by the firmware. */
@@ -276,6 +280,8 @@ export function MqttProvider({ children }: { children: ReactNode }) {
             reason: typeof parsed.reason === "string" ? parsed.reason : "unknown",
             highOn: typeof parsed.highOn === "boolean" ? parsed.highOn : parsed.on,
             lowOn: typeof parsed.lowOn === "boolean" ? parsed.lowOn : parsed.on,
+            staggering: typeof parsed.staggering === "boolean" ? parsed.staggering : false,
+            staggerSeconds: typeof parsed.staggerSeconds === "number" ? parsed.staggerSeconds : 3,
           });
           return;
         }

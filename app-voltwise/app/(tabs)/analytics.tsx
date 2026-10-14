@@ -103,7 +103,7 @@ const FALLBACK_METRICS: MetricStat[] = [
     min: 0.32,
     max: 3.12,
     info:
-      "RMS current drawn by all connected loads. High sustained current " +
+      "Total electrical current drawn by all running appliances. High sustained current " +
       "can indicate an overloaded circuit or a failing appliance.",
   },
   {
@@ -125,8 +125,8 @@ const FALLBACK_METRICS: MetricStat[] = [
     min: 12.3,
     max: 26.1,
     info:
-      "Cumulative energy consumed. The PZEM-004T resets this counter when " +
-      "power is cycled unless the backend persists the value.",
+      "Cumulative energy consumed. Energy totals track your usage and reset " +
+      "if the monitor restarts without cloud sync.",
   },
   {
     key: "frequency",
@@ -147,8 +147,8 @@ const FALLBACK_METRICS: MetricStat[] = [
     min: 0.78,
     max: 0.99,
     info:
-      "Ratio of active power to apparent power. A PF below 0.85 wastes " +
-      "energy in reactive current. Capacitor banks can improve PF.",
+      "Ratio of useful power to total power supplied. A score closer to 1.0 " +
+      "means high electrical efficiency with minimal wasted power.",
   },
 ];
 
@@ -311,9 +311,9 @@ export default function AnalyticsScreen() {
             }}
             activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel="Edit Tariff Rate"
+            accessibilityLabel="Edit Electricity Rate"
           >
-            <Text style={styles.billRowLabel}>Tariff</Text>
+            <Text style={styles.billRowLabel}>Electricity Rate</Text>
             <View style={styles.tariffValueContainer}>
               <Text style={[styles.billRowValue, styles.dashedValue]}>
                 {currency.symbol} {prefs.ratePerKwh.toFixed(2)} /kWh
@@ -328,7 +328,7 @@ export default function AnalyticsScreen() {
           </TouchableOpacity>
 
           <View style={[styles.billRow, { marginTop: 10 }]}>
-            <Text style={styles.billRowLabel}>Rate Accumulated</Text>
+            <Text style={styles.billRowLabel}>Total Energy Used</Text>
             <Text style={styles.billRowValue}>
               {energyParts(bill.accumulatedKwh, 1).value}{" "}
               {energyParts(bill.accumulatedKwh, 1).unit}
@@ -564,9 +564,9 @@ export default function AnalyticsScreen() {
                 <Ionicons name="calculator-outline" size={28} color={colors.accent} />
               </View>
 
-              <Text style={styles.modalTitle}>Update Tariff Rate</Text>
+              <Text style={styles.modalTitle}>Update Electricity Rate</Text>
               <Text style={styles.modalMessage}>
-                Set the utility rate charged by your electricity provider per kWh.
+                Enter the rate charged by your electric provider per kWh (found on your electric bill).
               </Text>
 
               <View style={styles.inputContainer}>
