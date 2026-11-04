@@ -132,7 +132,7 @@ class PredictionResponse(BaseModel):
 class TrainRequest(BaseModel):
     window_seconds: int = 30
     min_k: int = 2
-    max_k: int = 6
+    max_k: int = 8
     exact_k: Optional[int] = None
 
 

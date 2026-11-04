@@ -38,7 +38,7 @@ const formatDeviceForResponse = (device: {
     room: device.room?.name ?? "Unassigned",
     category: device.category,
     imageUri: device.imageUri,
-    status: device.status,
+    status: device.status as DeviceResponseDto["status"],
     watts: device.ratedWatts,
     enabled: device.enabled,
   };
@@ -91,7 +91,10 @@ export const resolvePowerReconciliation = (
   }
 
   return devices
-    .filter((device) => device.status === DeviceStatus.UNPOWERED)
+    .filter(
+      (device) =>
+        device.status === DeviceStatus.UNPOWERED
+    )
     .map((device) => ({
       id: device.id,
       status: deriveDeviceStatus(device.enabled, device.ratedWatts),

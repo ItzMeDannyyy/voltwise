@@ -117,6 +117,23 @@ async function seed(): Promise<void> {
   });
   console.log(`  Created user: ${demoUser.email} (id=${demoUser.id})`);
 
+  // ── 2b. Fresh Demo User (No data, clean slate) ────────────────────────────────
+  console.log("Creating fresh empty demo user (demo1@gmail.com)...");
+  const FRESH_USER_PASSWORD = "Password123!";
+  const freshPasswordHash = await bcrypt.hash(FRESH_USER_PASSWORD, 10);
+
+  const freshUser = await prisma.user.create({
+    data: {
+      email: "demo1@gmail.com",
+      name: "Demo One",
+      firstName: "Demo",
+      lastName: "One",
+      currency: "₱",
+      passwordHash: freshPasswordHash,
+    },
+  });
+  console.log(`  Created fresh user: ${freshUser.email} (id=${freshUser.id})`);
+
   // ── 3. Tariff ────────────────────────────────────────────────────────────────
   console.log("Creating tariff...");
   const tariff = await prisma.tariff.create({
@@ -541,7 +558,7 @@ async function seed(): Promise<void> {
 
   // ── Done ─────────────────────────────────────────────────────────────────────
   console.log("\nSeed complete. Summary:");
-  console.log(`  Users: 1`);
+  console.log(`  Users: 2`);
   console.log(`  Rooms: ${createdRooms.length}`);
   console.log(`  Devices: ${createdDevices.length}`);
   console.log(`  Energy readings: ${allReadings.length}`);
@@ -549,8 +566,12 @@ async function seed(): Promise<void> {
   console.log(`  Tariffs: 1`);
   console.log(`  Billing periods: 1`);
   console.log("\nDemo credentials:");
-  console.log(`  Email:    demo@voltwise.app`);
-  console.log(`  Password: ${DEMO_USER_PASSWORD}`);
+  console.log(`  Seeded Account (Populated):`);
+  console.log(`    Email:    demo@voltwise.app`);
+  console.log(`    Password: ${DEMO_USER_PASSWORD}`);
+  console.log(`  Fresh Account (Empty Data):`);
+  console.log(`    Email:    demo1@gmail.com`);
+  console.log(`    Password: ${FRESH_USER_PASSWORD} (or Password123)`);
 }
 
 seed()

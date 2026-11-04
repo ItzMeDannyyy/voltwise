@@ -57,25 +57,31 @@ Each 30-second window extracts 10 electrical features:
 
 ## 3. Training Results & Learned Clusters
 
-The model was trained on the datasets in `data/raw/`:
-- `voltwise_air_conditioner_2026-09-25T23-45-16.csv` (458 readings)
-- `voltwise_refrigerator_2026-09-26T00-04-25.csv` (454 readings)
+The model was trained on all datasets in `data/raw/`:
+- `voltwise_air_conditioner_2026-09-25T23-45-16.csv` (458 readings, 31 windows)
+- `voltwise_air_conditioner_2026-09-26T18-34-20.csv` (1,079 readings, 73 windows)
+- `voltwise_cellphone_samsung_a14_5g_10watts_2026-10-01T17-21-37.csv` (3,673 readings, 250 windows)
+- `voltwise_light_bulb_2026-10-14T19-42-06.csv` (1,177 readings, 80 windows)
+- `voltwise_light_bulb_2026-10-14T20-25-10.csv` (1,146 readings, 78 windows)
+- `voltwise_refrigerator_2026-09-26T00-04-25.csv` (454 readings, 31 windows)
+- `voltwise_refrigerator_2026-10-03T16-50-54.csv` (5,559 readings, 375 windows)
 
-Evaluating silhouette scores across $K \in [2, 6]$ selected **$K = 6$** (Silhouette Score: **0.6377**).
+Evaluating silhouette scores across $K \in [2, 8]$ selected **$K = 7$** (Silhouette Score: **0.5301** across 918 30-second windows).
 
 ### Cluster Profiles
 
 | Cluster | Power Mean | Current Mean | Power Factor | Count | Interpretation |
 |:---:|:---:|:---:|:---:|:---:|---|
-| **0** | 639.5 W | 3.13 A | 0.86 | 29 | **High Continuous Load (Air Conditioner)** |
-| **1** | 24.3 W | 0.09 A | 0.99 | 16 | **Low Load / Cycling (Refrigerator)** |
-| **2** | 505.2 W | 2.64 A | 0.93 | 1 | **High Inrush / Peak Surge (Air Conditioner - 3665.5W peak)** |
-| **3** | 13.0 W | 0.05 A | 1.00 | 6 | **Standby / Idle (Refrigerator)** |
-| **4** | 315.3 W | 1.54 A | 0.93 | 5 | **Medium Load (Refrigerator Active Cooling)** |
-| **5** | 12.5 W | 0.06 A | 0.75 | 5 | **Standby / Low PF (Refrigerator Idle State)** |
+| **0** | 6.91 W | 0.05 A | 0.60 | 158 | **Low-Power Lighting (Light Bulb)** |
+| **1** | 27.06 W | 0.11 A | 0.98 | 175 | **Low Load / Cycling (Refrigerator)** |
+| **2** | 630.45 W | 3.09 A | 0.86 | 101 | **High Continuous Load (Air Conditioner)** |
+| **3** | 189.73 W | 0.93 A | 0.92 | 13 | **Medium Load (Refrigerator Compressor Transition)** |
+| **4** | 505.15 W | 2.64 A | 0.93 | 1 | **High Inrush / Peak Surge (Air Conditioner - 3665.5W peak)** |
+| **5** | 7.38 W | 0.05 A | 0.61 | 254 | **Low-Power Device / Charging (Cellphone SAMSUNG A14 5G 10watts)** |
+| **6** | 29.90 W | 0.13 A | 0.97 | 216 | **Low Load / Cycling (Refrigerator)** |
 
-- **Anomaly Threshold (95th percentile distance)**: `1.7950`
-  - Any window with Euclidean distance $> 1.7950$ to its assigned cluster centroid triggers a warning alert.
+- **Anomaly Threshold (95th percentile distance)**: `1.5352`
+  - Any window with Euclidean distance $> 1.5352$ to its assigned cluster centroid triggers a warning alert.
 
 ---
 

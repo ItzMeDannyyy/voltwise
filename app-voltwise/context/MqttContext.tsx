@@ -47,6 +47,7 @@ export interface MqttTelemetry {
   current?: number;
   watts: number;
   kwh: number;
+  totalKwh?: number;
   frequency?: number;
   powerFactor?: number;
 }
@@ -84,6 +85,12 @@ export interface MqttEvent {
   type: string;
   /** Size of the detected power jump, for new_load events. */
   deltaWatts?: number;
+  dominantAppliance?: string;
+  deviceName?: string;
+  interpretation?: string;
+  isRegistered?: boolean;
+  isUnregistered?: boolean;
+  isAnomaly?: boolean;
   /** Date.now() when the event arrived — consumers de-dupe on this. */
   receivedAt: number;
 }
@@ -312,9 +319,29 @@ export function MqttProvider({ children }: { children: ReactNode }) {
         if (suffix === "events") {
           const parsed = JSON.parse(payload.toString());
           if (typeof parsed.type !== "string") return;
+
+          if (parsed.type === "appliance_off") {
+            setLastEvent(null);
+            return;
+          }
+
+          // Check if event has a timestamp and is stale (older than 3 minutes)
+          if (typeof parsed.at === "string") {
+            const eventTime = new Date(parsed.at).getTime();
+            if (Number.isFinite(eventTime) && Date.now() - eventTime > 180_000) {
+              return;
+            }
+          }
+
           setLastEvent({
             type: parsed.type,
             deltaWatts: asFiniteNumber(parsed.deltaWatts),
+            dominantAppliance: typeof parsed.dominantAppliance === "string" ? parsed.dominantAppliance : undefined,
+            deviceName: typeof parsed.deviceName === "string" ? parsed.deviceName : undefined,
+            interpretation: typeof parsed.interpretation === "string" ? parsed.interpretation : undefined,
+            isRegistered: typeof parsed.isRegistered === "boolean" ? parsed.isRegistered : undefined,
+            isUnregistered: typeof parsed.isUnregistered === "boolean" ? parsed.isUnregistered : undefined,
+            isAnomaly: typeof parsed.isAnomaly === "boolean" ? parsed.isAnomaly : undefined,
             receivedAt: Date.now(),
           });
           return;
@@ -329,6 +356,7 @@ export function MqttProvider({ children }: { children: ReactNode }) {
           setTelemetry({
             watts,
             kwh,
+            totalKwh: asFiniteNumber(parsed.totalKwh),
             voltage: asFiniteNumber(parsed.voltage),
             current: asFiniteNumber(parsed.current),
             frequency: asFiniteNumber(parsed.frequency),

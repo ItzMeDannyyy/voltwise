@@ -11,6 +11,13 @@ import { prisma } from "./prisma.ts";
 import { AppError } from "./AppError.ts";
 import { createLoadDetector } from "./loadDetector.ts";
 import { createAlert } from "../modules/alerts/alerts.service.ts";
+import {
+  classifyTelemetry,
+  matchOrTagDevice,
+  DeviceStatus,
+  isMlEnabled,
+  type MLPrediction,
+} from "./mlService.ts";
 
 export interface RelayState {
   on: boolean;
@@ -64,6 +71,8 @@ export interface IotState {
   lastTelemetry: TelemetryPayload | null;
   lastTelemetryAt: string | null;
   activeCollection?: ActiveCollectionSession | null;
+  lastMlPrediction?: MLPrediction | null;
+  lastApplianceDetected?: string | null;
 }
 
 let activeCollection: ActiveCollectionSession | null = null;
@@ -84,6 +93,8 @@ const state: Omit<IotState, "deviceUid"> = {
   countdown: { enabled: false, seconds: 1800 },
   lastTelemetry: null,
   lastTelemetryAt: null,
+  lastMlPrediction: null,
+  lastApplianceDetected: null,
 };
 
 
@@ -96,6 +107,9 @@ let ingestUserId: number | null = null;
 
 // Timestamp of the last EnergyReading insert, for the optional throttle.
 let lastInsertAtMs = 0;
+
+// Track active appliance transitions to avoid spamming notification modals
+let lastActiveAppliance: string | null = null;
 
 // Step-change detector for "a new appliance just switched on" suggestions.
 // Thresholds are tunable via env; created lazily so tests (and a process that
@@ -137,6 +151,30 @@ export const resolveIngestUser = async (): Promise<number | null> => {
   ingestUserId = user.id;
   console.log(`MQTT ingest: readings will be stored for ${email} (user #${user.id}).`);
   return user.id;
+};
+
+/**
+ * Resolves the effective user for telemetry ingestion.
+ * Prioritizes the most recently active non-revoked session,
+ * so when a user (e.g. demo1@gmail.com) is logged into the app,
+ * sensor telemetry and new device prompts automatically bind to that user.
+ */
+export const getEffectiveIngestUserId = async (): Promise<number | null> => {
+  try {
+    const activeSession = await prisma.session.findFirst({
+      where: {
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { lastSeenAt: "desc" },
+    });
+    if (activeSession) {
+      return activeSession.userId;
+    }
+  } catch {}
+
+  if (ingestUserId !== null) return ingestUserId;
+  return resolveIngestUser();
 };
 
 // Documentation only: Parses a raw number-ish value, returning undefined for
@@ -246,7 +284,111 @@ export const handleMessage = async (
         activeCollection.sampleCount++;
       }
 
-      if (ingestUserId === null) return;
+      // Run ML model classification & appliance identification
+      let predictedDeviceId: number | null = null;
+      const currentUserId = await getEffectiveIngestUserId();
+
+      try {
+        const prediction = await classifyTelemetry(telemetry, deviceUid());
+        if (prediction) {
+          state.lastMlPrediction = prediction;
+          state.lastApplianceDetected = prediction.dominant_appliance;
+
+          if (currentUserId !== null) {
+            // Check if appliance newly switched ON or changed dominant state
+            const isNewActive =
+              prediction.dominant_appliance !== lastActiveAppliance && watts >= 3.0;
+
+            const matchResult = await matchOrTagDevice(
+              currentUserId,
+              prediction,
+              watts,
+              isNewActive
+            );
+            if (matchResult) {
+              predictedDeviceId = matchResult.deviceId;
+
+              if (isNewActive) {
+                lastActiveAppliance = prediction.dominant_appliance;
+
+                if (matchResult.isUnregistered) {
+                  publishEvent({
+                    type: "new_load",
+                    dominantAppliance: matchResult.dominantAppliance,
+                    deviceName: matchResult.deviceName,
+                    deltaWatts: watts,
+                    interpretation: prediction.interpretation,
+                    isRegistered: false,
+                    isUnregistered: true,
+                    isAnomaly: matchResult.isAnomaly,
+                    at: now.toISOString(),
+                  });
+                } else {
+                  publishEvent({
+                    type: "appliance_detected",
+                    dominantAppliance: matchResult.dominantAppliance,
+                    deviceName: matchResult.deviceName,
+                    deltaWatts: watts,
+                    interpretation: prediction.interpretation,
+                    isRegistered: true,
+                    isUnregistered: false,
+                    isAnomaly: false,
+                    at: now.toISOString(),
+                  });
+                }
+              }
+            } else if (watts < 3.0) {
+              if (lastActiveAppliance !== null) {
+                lastActiveAppliance = null;
+                try {
+                  await prisma.device.updateMany({
+                    where: { userId: currentUserId, status: DeviceStatus.ACTIVE },
+                    data: { status: DeviceStatus.IDLE },
+                  });
+                } catch {}
+                publishEvent({
+                  type: "appliance_off",
+                  dominantAppliance: null,
+                  deltaWatts: watts,
+                  at: now.toISOString(),
+                });
+              }
+            }
+          }
+
+          // Always emit live ML telemetry snapshot over MQTT
+          publishEvent({
+            type: "ml_inference",
+            cluster: prediction.cluster,
+            interpretation: prediction.interpretation,
+            dominantAppliance: prediction.dominant_appliance,
+            isAnomaly: prediction.is_anomaly,
+            at: now.toISOString(),
+          });
+        } else if (watts < 3.0) {
+          if (lastActiveAppliance !== null) {
+            lastActiveAppliance = null;
+            if (currentUserId !== null) {
+              try {
+                await prisma.device.updateMany({
+                  where: { userId: currentUserId, status: DeviceStatus.ACTIVE },
+                  data: { status: DeviceStatus.IDLE },
+                });
+              } catch {}
+            }
+            publishEvent({
+              type: "appliance_off",
+              dominantAppliance: null,
+              deltaWatts: watts,
+              at: now.toISOString(),
+            });
+          }
+        }
+      } catch (err) {
+        // Fail-safe: sensor data flow must never be blocked by ML hiccups
+      }
+
+      if (currentUserId === null) return;
 
       // Optional throttle: skip the insert when the previous one is too
       // recent. Default 0 = store every message (~2 s cadence).
@@ -254,18 +396,44 @@ export const handleMessage = async (
       if (minIntervalMs > 0 && now.getTime() - lastInsertAtMs < minIntervalMs) {
         return;
       }
-      lastInsertAtMs = now.getTime();
+      // Calculate interval in seconds since last insert.
+      // Use real elapsed seconds when between 1s and 60s; default to nominal 2s
+      // on first sample, short burst/test (< 1s), or long disconnection (> 60s).
+      const nowMs = now.getTime();
+      const elapsedMs = lastInsertAtMs > 0 ? nowMs - lastInsertAtMs : 0;
+      const elapsedSeconds =
+        elapsedMs >= 1000 && elapsedMs <= 60_000 ? elapsedMs / 1000 : 2;
+      lastInsertAtMs = nowMs;
 
-      const deviceIdToAssign = activeCollection ? activeCollection.deviceId : null;
+      // Physical energy consumed during this interval (delta kWh):
+      // EnergyReading rows represent incremental consumption over time, which
+      // is summed by dashboard history, totalTodayKwh, and analytics billing predictions.
+      // PZEM-004T's hardware energy register (telemetry.kwh) reports cumulative lifetime energy
+      // (like an odometer). Storing raw cumulative values causes SUM(kwh) across thousands
+      // of 2-second pings to multiply absurdly (e.g. 1800 * 0.93 = 1675 kWh for a 7W load).
+      // Delta kWh = (watts * elapsedSeconds) / 3,600,000
+      const activeDeltaKwh = (telemetry.watts * elapsedSeconds) / 3_600_000;
+
+      // If incoming kwh is already an interval delta (e.g. from updated firmware),
+      // use it. If it exceeds what active power could physically consume over this interval
+      // (e.g. raw cumulative lifetime odometer from PZEM hardware register), use activeDeltaKwh.
+      const maxPlausibleDelta = Math.max(
+        0.01,
+        (telemetry.watts * Math.max(elapsedSeconds, 2) * 2) / 3_600_000
+      );
+      const kwhToStore =
+        telemetry.kwh <= maxPlausibleDelta ? telemetry.kwh : activeDeltaKwh;
+
+      const deviceIdToAssign = activeCollection ? activeCollection.deviceId : predictedDeviceId;
 
       // deviceId null = whole-home aggregate reading; non-null = tagged to appliance.
       await prisma.energyReading.create({
         data: {
-          userId: ingestUserId,
+          userId: currentUserId,
           deviceId: deviceIdToAssign,
           timestamp: now,
           watts: telemetry.watts,
-          kwh: telemetry.kwh,
+          kwh: kwhToStore,
           voltage: telemetry.voltage ?? null,
           current: telemetry.current ?? null,
           frequency: telemetry.frequency ?? null,
@@ -284,9 +452,10 @@ export const handleMessage = async (
 // "new_load" event over MQTT so the app can prompt "add this as a device?"
 // immediately. Both halves are best-effort — errors are logged, never thrown.
 const notifyNewLoad = async (deltaWatts: number): Promise<void> => {
-  if (ingestUserId !== null) {
+  const currentUserId = await getEffectiveIngestUserId();
+  if (currentUserId !== null) {
     try {
-      await createAlert(ingestUserId, {
+      await createAlert(currentUserId, {
         type: "info",
         title: "New load detected",
         description: `Whole-home power jumped by ~${deltaWatts} W — did you plug in a new appliance?`,
@@ -299,7 +468,10 @@ const notifyNewLoad = async (deltaWatts: number): Promise<void> => {
     }
   }
 
-  publishEvent({ type: "new_load", deltaWatts, at: new Date().toISOString() });
+  // Only emit simple fallback event if ML inference is not active
+  if (!isMlEnabled()) {
+    publishEvent({ type: "new_load", deltaWatts, at: new Date().toISOString() });
+  }
 };
 
 // Documentation only: Publishes a backend-originated event (e.g. new_load) to
@@ -307,7 +479,7 @@ const notifyNewLoad = async (deltaWatts: number): Promise<void> => {
 // no-ops when the broker is unavailable — events are ephemeral by design.
 export const publishEvent = (payload: Record<string, unknown>): void => {
   if (!client || !client.connected) return;
-  client.publish(topic("events"), JSON.stringify(payload), { qos: 1 });
+  client.publish(topic("events"), JSON.stringify(payload), { qos: 1, retain: true });
 };
 
 // Documentation only: Connects the singleton client to HiveMQ Cloud and wires

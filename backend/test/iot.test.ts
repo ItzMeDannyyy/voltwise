@@ -140,13 +140,40 @@ describe("resolveIngestUser + handleMessage (telemetry ingestion)", () => {
       userId: 7,
       deviceId: null,
       watts: 96.5,
-      kwh: 1.234,
+      kwh: (96.5 * 2) / 3_600_000,
       voltage: 230.2,
       current: 0.42,
       frequency: 60,
       powerFactor: 0.98,
     });
     expect(createArg.data.timestamp).toBeInstanceOf(Date);
+  });
+
+  it("calculates interval delta kWh for 7W load instead of storing cumulative odometer", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: 7 });
+    await mqttLib.resolveIngestUser();
+
+    await mqttLib.handleMessage(
+      TELEMETRY_TOPIC,
+      Buffer.from(
+        JSON.stringify({
+          voltage: 220,
+          current: 0.03,
+          watts: 7.0,
+          kwh: 0.9307, // Cumulative PZEM odometer reading
+          frequency: 60,
+          powerFactor: 0.9,
+          ms: 2000,
+        })
+      )
+    );
+
+    expect(prismaMock.energyReading.create).toHaveBeenCalled();
+    const createArg = prismaMock.energyReading.create.mock.calls.at(-1)?.[0] as {
+      data: Record<string, unknown>;
+    };
+    // 7W for 2s = 14 Joules = 14 / 3,600,000 kWh ≈ 0.000003889 kWh
+    expect(createArg.data.kwh).toBeCloseTo((7.0 * 2) / 3_600_000, 7);
   });
 
   it("ignores malformed JSON without throwing or inserting", async () => {

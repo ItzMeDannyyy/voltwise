@@ -13,7 +13,7 @@ import * as Haptics from "expo-haptics";
 import DemoFab from "../../components/DemoFab";
 import ConfirmModal from "../../components/ConfirmModal";
 import PowerControlModal from "../../components/PowerControlModal";
-import { api, ApiAlert, ALERTS_CHANGED_EVENT, emitAlertsChanged } from "../../lib/api";
+import { api, ApiAlert, ALERTS_CHANGED_EVENT, emitAlertsChanged, emitDevicesChanged } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { useMqtt } from "../../context/MqttContext";
 import { useNotifications } from "../../context/NotificationContext";
@@ -64,10 +64,51 @@ function AlertsBadge() {
   );
 }
 
+function getApplianceIcon(name?: string): keyof typeof Ionicons.glyphMap {
+  if (!name) return "flash-outline";
+  const n = name.toLowerCase();
+  if (n.includes("kettle") || n.includes("boiler") || n.includes("heat")) return "cafe-outline";
+  if (n.includes("light") || n.includes("bulb") || n.includes("lamp")) return "bulb-outline";
+  if (n.includes("air") || n.includes("condition") || n.includes("cool") || n.includes("ac")) return "snow-outline";
+  if (n.includes("fridge") || n.includes("refrigerat")) return "cube-outline";
+  if (n.includes("phone") || n.includes("cell") || n.includes("charg")) return "phone-portrait-outline";
+  if (n.includes("tv") || n.includes("entertain")) return "tv-outline";
+  if (n.includes("wash") || n.includes("laundry")) return "water-outline";
+  return "flash-outline";
+}
+
+function cleanApplianceName(name?: string): string {
+  if (!name) return "Appliance";
+  const lower = name.toLowerCase();
+  if (lower.includes("light") || lower.includes("bulb") || lower.includes("lamp")) return "Light Bulb";
+  if (lower.includes("kettle") || lower.includes("boiler") || lower.includes("heat")) return "Electric Kettle";
+  if (lower.includes("air") || lower.includes("condition") || lower.includes("ac") || lower.includes("cool")) return "Air Conditioner";
+  if (lower.includes("refrigerat") || lower.includes("fridge")) return "Refrigerator";
+  if (lower.includes("phone") || lower.includes("cell") || lower.includes("charg")) return "Phone Charger";
+  if (lower.includes("tv") || lower.includes("entertain")) return "Television";
+  if (name.includes("/")) {
+    const parts = name.split("/").map((p) => p.trim());
+    return parts[0] || name;
+  }
+  return name;
+}
+
+function getApplianceCategory(name?: string): string {
+  if (!name) return "General";
+  const lower = name.toLowerCase();
+  if (lower.includes("light") || lower.includes("bulb") || lower.includes("lamp")) return "Lighting";
+  if (lower.includes("kettle") || lower.includes("boiler") || lower.includes("heat")) return "Kitchen";
+  if (lower.includes("air") || lower.includes("condition") || lower.includes("ac") || lower.includes("cool")) return "Cooling";
+  if (lower.includes("refrigerat") || lower.includes("fridge")) return "Kitchen";
+  if (lower.includes("phone") || lower.includes("cell") || lower.includes("charg")) return "Electronics";
+  if (lower.includes("tv") || lower.includes("entertain")) return "Entertainment";
+  return "General";
+}
+
 /**
- * Live "new load detected" prompt: when the backend's load detector publishes
- * a new_load event on the MQTT events topic, offer to register the appliance.
- * Confirming jumps to the Devices tab with the add-device form pre-opened.
+ * Live appliance & load detection prompt: when the backend publishes
+ * an appliance_detected or new_load event on the MQTT events topic,
+ * notify the user with a tailored modal.
  * Mounted globally (next to DemoFab) so the prompt appears on any tab.
  */
 function NewLoadPrompt() {
@@ -76,33 +117,111 @@ function NewLoadPrompt() {
   const router = useRouter();
   // receivedAt of the event the user already dealt with (one event = one prompt).
   const [handledAt, setHandledAt] = useState<number | null>(null);
+  const [registering, setRegistering] = useState(false);
 
-  const isNewLoad = lastEvent?.type === "new_load";
-  const visible = prefs.newLoadPrompt && isNewLoad && lastEvent.receivedAt !== handledAt;
+  const isPromptable =
+    lastEvent?.type === "new_load" || lastEvent?.type === "appliance_detected";
+  const visible =
+    prefs.newLoadPrompt && isPromptable && lastEvent?.receivedAt !== handledAt;
 
   // The detector also stored an INFO alert — refresh the tab badge right away.
-  // Stays unconditional even when the prompt is muted: this event also drives
-  // the alert list and the notification engine's diff.
   useEffect(() => {
-    if (isNewLoad) emitAlertsChanged();
-  }, [isNewLoad, lastEvent?.receivedAt]);
+    if (isPromptable) emitAlertsChanged();
+  }, [isPromptable, lastEvent?.receivedAt]);
 
-  if (!visible) return null;
+  if (!visible || !lastEvent) return null;
 
-  const wattsLabel =
-    lastEvent.deltaWatts !== undefined ? `An appliance (~${Math.round(lastEvent.deltaWatts)} W)` : "An appliance";
+  const watts =
+    lastEvent.deltaWatts !== undefined ? Math.round(lastEvent.deltaWatts) : undefined;
+  const wattsSuffix = watts !== undefined ? ` (~${watts} W)` : "";
+  const appName = cleanApplianceName(lastEvent.dominantAppliance);
+  const deviceName = lastEvent.deviceName || appName;
+  const icon = getApplianceIcon(lastEvent.dominantAppliance || lastEvent.deviceName);
 
+  // 1. Registered device detected (e.g. Living Room Lights turned ON)
+  if (lastEvent.type === "appliance_detected" || lastEvent.isRegistered) {
+    return (
+      <ConfirmModal
+        visible
+        icon={icon}
+        title={`${deviceName} is ON`}
+        message={`VoltWise ML detected that your ${deviceName} (${appName}${wattsSuffix}) was turned ON.`}
+        confirmText="View devices"
+        cancelText="OK"
+        onConfirm={() => {
+          setHandledAt(lastEvent.receivedAt);
+          router.push("/(tabs)/devices");
+        }}
+        onCancel={() => setHandledAt(lastEvent.receivedAt)}
+      />
+    );
+  }
+
+  // 2. Anomaly detected
+  if (lastEvent.isAnomaly) {
+    return (
+      <ConfirmModal
+        visible
+        icon="warning-outline"
+        title="Electrical Anomaly Detected"
+        message={
+          lastEvent.interpretation ||
+          `Unusual electrical load${wattsSuffix} detected on your circuit. Check connected equipment.`
+        }
+        confirmText="View alerts"
+        cancelText="Dismiss"
+        destructive
+        onConfirm={() => {
+          setHandledAt(lastEvent.receivedAt);
+          router.push("/(tabs)/alerts");
+        }}
+        onCancel={() => setHandledAt(lastEvent.receivedAt)}
+      />
+    );
+  }
+
+  // 3. Unregistered new load detected (prompt to register as device)
   return (
     <ConfirmModal
       visible
-      icon="flash-outline"
-      title="New appliance detected"
-      message={`${wattsLabel} just switched on. Add it as a device to track its usage?`}
-      confirmText="Add device"
+      icon={icon}
+      loading={registering}
+      title={`${appName} Detected`}
+      message={`VoltWise ML detected a ${appName}${wattsSuffix}. Do you want to register this device?`}
+      confirmText="Yes"
       cancelText="Dismiss"
-      onConfirm={() => {
-        setHandledAt(lastEvent.receivedAt);
-        router.push({ pathname: "/(tabs)/devices", params: { openAdd: "1" } });
+      onConfirm={async () => {
+        try {
+          setRegistering(true);
+          await api.post("/devices", {
+            name: appName,
+            category: getApplianceCategory(appName),
+            room: "Living Room",
+            watts: Math.round(watts || 7),
+            enabled: true,
+          });
+          if (Platform.OS === "ios" || Platform.OS === "android") {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          }
+          emitAlertsChanged();
+          emitDevicesChanged();
+          setHandledAt(lastEvent.receivedAt);
+          router.push("/(tabs)/devices");
+        } catch (err) {
+          console.error("Failed to register device:", err);
+          // If automatic creation fails, navigate to the manual form
+          setHandledAt(lastEvent.receivedAt);
+          router.push({
+            pathname: "/(tabs)/devices",
+            params: {
+              openAdd: "1",
+              initialName: appName,
+              initialWatts: watts !== undefined ? String(watts) : undefined,
+            },
+          });
+        } finally {
+          setRegistering(false);
+        }
       }}
       onCancel={() => setHandledAt(lastEvent.receivedAt)}
     />

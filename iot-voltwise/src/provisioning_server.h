@@ -19,6 +19,7 @@ private:
 
   static void sendCorsHeaders()
   {
+    server.sendHeader("Connection", "close");
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     server.sendHeader("Access-Control-Allow-Headers", "Content-Type");

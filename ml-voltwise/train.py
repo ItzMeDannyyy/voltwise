@@ -74,15 +74,26 @@ def auto_label_cluster(row: pd.Series, dominant_appliance: Optional[str] = None)
     pf = row.get("power_factor_mean", 1.0)
 
     app_tag = f" ({dominant_appliance})" if dominant_appliance else ""
+    app_lower = (dominant_appliance or "").lower()
 
     if max_power > 2500 or power > 2000:
         return f"High Inrush / Peak Surge{app_tag}"
+    elif "kettle" in app_lower or "heat" in app_lower:
+        return f"High Resistive / Heating Load{app_tag}"
     elif power > 500:
         return f"High Continuous Load{app_tag}"
     elif power > 150:
         return f"Medium Load{app_tag}"
     elif power > 20:
         return f"Low Load / Cycling{app_tag}"
+    elif power > 3:
+        if "light" in app_lower and ("small" in app_lower or "electron" in app_lower or "cell" in app_lower or "phone" in app_lower):
+            return f"Low-Power Lighting / Electronics{app_tag}"
+        elif "light" in app_lower or "bulb" in app_lower:
+            return f"Low-Power Lighting{app_tag}"
+        elif "cell" in app_lower or "phone" in app_lower or "charg" in app_lower or "electron" in app_lower:
+            return f"Low-Power Device / Electronics{app_tag}"
+        return f"Low-Power Electronics / Lighting{app_tag}"
     else:
         return f"Standby / Idle{app_tag}"
 
@@ -94,7 +105,7 @@ def train(
     profiles_path: Path = DEFAULT_PROFILES_FILE,
     window_seconds: int = 30,
     min_k: int = 2,
-    max_k: int = 6,
+    max_k: int = 8,
     exact_k: Optional[int] = None,
 ) -> Dict:
     """
@@ -173,8 +184,43 @@ def train(
             sub = windows[windows["cluster"] == c]
             if not sub.empty:
                 counts = sub["source_appliance"].value_counts()
-                top_app = counts.index[0]
-                dominant_apps[c] = top_app
+                # If multiple appliances make up >= 15% of the cluster, report both
+                significant = counts[counts >= 0.15 * len(sub)].index.tolist()
+                if len(significant) > 1:
+                    clean_names = []
+                    for name in significant:
+                        n_lower = name.lower()
+                        if "light" in n_lower or "bulb" in n_lower:
+                            clean_names.append("Light Bulb")
+                        elif "cell" in n_lower or "phone" in n_lower or "charg" in n_lower:
+                            clean_names.append("Small Electronics")
+                        elif "air" in n_lower:
+                            clean_names.append("Air Conditioner")
+                        elif "refrigerator" in n_lower:
+                            clean_names.append("Refrigerator")
+                        elif "kettle" in n_lower:
+                            clean_names.append("Electric Kettle")
+                        else:
+                            clean_names.append(name)
+                    # Deduplicate preserving order
+                    seen = set()
+                    unique_names = [x for x in clean_names if not (x in seen or seen.add(x))]
+                    dominant_apps[c] = " / ".join(unique_names)
+                else:
+                    top_app = counts.index[0]
+                    n_lower = top_app.lower()
+                    if "light" in n_lower or "bulb" in n_lower:
+                        dominant_apps[c] = "Light Bulb"
+                    elif "cell" in n_lower or "phone" in n_lower or "charg" in n_lower:
+                        dominant_apps[c] = "Small Electronics"
+                    elif "air" in n_lower:
+                        dominant_apps[c] = "Air Conditioner"
+                    elif "refrigerator" in n_lower:
+                        dominant_apps[c] = "Refrigerator"
+                    elif "kettle" in n_lower:
+                        dominant_apps[c] = "Electric Kettle"
+                    else:
+                        dominant_apps[c] = top_app
 
     # Generate human readable labels
     descriptions = []
@@ -232,7 +278,7 @@ if __name__ == "__main__":
     parser.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR, help="Directory containing raw sensor CSV files")
     parser.add_argument("--window-seconds", type=int, default=30, help="Window duration in seconds")
     parser.add_argument("--min-k", type=int, default=2, help="Minimum K to evaluate")
-    parser.add_argument("--max-k", type=int, default=6, help="Maximum K to evaluate")
+    parser.add_argument("--max-k", type=int, default=8, help="Maximum K to evaluate")
     parser.add_argument("--k", type=int, default=None, help="Explicit K override (skips silhouette selection)")
     args = parser.parse_args()
 

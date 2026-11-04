@@ -10,17 +10,19 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
   View,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import { api, ApiDevice, ApiDeviceReading, resolveAssetUrl } from "../../lib/api";
+import * as Haptics from "expo-haptics";
+import ConfirmModal from "../../components/ConfirmModal";
+import { api, ApiDevice, ApiDeviceReading, resolveAssetUrl, DEVICES_CHANGED_EVENT, emitDevicesChanged } from "../../lib/api";
 import { DEMO_DEVICES, DEMO_HIGH_LINE_IDS, DEMO_LOW_LINE_IDS, demoDeviceReading, isDemoDevicePowered } from "../../lib/demo-data";
 import { PullToRefresh, PullToRefreshList } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
@@ -30,7 +32,6 @@ import { useMqtt } from "../../context/MqttContext";
 import { useDemoData } from "../../context/DemoDataContext";
 import { usePowerControl } from "../../context/PowerControlContext";
 import { linkHealth } from "../../lib/iot-prefs";
-import ConfirmModal from "../../components/ConfirmModal";
 import { useThemedStyles } from "../../components/themed";
 import type { ThemeColors } from "../../constants/theme";
 
@@ -76,8 +77,6 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 // Shown on every card and in the blocked-toggle dialog, so the two can never
 // drift apart.
 const MASTER_OFF_LABEL = "Master power is offline";
-const MASTER_OFF_MESSAGE =
-  "The master relay has cut power to the whole home, so nothing downstream can be switched on. Turn Master Power back on from the Dashboard first.";
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -101,13 +100,15 @@ export default function DevicesScreen() {
   const [liveReadings, setLiveReadings] = useState<Partial<Record<string, ApiDeviceReading | null>>>({});
   const [loadingReadings, setLoadingReadings] = useState<Partial<Record<string, boolean>>>({});
   const [modalVisible, setModalVisible] = useState(false);
-  const [masterNoticeVisible, setMasterNoticeVisible] = useState(false);
+  const [editingDevice, setEditingDevice] = useState<Device | null>(null);
+  const [deviceToDelete, setDeviceToDelete] = useState<Device | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [formName, setFormName] = useState("");
   const [formRoom, setFormRoom] = useState("");
   const [formWatts, setFormWatts] = useState("");
   const [formCategory, setFormCategory] = useState("");
   const [formPhotoUri, setFormPhotoUri] = useState<string | null>(null);
-  const [formEnabled, setFormEnabled] = useState(true);
 
   const { relayState, connected, configured, deviceOnline, telemetryAt } = useMqtt();
   const { masterOn, highOn, lowOn } = usePowerControl();
@@ -163,15 +164,26 @@ export default function DevicesScreen() {
   // Used by the "New load detected" prompt to jump straight into registering
   // the appliance that just switched on.
 
-  const { openAdd } = useLocalSearchParams<{ openAdd?: string }>();
+  const { openAdd, initialName, initialWatts } = useLocalSearchParams<{
+    openAdd?: string;
+    initialName?: string;
+    initialWatts?: string;
+  }>();
   const router = useRouter();
 
   useEffect(() => {
     if (!openAdd) return;
+    setEditingDevice(null);
+    if (initialName) setFormName(initialName);
+    if (initialWatts) setFormWatts(initialWatts);
     setModalVisible(true);
     // Clear the param so navigating back to this tab doesn't re-open the form.
-    router.setParams({ openAdd: undefined });
-  }, [openAdd, router]);
+    router.setParams({
+      openAdd: undefined,
+      initialName: undefined,
+      initialWatts: undefined,
+    });
+  }, [openAdd, initialName, initialWatts, router]);
 
   // ── Load devices ──────────────────────────────────────────────────────────
 
@@ -198,6 +210,13 @@ export default function DevicesScreen() {
       .finally(() => setLoadingDevices(false));
   }, [fetchDevices]);
 
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(DEVICES_CHANGED_EVENT, () => {
+      fetchDevices().catch(() => {});
+    });
+    return () => sub.remove();
+  }, [fetchDevices]);
+
   // Stable identity so usePullToRefresh doesn't rebuild onRefresh every render.
   const refreshDevices = useCallback(() => fetchDevices(true), [fetchDevices]);
   const { refreshing, onRefresh } = usePullToRefresh(refreshDevices);
@@ -209,65 +228,6 @@ export default function DevicesScreen() {
       d.name.toLowerCase().includes(search.toLowerCase()) ||
       d.room.toLowerCase().includes(search.toLowerCase())
   );
-
-  // ── Toggle on/off ─────────────────────────────────────────────────────────
-
-  // With the master relay open there is no power downstream, so switching a
-  // device on would be a lie the hardware can't honour. Explain instead of
-  // silently doing nothing.
-  function handleToggle(id: string, value: boolean) {
-    if (masterPowerOff) {
-      setMasterNoticeVisible(true);
-      return;
-    }
-    if (demoData && !isDemoDevicePowered(id, { highOn, lowOn })) {
-      const isHigh = DEMO_HIGH_LINE_IDS.has(id);
-      Alert.alert(
-        `${isHigh ? "Heavy Appliance" : "Standard Load"} Line Offline`,
-        `The ${isHigh ? "Heavy Appliance (Line 1)" : "Standard Load (Line 2)"} circuit is currently turned off in Power Controls. Turn it back on to switch this appliance.`
-      );
-      return;
-    }
-    // Sample devices are not rows in anyone's database: flip them locally and
-    // stop before the PATCH.
-    if (demoData) {
-      setDemoDevices((prev) =>
-        prev.map((d) => {
-          if (d.id !== id) return d;
-          if (!value) return { ...d, enabled: false, status: "OFF" as DeviceStatus, watts: 0 };
-          const original = originalsRef.current[id] ?? {
-            status: "ACTIVE" as DeviceStatus,
-            watts: d.watts,
-          };
-          return { ...d, enabled: true, status: original.status, watts: original.watts };
-        })
-      );
-      return;
-    }
-    setDevices((prev) =>
-      prev.map((d) => {
-        if (d.id !== id) return d;
-        if (!value) return { ...d, enabled: false, status: "OFF" as DeviceStatus, watts: 0 };
-        const original = originalsRef.current[id] ?? { status: "ACTIVE" as DeviceStatus, watts: d.watts };
-        return {
-          ...d,
-          enabled: true,
-          status: original.status === "OFF" ? "ACTIVE" : original.status,
-          watts: original.watts,
-        };
-      })
-    );
-    api
-      .patch<ApiDevice>(`/devices/${id}`, { enabled: value })
-      .then((updated) => {
-        if (!updated) return;
-        originalsRef.current[id] = { status: updated.status, watts: updated.watts };
-        setDevices((prev) => prev.map((d) => (d.id === id ? updated : d)));
-      })
-      .catch(() => {});
-  }
-
-  // ── Master-power & dual-line display override ─────────────────────────────
 
   // While master power or a specific line is off, nothing downstream can be
   // drawing current. This is *display only* — the flag itself is deliberately
@@ -368,7 +328,122 @@ export default function DevicesScreen() {
     setFormWatts("");
     setFormCategory("");
     setFormPhotoUri(null);
-    setFormEnabled(true);
+    setEditingDevice(null);
+  }
+
+  function openAddModal() {
+    resetForm();
+    setEditingDevice(null);
+    setModalVisible(true);
+  }
+
+  function openEditModal(device: Device) {
+    setEditingDevice(device);
+    setFormName(device.name);
+    setFormRoom(device.room === "Unassigned" ? "" : device.room);
+    setFormWatts(device.watts ? String(device.watts) : "");
+    setFormCategory(device.category ?? "");
+    setFormPhotoUri(device.imageUri ? resolveAssetUrl(device.imageUri) : null);
+    setModalVisible(true);
+  }
+
+  async function handleSaveDevice() {
+    if (!editingDevice) return;
+    const name = formName.trim();
+    if (!name) {
+      Alert.alert("Name required", "Please enter a device name.");
+      return;
+    }
+    const room = formRoom.trim() || "Unassigned";
+    const category = formCategory.trim() || null;
+    const watts = Math.max(0, parseInt(formWatts, 10) || 0);
+
+    setSaving(true);
+    const photoUri = formPhotoUri;
+
+    if (demoData) {
+      setDemoDevices((prev) =>
+        prev.map((d) =>
+          d.id === editingDevice.id
+            ? { ...d, name, room, category, watts, imageUri: photoUri ?? d.imageUri }
+            : d
+        )
+      );
+      originalsRef.current[editingDevice.id] = {
+        status: effectiveStatus(editingDevice),
+        watts,
+      };
+      setEditingDevice(null);
+      setModalVisible(false);
+      resetForm();
+      setSaving(false);
+      return;
+    }
+
+    try {
+      let updated = await api.patch<ApiDevice>(`/devices/${editingDevice.id}`, {
+        name,
+        room,
+        category,
+        watts,
+      });
+
+      if (photoUri && photoUri !== editingDevice.imageUri && !photoUri.startsWith("http")) {
+        try {
+          updated = await uploadDevicePhoto(editingDevice.id, photoUri);
+        } catch {}
+      }
+
+      setDevices((prev) =>
+        prev.map((d) => (d.id === editingDevice.id ? { ...d, ...updated } : d))
+      );
+      originalsRef.current[editingDevice.id] = {
+        status: updated.status,
+        watts: updated.watts,
+      };
+
+      if (Platform.OS === "ios" || Platform.OS === "android") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      }
+      emitDevicesChanged();
+      setEditingDevice(null);
+      setModalVisible(false);
+      resetForm();
+    } catch (err: any) {
+      Alert.alert("Error updating device", err?.message ?? "Failed to update device.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteDevice(device: Device) {
+    setDeleting(true);
+    if (demoData) {
+      setDemoDevices((prev) => prev.filter((d) => d.id !== device.id));
+      setDeviceToDelete(null);
+      setModalVisible(false);
+      setEditingDevice(null);
+      setDeleting(false);
+      return;
+    }
+
+    try {
+      await api.delete(`/devices/${device.id}`);
+      setDevices((prev) => prev.filter((d) => d.id !== device.id));
+      delete originalsRef.current[device.id];
+
+      if (Platform.OS === "ios" || Platform.OS === "android") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      }
+      emitDevicesChanged();
+      setDeviceToDelete(null);
+      setModalVisible(false);
+      setEditingDevice(null);
+    } catch (err: any) {
+      Alert.alert("Error deleting device", err?.message ?? "Failed to delete device.");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   function handleAddDevice() {
@@ -378,13 +453,13 @@ export default function DevicesScreen() {
       return;
     }
     const watts = Math.max(0, parseInt(formWatts, 10) || 0);
-    const status: DeviceStatus = formEnabled ? (watts > 0 ? "ACTIVE" : "IDLE") : "OFF";
+    const status: DeviceStatus = watts > 0 ? "ACTIVE" : "IDLE";
     const id = `${Date.now()}`;
     const room = formRoom.trim() || "Unassigned";
     const category = formCategory.trim() || null;
 
     originalsRef.current[id] = {
-      status: status === "OFF" ? "ACTIVE" : status,
+      status,
       watts,
     };
 
@@ -395,8 +470,8 @@ export default function DevicesScreen() {
       category,
       imageUri: formPhotoUri,
       status,
-      watts: formEnabled ? watts : 0,
-      enabled: formEnabled,
+      watts,
+      enabled: true,
     };
 
     const photoUri = formPhotoUri;
@@ -413,7 +488,7 @@ export default function DevicesScreen() {
     setDevices((prev) => [newDevice, ...prev]);
 
     api
-      .post<ApiDevice>("/devices", { name, room, watts, enabled: formEnabled, category })
+      .post<ApiDevice>("/devices", { name, room, watts, enabled: true, category })
       .then(async (created) => {
         if (!created) return;
         originalsRef.current[created.id] = { status: created.status, watts: created.watts };
@@ -516,6 +591,7 @@ export default function DevicesScreen() {
         key={device.id}
         activeOpacity={0.85}
         onPress={() => handleAccordionToggle(device.id)}
+        onLongPress={() => openEditModal(device)}
         style={styles.bannerCard}
       >
         {/* Left status bar */}
@@ -537,43 +613,6 @@ export default function DevicesScreen() {
             </View>
             <View style={styles.bannerCardRight}>
               <Text style={styles.watts}>{formatPower(watts)}</Text>
-              {/* A disabled Switch swallows the tap without firing
-                  onValueChange, so the explanation would never appear. Keep it
-                  disabled for correct affordance and put a transparent target
-                  over it to catch the tap. */}
-              <View>
-                <Switch
-                  value={isUnpowered ? false : device.enabled}
-                  onValueChange={(val) => handleToggle(device.id, val)}
-                  disabled={isUnpowered}
-                  trackColor={{ false: colors.border, true: colors.accent }}
-                  thumbColor={colors.text}
-                  ios_backgroundColor={colors.border}
-                />
-                {isUnpowered && (
-                  <TouchableOpacity
-                    style={StyleSheet.absoluteFill}
-                    activeOpacity={1}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      masterPowerOff
-                        ? `${MASTER_OFF_LABEL} — cannot switch on ${device.name}`
-                        : `Circuit offline — cannot switch on ${device.name}`
-                    }
-                    onPress={() => {
-                      if (masterPowerOff) {
-                        setMasterNoticeVisible(true);
-                      } else {
-                        const isHigh = DEMO_HIGH_LINE_IDS.has(device.id);
-                        Alert.alert(
-                          `${isHigh ? "Heavy Appliance" : "Standard Load"} Line Offline`,
-                          `The ${isHigh ? "Heavy Appliance (Line 1)" : "Standard Load (Line 2)"} circuit is currently turned off in Power Controls. Turn it back on to switch this appliance.`
-                        );
-                      }
-                    }}
-                  />
-                )}
-              </View>
               {isUnpowered && (
                 <Text style={styles.masterOffText} numberOfLines={2}>
                   {masterPowerOff
@@ -583,6 +622,12 @@ export default function DevicesScreen() {
                       : "Low Line offline"}
                 </Text>
               )}
+              <Ionicons
+                name={isExpanded ? "chevron-up" : "chevron-down"}
+                size={18}
+                color={colors.sub}
+                style={{ marginTop: 2 }}
+              />
             </View>
           </View>
 
@@ -617,6 +662,25 @@ export default function DevicesScreen() {
               ) : (
                 <Text style={styles.noDataText}>No live data available</Text>
               )}
+              <View style={styles.deviceActionsRow}>
+                <TouchableOpacity
+                  style={styles.editDeviceBtn}
+                  onPress={() => openEditModal(device)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="pencil-outline" size={15} color={colors.accent} />
+                  <Text style={styles.editDeviceBtnText}>Edit / Rename</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.deleteDeviceBtn}
+                  onPress={() => setDeviceToDelete(device)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="trash-outline" size={15} color={colors.red} />
+                  <Text style={styles.deleteDeviceBtnText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </Animated.View>
         </View>
@@ -629,7 +693,18 @@ export default function DevicesScreen() {
   function renderPhotoCard({ item: device }: { item: Device }) {
     const status = effectiveStatus(device);
     return (
-      <View style={styles.photoCard}>
+      <TouchableOpacity
+        style={styles.photoCard}
+        activeOpacity={0.85}
+        onPress={() => openEditModal(device)}
+      >
+        <TouchableOpacity
+          style={styles.photoCardEditBtn}
+          onPress={() => openEditModal(device)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="pencil" size={13} color={colors.white} />
+        </TouchableOpacity>
         {device.imageUri ? (
           <Image source={{ uri: resolveAssetUrl(device.imageUri)! }} style={styles.photoCardImage} />
         ) : (
@@ -651,7 +726,7 @@ export default function DevicesScreen() {
             <Text style={styles.watts}>{formatPower(effectiveWatts(device))}</Text>
           </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   }
 
@@ -727,7 +802,7 @@ export default function DevicesScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.addBtn}
-              onPress={() => setModalVisible(true)}
+              onPress={openAddModal}
               activeOpacity={0.8}
             >
               <Text style={styles.addBtnText}>+ Add</Text>
@@ -785,12 +860,12 @@ export default function DevicesScreen() {
           ))}
       </View>
 
-      {/* Add Device Modal */}
+      {/* Add / Edit Device Modal */}
       <Modal
         visible={modalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => { resetForm(); setModalVisible(false); }}
+        onRequestClose={() => { resetForm(); setEditingDevice(null); setModalVisible(false); }}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -803,9 +878,11 @@ export default function DevicesScreen() {
               keyboardShouldPersistTaps="handled"
             >
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Add Device</Text>
+                <Text style={styles.modalTitle}>
+                  {editingDevice ? "Edit Device" : "Add Device"}
+                </Text>
                 <TouchableOpacity
-                  onPress={() => { resetForm(); setModalVisible(false); }}
+                  onPress={() => { resetForm(); setEditingDevice(null); setModalVisible(false); }}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Ionicons name="close" size={24} color={colors.sub} />
@@ -879,36 +956,51 @@ export default function DevicesScreen() {
                 </View>
               </View>
 
-              <View style={styles.enabledRow}>
-                <Text style={styles.fieldLabel}>Device is Currently Switched On</Text>
-                <Switch
-                  value={formEnabled}
-                  onValueChange={setFormEnabled}
-                  trackColor={{ false: colors.border, true: colors.accent }}
-                  thumbColor={colors.text}
-                  ios_backgroundColor={colors.border}
-                />
-              </View>
-
-              <TouchableOpacity style={styles.submitBtn} onPress={handleAddDevice} activeOpacity={0.8}>
-                <Text style={styles.submitBtnText}>Add Device</Text>
+              <TouchableOpacity
+                style={styles.submitBtn}
+                onPress={editingDevice ? handleSaveDevice : handleAddDevice}
+                activeOpacity={0.8}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color={colors.bg} />
+                ) : (
+                  <Text style={styles.submitBtnText}>
+                    {editingDevice ? "Save Changes" : "Add Device"}
+                  </Text>
+                )}
               </TouchableOpacity>
+
+              {editingDevice && (
+                <TouchableOpacity
+                  style={styles.modalDeleteBtn}
+                  onPress={() => setDeviceToDelete(editingDevice)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="trash-outline" size={18} color={colors.red} />
+                  <Text style={styles.modalDeleteBtnText}>Delete Device</Text>
+                </TouchableOpacity>
+              )}
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Shown when a device toggle is tapped while the master relay is open. */}
-      <ConfirmModal
-        visible={masterNoticeVisible}
-        singleAction
-        icon="flash-off-outline"
-        title={MASTER_OFF_LABEL}
-        message={MASTER_OFF_MESSAGE}
-        confirmText="Okay, close"
-        onConfirm={() => setMasterNoticeVisible(false)}
-        onCancel={() => setMasterNoticeVisible(false)}
-      />
+      {deviceToDelete && (
+        <ConfirmModal
+          visible={true}
+          loading={deleting}
+          destructive={true}
+          icon="trash-outline"
+          title="Delete Device?"
+          message={`Are you sure you want to delete "${deviceToDelete.name}"? This action cannot be undone.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          onConfirm={() => handleDeleteDevice(deviceToDelete)}
+          onCancel={() => setDeviceToDelete(null)}
+        />
+      )}
+
     </SafeAreaView>
   );
 }
@@ -1269,13 +1361,6 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       fontSize: 14 * fontScale,
       fontWeight: "600",
     },
-    enabledRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      marginTop: 4,
-      paddingVertical: 4,
-    },
     submitBtn: {
       backgroundColor: colors.accent,
       borderRadius: 14,
@@ -1287,6 +1372,73 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     submitBtnText: {
       color: colors.bg,
       fontSize: 16 * fontScale,
+      fontWeight: "700",
+    },
+    deviceActionsRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "flex-end",
+      gap: 12,
+      marginTop: 14,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    editDeviceBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+      backgroundColor: colors.accentSoft,
+    },
+    editDeviceBtnText: {
+      color: colors.accent,
+      fontSize: 13 * fontScale,
+      fontWeight: "600",
+    },
+    deleteDeviceBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+      backgroundColor: colors.red + "1A",
+    },
+    deleteDeviceBtnText: {
+      color: colors.red,
+      fontSize: 13 * fontScale,
+      fontWeight: "600",
+    },
+    photoCardEditBtn: {
+      position: "absolute",
+      top: 8,
+      right: 8,
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: colors.overlayStrong,
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 2,
+    },
+    modalDeleteBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      marginTop: 12,
+      paddingVertical: 14,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.red + "40",
+      backgroundColor: colors.red + "10",
+    },
+    modalDeleteBtnText: {
+      color: colors.red,
+      fontSize: 15 * fontScale,
       fontWeight: "700",
     },
   });

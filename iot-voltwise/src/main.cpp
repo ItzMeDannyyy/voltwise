@@ -7,6 +7,10 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
+#include <esp_system.h>
+
 #include "secrets.h" // WiFi + HiveMQ credentials + DEVICE_UID (copy from secrets.h.example)
 #include "config_manager.h"
 #include "provisioning_server.h"
@@ -318,6 +322,10 @@ void checkResetButton()
 
 void setup()
 {
+  // Disable software brownout detector to prevent ESP32 from resetting during
+  // momentary mains voltage dips / inrush current from heavy loads (e.g. light bulbs, compressors).
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
   Serial.begin(115200);
 
   // Initialize NVS storage
@@ -334,8 +342,18 @@ void setup()
   bootStartTime = millis();
   bootPowerEnergized = false;
 
+  esp_reset_reason_t rstReason = esp_reset_reason();
   Serial.println();
+  Serial.println("==================================================");
   Serial.println("ESP32 + PZEM-004T + 2-Channel Relay Started");
+  Serial.print("Boot Reset Reason: ");
+  Serial.println((int)rstReason);
+  if (rstReason == ESP_RST_BROWNOUT)
+  {
+    Serial.println(" [NOTICE] Recovered from a BROWNOUT reset (inrush voltage drop).");
+    Serial.println(" Brownout protection disabled in firmware to absorb load inrush.");
+  }
+  Serial.println("==================================================");
   Serial.println("Relay mapping: Pin 25 = Low Power Line, Pin 26 = High Power Line");
   Serial.print  ("Smart Hybrid Active: Relays held OFF. Waiting up to ");
   Serial.print  (NETWORK_CONNECT_TIMEOUT_SEC);
@@ -490,6 +508,13 @@ void loop()
 // completely cuts the path to ground, reducing current to 0 and turning the LED 100% OFF.
 void writeRelayPin(int pin, bool turnOn)
 {
+  if (turnOn && pin == RELAY_HIGH_PIN)
+  {
+    // Temporarily throttle Wi-Fi TX power (~100mA current reduction) during contact closure
+    // so cold filament inrush / contact bounce does not starve the 5V power supply rail
+    WiFi.setTxPower(WIFI_POWER_8_5dBm);
+  }
+
   if (RELAY_ACTIVE_LOW)
   {
     if (turnOn)
@@ -507,6 +532,13 @@ void writeRelayPin(int pin, bool turnOn)
   {
     pinMode(pin, OUTPUT);
     digitalWrite(pin, turnOn ? HIGH : LOW);
+  }
+
+  if (turnOn && pin == RELAY_HIGH_PIN)
+  {
+    // Allow contact bounce and cold-filament/capacitive inrush to settle before restoring RF power
+    delay(50);
+    WiFi.setTxPower(WIFI_POWER_15dBm);
   }
 }
 
@@ -565,10 +597,12 @@ void applyRelays(bool on, const char *reason)
   }
   else
   {
-    // Cut all power immediately: cancel any pending staggered activation
+    // Cut all power: cancel any pending staggered activation
     highLinePendingOn = false;
-    writeRelayPin(RELAY_LOW_PIN, false);
+    // Sequential turn-off (50ms gap) prevents simultaneous dual-coil back-EMF spike on the 5V rail
     writeRelayPin(RELAY_HIGH_PIN, false);
+    delay(50);
+    writeRelayPin(RELAY_LOW_PIN, false);
 
     relaysAreOn = false;
     highLineOn = false;
@@ -576,7 +610,7 @@ void applyRelays(bool on, const char *reason)
     relayReason = reason;
 
     Serial.println("----------------------------------");
-    Serial.print("All relays (Low Line Pin 25 & High Line Pin 26) turned OFF (Reason: ");
+    Serial.print("All relays (High Line Pin 26, then Low Line Pin 25) turned OFF (Reason: ");
     Serial.print(reason);
     Serial.println(").");
     Serial.println("----------------------------------");
@@ -1039,8 +1073,12 @@ void maintainWifi()
 
   wl_status_t status = WiFi.status();
 
+  static unsigned long wifiDisconnectGraceStart = 0;
+
   if (status == WL_CONNECTED)
   {
+    wifiDisconnectGraceStart = 0;
+
     if (ProvisioningServer::active())
     {
       ProvisioningServer::stop();
@@ -1078,9 +1116,27 @@ void maintainWifi()
     return;
   }
 
-  // Detect WiFi disconnection
+  // Detect WiFi disconnection with a 6-second debounce grace period
+  // to absorb momentary RF noise or inrush current transients without dropping offline
   if (wifiWasConnected)
   {
+    if (wifiDisconnectGraceStart == 0)
+    {
+      wifiDisconnectGraceStart = millis();
+      Serial.println();
+      Serial.println(" [WIFI] Momentary signal interruption detected.");
+      Serial.println("  Allowing 6s grace period to recover from inrush/EMI before offline fallback...");
+      return;
+    }
+
+    if (millis() - wifiDisconnectGraceStart < 6000UL)
+    {
+      // Still within grace period: let background station stack auto-reconnect
+      return;
+    }
+
+    // Truly disconnected after 6 continuous seconds:
+    wifiDisconnectGraceStart = 0;
     wifiWasConnected = false;
     wifiConnecting = false;
     WiFi.disconnect(true); // Halt all STA station channel-hopping sweeps immediately
@@ -1492,6 +1548,9 @@ void onMqttMessage(char *topic, byte *payload, unsigned int length)
   }
 }
 
+// Timestamp of last telemetry publication in millis(), to compute interval delta kWh
+static unsigned long lastTelemetryTimeMs = 0;
+
 void publishTelemetry(PowerReadings readings)
 {
   if (!mqtt.connected())
@@ -1499,14 +1558,37 @@ void publishTelemetry(PowerReadings readings)
     return;
   }
 
+  unsigned long nowMs = millis();
+  float elapsedHours = 0.0f;
+  if (lastTelemetryTimeMs > 0 && nowMs > lastTelemetryTimeMs)
+  {
+    unsigned long elapsedMs = nowMs - lastTelemetryTimeMs;
+    // Cap to 60 seconds if there was a long pause
+    if (elapsedMs > 60000)
+    {
+      elapsedMs = SENSOR_READ_INTERVAL_MS;
+    }
+    elapsedHours = (float)elapsedMs / 3600000.0f;
+  }
+  else
+  {
+    elapsedHours = (float)SENSOR_READ_INTERVAL_MS / 3600000.0f;
+  }
+  lastTelemetryTimeMs = nowMs;
+
+  float powerWatts = isnan(readings.power) ? 0.0f : readings.power;
+  // Calculate interval energy (kWh) from active power: (Watts * elapsed hours) / 1000
+  float deltaKwh = (powerWatts > 0.0f) ? (powerWatts * elapsedHours / 1000.0f) : 0.0f;
+
   JsonDocument doc;
   doc["voltage"] = isnan(readings.voltage) ? 0.0f : readings.voltage;
   doc["current"] = isnan(readings.current) ? 0.0f : readings.current;
-  doc["watts"] = isnan(readings.power) ? 0.0f : readings.power;
-  doc["kwh"] = isnan(readings.energy) ? 0.0f : readings.energy;
+  doc["watts"] = powerWatts;
+  doc["kwh"] = deltaKwh;
+  doc["totalKwh"] = isnan(readings.energy) ? 0.0f : readings.energy;
   doc["frequency"] = isnan(readings.frequency) ? 0.0f : readings.frequency;
   doc["powerFactor"] = isnan(readings.powerFactor) ? 0.0f : readings.powerFactor;
-  doc["ms"] = millis(); // uptime, for debugging only — backend stamps real time
+  doc["ms"] = nowMs;
 
   char buffer[256];
   size_t length = serializeJson(doc, buffer, sizeof(buffer));

@@ -15,6 +15,13 @@ import type {
   CollectionStartResponseDto,
   CollectionStopResponseDto,
 } from "./iot";
+export type {
+  IotStatusDto,
+  StartCollectionDto,
+  CollectionStartResponseDto,
+  CollectionStopResponseDto,
+};
+export type { PowerLine } from "../../lib/mqtt.ts";
 
 // A retained "online" status can outlive a crashed device until the broker's
 // last-will fires, so the device only counts as online when telemetry (sent

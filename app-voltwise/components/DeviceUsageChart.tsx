@@ -1,13 +1,16 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   Dimensions,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LineChart } from "react-native-chart-kit";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 import { useTheme } from "../context/ThemeContext";
 import { useUnits } from "../context/UnitsContext";
 import { useThemedStyles } from "./themed";
@@ -18,6 +21,7 @@ import {
   dotRadiusFor,
   type RangePeriod,
 } from "../lib/range-prefs";
+import { buildZoomedChartData } from "../lib/chart-zoom";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -60,10 +64,72 @@ export default function DeviceUsageChart({
     y: number;
   } | null>(null);
 
-  // Clear tooltip when labels or period change.
+  // Zoom state: 1.0 (unzoomed, fits screen) to 6.0 (max zoom, 10-minute intervals)
+  const [zoom, setZoom] = useState<number>(1.0);
+  const baseZoomRef = useRef<number>(1.0);
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  // Clear tooltip and reset zoom when labels or period change
   useEffect(() => {
     setChartPoint(null);
+    setZoom(1.0);
+    baseZoomRef.current = 1.0;
   }, [labels, period]);
+
+  const handlePinchStart = useCallback(() => {
+    baseZoomRef.current = zoom;
+    setChartPoint(null);
+  }, [zoom]);
+
+  const handlePinchUpdate = useCallback((scale: number) => {
+    const next = Math.max(
+      1.0,
+      Math.min(6.0, Number((baseZoomRef.current * scale).toFixed(2)))
+    );
+    setZoom(next);
+  }, []);
+
+  const handlePinchEnd = useCallback(() => {
+    baseZoomRef.current = zoom;
+  }, [zoom]);
+
+  const pinchGesture = useMemo(() => {
+    return Gesture.Pinch()
+      .onStart(() => {
+        runOnJS(handlePinchStart)();
+      })
+      .onUpdate((e) => {
+        runOnJS(handlePinchUpdate)(e.scale);
+      })
+      .onEnd(() => {
+        runOnJS(handlePinchEnd)();
+      });
+  }, [handlePinchStart, handlePinchUpdate, handlePinchEnd]);
+
+  const handleZoomIn = useCallback(() => {
+    setZoom((prev) => {
+      const next = Math.min(6.0, Number((prev + 1.0).toFixed(1)));
+      baseZoomRef.current = next;
+      return next;
+    });
+    setChartPoint(null);
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setZoom((prev) => {
+      const next = Math.max(1.0, Number((prev - 1.0).toFixed(1)));
+      baseZoomRef.current = next;
+      return next;
+    });
+    setChartPoint(null);
+  }, []);
+
+  const handleResetZoom = useCallback(() => {
+    setZoom(1.0);
+    baseZoomRef.current = 1.0;
+    setChartPoint(null);
+    scrollViewRef.current?.scrollTo({ x: 0, animated: true });
+  }, []);
 
   // Devices currently enabled and visible on the graph.
   const visibleSeries = useMemo(() => {
@@ -92,12 +158,17 @@ export default function DeviceUsageChart({
     setChartPoint(null);
   }, [series]);
 
+  // Generate zoomed labels (e.g. 10m intervals like 2:10am) and interpolated series
+  const zoomedData = useMemo(() => {
+    return buildZoomedChartData(labels, visibleSeries, period, zoom);
+  }, [labels, visibleSeries, period, zoom]);
+
   // Geometry
-  const CHART_WIDTH = SCREEN_WIDTH - 32;
+  const BASE_WIDTH = SCREEN_WIDTH - 32;
+  const CHART_WIDTH = Math.round(BASE_WIDTH * zoom);
   const TOOLTIP_WIDTH = 156;
 
-  const axisLabels = thinLabels(labels, 8, axisLabelStep(period));
-  const dotRadius = dotRadiusFor(labels.length);
+  const dotRadius = dotRadiusFor(zoomedData.zoomedLabels.length);
 
   // Active tooltip device
   const tooltipSeries = chartPoint
@@ -136,97 +207,167 @@ export default function DeviceUsageChart({
         </View>
       ) : (
         <View>
-          <LineChart
-            data={{
-              labels: axisLabels,
-              datasets: visibleSeries.map((s) => ({
-                data: s.data,
-                color: () => s.color,
-                strokeWidth: 2,
-                key: s.deviceId,
-              })),
-            }}
-            width={CHART_WIDTH}
-            height={chartHeight}
-            withDots
-            onDataPointClick={({ index, value, x, y, dataset }) => {
-              const deviceId = String(dataset.key ?? "");
-              setChartPoint((prev) =>
-                prev &&
-                prev.deviceId === deviceId &&
-                prev.pointIndex === index
-                  ? null
-                  : { deviceId, pointIndex: index, kwh: value, x, y }
-              );
-            }}
-            withShadow={false}
-            withInnerLines={true}
-            withOuterLines={false}
-            withVerticalLines={false}
-            withHorizontalLines={true}
-            fromZero
-            chartConfig={{
-              backgroundColor: colors.card,
-              backgroundGradientFrom: colors.card,
-              backgroundGradientTo: colors.card,
-              decimalPlaces: 1,
-              color: () => colors.sub,
-              labelColor: () => colors.sub,
-              style: { borderRadius: 16 },
-              propsForDots: { r: dotRadius, strokeWidth: "1.5", stroke: colors.card },
-              propsForBackgroundLines: {
-                stroke: colors.border,
-                strokeDasharray: "4 4",
-              },
-            }}
-            bezier
-            style={styles.chart}
-          />
-
-          {chartPoint && tooltipSeries && (
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={() => setChartPoint(null)}
-              style={[
-                styles.tooltip,
-                {
-                  width: TOOLTIP_WIDTH,
-                  left: Math.max(
-                    4,
-                    Math.min(
-                      chartPoint.x - TOOLTIP_WIDTH / 2,
-                      CHART_WIDTH - TOOLTIP_WIDTH - 4
-                    )
-                  ),
-                  top: chartPoint.y > 78 ? chartPoint.y - 74 : chartPoint.y + 14,
-                  borderColor: tooltipSeries.color,
-                },
-              ]}
-            >
-              <View style={styles.tooltipHeader}>
-                <View
-                  style={[
-                    styles.tooltipDot,
-                    { backgroundColor: tooltipSeries.color },
-                  ]}
-                />
-                <Text style={styles.tooltipName} numberOfLines={1}>
-                  {tooltipSeries.name}
-                </Text>
-              </View>
-              <Text style={styles.tooltipPeriod}>
-                {labels[chartPoint.pointIndex] ?? ""}
+          {/* Zoom & Granularity Toolbar */}
+          <View style={styles.zoomBar}>
+            <View style={styles.zoomBadge}>
+              <Ionicons name="search-outline" size={13} color={colors.accent} />
+              <Text style={styles.zoomBadgeText}>
+                {zoom.toFixed(1)}x • {zoomedData.intervalDescription}
               </Text>
-              <View style={styles.tooltipRow}>
-                <Text style={styles.tooltipValue}>
-                  {formatEnergy(chartPoint.kwh, 2)}
-                </Text>
-                <Text style={styles.tooltipCost}>
-                  {formatCostOf(chartPoint.kwh)}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          )}
+            </View>
+
+            <View style={styles.zoomControlsRow}>
+              <Text style={styles.zoomHint}>
+                {zoom > 1.0 ? "Drag to scroll timeline" : "Pinch outward to zoom"}
+              </Text>
+              {zoom > 1.0 && (
+                <TouchableOpacity
+                  onPress={handleResetZoom}
+                  activeOpacity={0.7}
+                  style={styles.resetBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Reset zoom to 1x"
+                >
+                  <Text style={styles.resetBtnText}>Reset 1x</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={handleZoomOut}
+                disabled={zoom <= 1.0}
+                activeOpacity={0.7}
+                style={[styles.zoomBtn, zoom <= 1.0 && styles.zoomBtnDisabled]}
+                accessibilityRole="button"
+                accessibilityLabel="Zoom out"
+              >
+                <Ionicons
+                  name="remove"
+                  size={14}
+                  color={zoom <= 1.0 ? colors.inactive : colors.text}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleZoomIn}
+                disabled={zoom >= 6.0}
+                activeOpacity={0.7}
+                style={[styles.zoomBtn, zoom >= 6.0 && styles.zoomBtnDisabled]}
+                accessibilityRole="button"
+                accessibilityLabel="Zoom in"
+              >
+                <Ionicons
+                  name="add"
+                  size={14}
+                  color={zoom >= 6.0 ? colors.inactive : colors.text}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <GestureDetector gesture={pinchGesture}>
+            <View style={styles.chartWrapper}>
+              <ScrollView
+                ref={scrollViewRef}
+                horizontal
+                showsHorizontalScrollIndicator={zoom > 1.0}
+                nestedScrollEnabled
+                scrollEnabled={zoom > 1.0}
+                contentContainerStyle={zoom > 1.0 ? { paddingRight: 32 } : undefined}
+              >
+                <View style={{ width: CHART_WIDTH, position: "relative" }}>
+                  <LineChart
+                    data={{
+                      labels: zoomedData.axisLabels,
+                      datasets: zoomedData.zoomedSeries.map((s) => ({
+                        data: s.data,
+                        color: () => s.color,
+                        strokeWidth: 2,
+                        key: s.deviceId,
+                      })),
+                    }}
+                    width={CHART_WIDTH}
+                    height={chartHeight}
+                    withDots
+                    onDataPointClick={({ index, value, x, y, dataset }) => {
+                      const deviceId = String(dataset.key ?? "");
+                      setChartPoint((prev) =>
+                        prev &&
+                        prev.deviceId === deviceId &&
+                        prev.pointIndex === index
+                          ? null
+                          : { deviceId, pointIndex: index, kwh: value, x, y }
+                      );
+                    }}
+                    withShadow={false}
+                    withInnerLines={true}
+                    withOuterLines={false}
+                    withVerticalLines={false}
+                    withHorizontalLines={true}
+                    fromZero
+                    chartConfig={{
+                      backgroundColor: colors.card,
+                      backgroundGradientFrom: colors.card,
+                      backgroundGradientTo: colors.card,
+                      decimalPlaces: 1,
+                      color: () => colors.sub,
+                      labelColor: () => colors.sub,
+                      style: { borderRadius: 16 },
+                      propsForDots: { r: dotRadius, strokeWidth: "1.5", stroke: colors.card },
+                      propsForBackgroundLines: {
+                        stroke: colors.border,
+                        strokeDasharray: "4 4",
+                      },
+                    }}
+                    bezier
+                    style={styles.chart}
+                  />
+
+                  {chartPoint && tooltipSeries && (
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      onPress={() => setChartPoint(null)}
+                      style={[
+                        styles.tooltip,
+                        {
+                          width: TOOLTIP_WIDTH,
+                          left: Math.max(
+                            4,
+                            Math.min(
+                              chartPoint.x - TOOLTIP_WIDTH / 2,
+                              CHART_WIDTH - TOOLTIP_WIDTH - 4
+                            )
+                          ),
+                          top: chartPoint.y > 78 ? chartPoint.y - 74 : chartPoint.y + 14,
+                          borderColor: tooltipSeries.color,
+                        },
+                      ]}
+                    >
+                      <View style={styles.tooltipHeader}>
+                        <View
+                          style={[
+                            styles.tooltipDot,
+                            { backgroundColor: tooltipSeries.color },
+                          ]}
+                        />
+                        <Text style={styles.tooltipName} numberOfLines={1}>
+                          {tooltipSeries.name}
+                        </Text>
+                      </View>
+                      <Text style={styles.tooltipPeriod}>
+                        {zoomedData.zoomedLabels[chartPoint.pointIndex] ?? ""}
+                      </Text>
+                      <View style={styles.tooltipRow}>
+                        <Text style={styles.tooltipValue}>
+                          {formatEnergy(chartPoint.kwh, 2)}
+                        </Text>
+                        <Text style={styles.tooltipCost}>
+                          {formatCostOf(chartPoint.kwh)}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </ScrollView>
+            </View>
+          </GestureDetector>
         </View>
       )}
 
@@ -335,6 +476,69 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       backgroundColor: colors.card,
       borderRadius: 16,
       overflow: "hidden",
+    },
+    chartWrapper: {
+      overflow: "hidden",
+    },
+    zoomBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    zoomBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      backgroundColor: colors.accentSoft,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 12,
+    },
+    zoomBadgeText: {
+      color: colors.accent,
+      fontSize: 11 * fontScale,
+      fontWeight: "700",
+    },
+    zoomControlsRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    zoomHint: {
+      fontSize: 10 * fontScale,
+      color: colors.sub,
+      marginRight: 4,
+    },
+    zoomBtn: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      backgroundColor: colors.surface,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    zoomBtnDisabled: {
+      opacity: 0.35,
+    },
+    resetBtn: {
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 12,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    resetBtnText: {
+      fontSize: 11 * fontScale,
+      color: colors.text,
+      fontWeight: "700",
     },
     chart: {
       borderRadius: 16,

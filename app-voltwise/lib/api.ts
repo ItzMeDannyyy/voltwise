@@ -8,6 +8,13 @@ export function emitAlertsChanged() {
   DeviceEventEmitter.emit(ALERTS_CHANGED_EVENT);
 }
 
+/** Fired whenever devices change (created, updated, deleted) so views can refresh. */
+export const DEVICES_CHANGED_EVENT = "voltwise:devicesChanged";
+
+export function emitDevicesChanged() {
+  DeviceEventEmitter.emit(DEVICES_CHANGED_EVENT);
+}
+
 /**
  * Fired when the server returns 401 (missing / expired token).
  * AuthContext subscribes to this event to trigger automatic sign-out.

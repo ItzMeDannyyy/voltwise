@@ -11,10 +11,11 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { api, checkHealth, DashboardData, DashboardDevice, Reading } from "../../lib/api";
+import { api, checkHealth, DashboardData, DashboardDevice, Reading, DEVICES_CHANGED_EVENT } from "../../lib/api";
 import { useMqtt } from "../../context/MqttContext";
 import { useDemoData } from "../../context/DemoDataContext";
 import { demoDashboard, demoLiveReading } from "../../lib/demo-data";
@@ -183,6 +184,14 @@ export default function DashboardScreen() {
     });
   }, [fetchDashboard]);
 
+  // Refetch whenever devices change (added, edited, deleted) so changes reflect immediately
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(DEVICES_CHANGED_EVENT, () => {
+      fetchDashboard().catch(() => {});
+    });
+    return () => sub.remove();
+  }, [fetchDashboard]);
+
   // A pull refreshes the data and re-checks liveness in one go — allSettled so
   // one failing call never hides the other's result.
   const refreshDashboard = useCallback(async () => {
@@ -221,7 +230,7 @@ export default function DashboardScreen() {
       voltage:     telemetry.voltage     ?? prev?.voltage     ?? 0,
       current:     telemetry.current     ?? prev?.current     ?? 0,
       activePower: telemetry.watts,
-      energy:      telemetry.kwh,
+      energy:      telemetry.totalKwh ?? telemetry.kwh,
       frequency:   telemetry.frequency   ?? prev?.frequency   ?? 0,
       powerFactor: telemetry.powerFactor ?? prev?.powerFactor ?? 0,
     }));

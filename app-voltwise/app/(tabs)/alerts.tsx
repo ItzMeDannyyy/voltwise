@@ -6,21 +6,96 @@ import {
   TouchableOpacity,
   StyleSheet,
   DeviceEventEmitter,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import {
   api,
   ApiAlert,
   ALERTS_CHANGED_EVENT,
   emitAlertsChanged,
+  emitDevicesChanged,
   requestMasterShutdown,
 } from "../../lib/api";
 import { AnomalyModal } from "../../components/AnomalyModal";
+import ConfirmModal from "../../components/ConfirmModal";
 import { useTheme } from "../../context/ThemeContext";
 import { useThemedStyles } from "../../components/themed";
 import type { ThemeColors } from "../../constants/theme";
+
+function getApplianceIcon(name?: string): keyof typeof Ionicons.glyphMap {
+  if (!name) return "flash-outline";
+  const n = name.toLowerCase();
+  if (n.includes("kettle") || n.includes("boiler") || n.includes("heat")) return "cafe-outline";
+  if (n.includes("light") || n.includes("bulb") || n.includes("lamp")) return "bulb-outline";
+  if (n.includes("air") || n.includes("condition") || n.includes("cool") || n.includes("ac")) return "snow-outline";
+  if (n.includes("fridge") || n.includes("refrigerat")) return "cube-outline";
+  if (n.includes("phone") || n.includes("cell") || n.includes("charg")) return "phone-portrait-outline";
+  if (n.includes("tv") || n.includes("entertain")) return "tv-outline";
+  if (n.includes("wash") || n.includes("laundry")) return "water-outline";
+  return "flash-outline";
+}
+
+function getApplianceCategory(name?: string): string {
+  if (!name) return "General";
+  const lower = name.toLowerCase();
+  if (lower.includes("light") || lower.includes("bulb") || lower.includes("lamp")) return "Lighting";
+  if (lower.includes("kettle") || lower.includes("boiler") || lower.includes("heat")) return "Kitchen";
+  if (lower.includes("air") || lower.includes("condition") || lower.includes("ac") || lower.includes("cool")) return "Cooling";
+  if (lower.includes("refrigerat") || lower.includes("fridge")) return "Kitchen";
+  if (lower.includes("phone") || lower.includes("cell") || lower.includes("charg")) return "Electronics";
+  if (lower.includes("tv") || lower.includes("entertain")) return "Entertainment";
+  return "General";
+}
+
+function parseAlertAppliance(alert: AlertItem): { appName: string; watts: number } {
+  const title = alert.title || "";
+  const desc = alert.description || "";
+  const combined = `${title} ${desc}`.toLowerCase();
+
+  let appName = "Light Bulb";
+  if (combined.includes("kettle") || combined.includes("boiler")) {
+    appName = "Electric Kettle";
+  } else if (combined.includes("light") || combined.includes("bulb") || combined.includes("lamp")) {
+    appName = "Light Bulb";
+  } else if (combined.includes("air") || combined.includes("condition") || combined.includes("ac")) {
+    appName = "Air Conditioner";
+  } else if (combined.includes("fridge") || combined.includes("refrigerat")) {
+    appName = "Refrigerator";
+  } else if (combined.includes("phone") || combined.includes("charg")) {
+    appName = "Phone Charger";
+  } else if (title.includes("Detected")) {
+    const raw = title.replace(/Detected/i, "").trim();
+    if (raw && !raw.toLowerCase().includes("load") && !raw.toLowerCase().includes("anomaly")) {
+      appName = raw;
+    }
+  }
+
+  let watts = 7;
+  const match = desc.match(/(?:~|\(|\s)(\d+(?:\.\d+)?)\s*W/i);
+  if (match && match[1]) {
+    watts = Math.round(parseFloat(match[1]));
+  }
+
+  return { appName, watts };
+}
+
+function isLoadDetectionAlert(alert: AlertItem): boolean {
+  const combined = `${alert.title} ${alert.description}`.toLowerCase();
+  if (alert.title.toLowerCase().includes("anomaly") || alert.type === "critical") {
+    return false;
+  }
+  return (
+    combined.includes("detected") ||
+    combined.includes("register") ||
+    combined.includes("new load") ||
+    combined.includes("unregistered") ||
+    combined.includes("plug in")
+  );
+}
 
 type AlertType = "critical" | "warning" | "info";
 type FilterTab = "All" | "Unread" | "Critical";
@@ -110,9 +185,12 @@ function severityIcon(type: AlertType): keyof typeof Ionicons.glyphMap {
 
 export default function AlertsScreen() {
   const styles = useThemedStyles(createStyles);
+  const router = useRouter();
   const [alerts, setAlerts] = useState<AlertItem[]>(INITIAL_ALERTS);
   const [activeTab, setActiveTab] = useState<FilterTab>("All");
   const [modalAlert, setModalAlert] = useState<AlertItem | null>(null);
+  const [registerAlert, setRegisterAlert] = useState<AlertItem | null>(null);
+  const [registering, setRegistering] = useState(false);
   const [countdown, setCountdown] = useState(3);
   const [powerOff, setPowerOff] = useState(false);
 
@@ -189,6 +267,10 @@ export default function AlertsScreen() {
   }
 
   function openModal(alert: AlertItem) {
+    if (isLoadDetectionAlert(alert)) {
+      setRegisterAlert(alert);
+      return;
+    }
     setModalAlert(alert);
     setCountdown(3);
     setPowerOff(false);
@@ -294,6 +376,62 @@ export default function AlertsScreen() {
         onPowerOff={handlePowerOff}
         onSkip={() => closeModal(true)}
       />
+
+      {registerAlert && (() => {
+        const { appName, watts } = parseAlertAppliance(registerAlert);
+        const icon = getApplianceIcon(appName);
+        const wattsSuffix = watts ? ` (~${watts} W)` : "";
+
+        return (
+          <ConfirmModal
+            visible={true}
+            icon={icon}
+            loading={registering}
+            title={`${appName} Detected`}
+            message={`VoltWise ML detected a ${appName}${wattsSuffix}. Do you want to register this device?`}
+            confirmText="Yes"
+            cancelText="Dismiss"
+            onConfirm={async () => {
+              try {
+                setRegistering(true);
+                await api.post("/devices", {
+                  name: appName,
+                  category: getApplianceCategory(appName),
+                  room: "Living Room",
+                  watts: watts,
+                  enabled: true,
+                });
+                markRead(registerAlert.id);
+                if (Platform.OS === "ios" || Platform.OS === "android") {
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+                }
+                emitAlertsChanged();
+                emitDevicesChanged();
+                setRegisterAlert(null);
+                router.push("/(tabs)/devices");
+              } catch (err) {
+                console.error("Failed to register device from alert:", err);
+                markRead(registerAlert.id);
+                setRegisterAlert(null);
+                router.push({
+                  pathname: "/(tabs)/devices",
+                  params: {
+                    openAdd: "1",
+                    initialName: appName,
+                    initialWatts: String(watts),
+                  },
+                });
+              } finally {
+                setRegistering(false);
+              }
+            }}
+            onCancel={() => {
+              markRead(registerAlert.id);
+              setRegisterAlert(null);
+            }}
+          />
+        );
+      })()}
     </SafeAreaView>
   );
 }
