@@ -48,12 +48,10 @@ The server starts on `http://localhost:3000`.
 
 ## Environment Variables (`.env`)
 
-```
-DATABASE_HOST=localhost
-DATABASE_PORT=5432
-DATABASE_NAME=voltwise_db
-DATABASE_USER=postgres
-DATABASE_PASSWORD=Danny12345
+```env
+DATABASE_URL="postgresql://postgres:[password]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
+DIRECT_URL="postgresql://postgres:[password]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
+JWT_SECRET_KEY=your_jwt_secret_key
 PORT=3000
 ```
 
