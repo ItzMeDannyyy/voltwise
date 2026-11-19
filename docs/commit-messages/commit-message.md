@@ -1,10 +1,14 @@
-fix(backend): switch database connection config to DATABASE_URL exclusively
+<type>(<scope>): <concise summary of changes under 70 characters>
+
+### Added
+- [Component/Module] Description of newly added functionality or endpoint
 
 ### Changed / Updated
-- [Database Config] Updated `backend/src/configs/database.ts` to consume `DATABASE_URL` directly instead of assembling discrete host, port, user, password, and database environment variables
-- [Environment] Updated `backend/.env.example` and active `.env` / `.env.development` to remove individual database connection fields (`DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`) in favor of unified `DATABASE_URL` and `DIRECT_URL`
-- [Documentation] Updated `backend/README.md` environment variable sample to reflect `DATABASE_URL`
+- [Component/Module] Description of modifications, enhancements, or refactored logic
+
+### Fixed
+- [Component/Module] Description of bug fix or edge case resolved
 
 ### Testing & Verification
-- Ran full backend test suite (`npm --prefix backend test`): 12 suites passed, 156 tests passed
-- Verified Prisma client generation (`npm --prefix backend run build`): generated successfully
+- [API / Smoke Test] Verified endpoint/functionality via Thunder Client / Postman (Status: 200 OK)
+- [Edge Cases] Verified handling of invalid inputs and failure scenarios
