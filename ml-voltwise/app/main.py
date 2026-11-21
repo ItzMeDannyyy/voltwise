@@ -61,10 +61,6 @@ def load_model_artifacts() -> bool:
         return False
 
 
-# Auto-load model on module import if artifact is available
-load_model_artifacts()
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Load pre-trained model
@@ -117,16 +113,6 @@ class FeatureVectorInput(BaseModel):
     energy_delta_wh: float
     frequency_mean: float
     power_factor_mean: float
-
-
-class PredictionResponse(BaseModel):
-    cluster: int
-    interpretation: str
-    nearest_distance: float
-    distance_threshold: float
-    is_anomaly: bool
-    alert_level: str
-    message: str
 
 
 class TrainRequest(BaseModel):

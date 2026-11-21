@@ -7,31 +7,26 @@ export const Comparison: React.FC = () => {
       feature: "Real-Time Usage Tracking",
       voltwise: "Instant, second-by-second live updates",
       oldWay: "Zero live data; wait 30 days for utility bill",
-      isVoltwisePositive: true
     },
     {
       feature: "Appliance Waste Detection",
       voltwise: "Automatic AI spots phantom leaks",
       oldWay: "Hours spent manually guessing and unplugging",
-      isVoltwisePositive: true
     },
     {
       feature: "Surge & Burnout Protection",
       voltwise: "Auto-relay cuts power in under 3 seconds",
       oldWay: "None; appliances take full surge damage",
-      isVoltwisePositive: true
     },
     {
       feature: "Bill Cost Prediction",
       voltwise: "Accurate dollar forecast updated daily",
       oldWay: "Frustrating math and surprise bill shock",
-      isVoltwisePositive: true
     },
     {
       feature: "Setup & Effort",
       voltwise: "2-minute setup, zero tools needed",
       oldWay: "Tedious manual data entry into spreadsheets",
-      isVoltwisePositive: true
     }
   ];
 

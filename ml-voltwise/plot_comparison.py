@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 import pandas as pd
-import numpy as np
 from pathlib import Path
 
 # Paths
@@ -97,17 +96,5 @@ graphs_output = Path("artifacts/graphs/ac_vs_refrigerator_comparison.png")
 graphs_output.parent.mkdir(parents=True, exist_ok=True)
 plt.savefig(graphs_output, dpi=300, bbox_inches="tight")
 print(f"Saved plot to: {graphs_output.resolve()}")
-
-# Also keep docs copy
-docs_output = Path("docs/ac_vs_refrigerator_comparison.png")
-docs_output.parent.mkdir(parents=True, exist_ok=True)
-plt.savefig(docs_output, dpi=300, bbox_inches="tight")
-
-# Also save directly to conversation artifact directory
-artifact_dir = Path(r"C:\Users\ThinkPad\.gemini\antigravity-cli\brain\eec9d8ba-2fb5-443f-adfd-cfa2aaf32c64")
-if artifact_dir.exists():
-    artifact_output = artifact_dir / "ac_vs_refrigerator_comparison.png"
-    plt.savefig(artifact_output, dpi=300, bbox_inches="tight")
-    print(f"Saved artifact plot to: {artifact_output.resolve()}")
 
 plt.close()

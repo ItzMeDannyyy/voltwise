@@ -27,17 +27,6 @@ const prisma = new PrismaClient({ adapter });
 
 // ─── Date Helpers ─────────────────────────────────────────────────────────────
 
-// Documentation only: Returns a Date that is `daysAgo` days before now,
-// at the specified hour of that day.
-// Accepts daysAgo (number) and hour (number, 0–23).
-// Returns a Date.
-const dateAtHour = (daysAgo: number, hour: number): Date => {
-  const date = new Date();
-  date.setDate(date.getDate() - daysAgo);
-  date.setHours(hour, Math.floor(Math.random() * 59), 0, 0);
-  return date;
-};
-
 // Documentation only: Returns a random float between min and max, rounded to 3 decimal places.
 // Accepts min (number) and max (number).
 // Returns a number.
@@ -166,7 +155,6 @@ async function seed(): Promise<void> {
   const deviceDefinitions = [
     {
       name: "Air Conditioner",
-      icon: "❄️",
       category: "Climate",
       roomName: "Bedroom",
       ratedWatts: 1200,
@@ -174,7 +162,6 @@ async function seed(): Promise<void> {
     },
     {
       name: "Living Room Lights",
-      icon: "💡",
       category: "Lighting",
       roomName: "Living Room",
       ratedWatts: 340,
@@ -182,7 +169,6 @@ async function seed(): Promise<void> {
     },
     {
       name: "Smart TV",
-      icon: "🖥️",
       category: "Entertainment",
       roomName: "Living Room",
       ratedWatts: 0,
@@ -190,7 +176,6 @@ async function seed(): Promise<void> {
     },
     {
       name: "Kitchen Appliances",
-      icon: "🍳",
       category: "Kitchen",
       roomName: "Kitchen",
       ratedWatts: 860,
@@ -198,7 +183,6 @@ async function seed(): Promise<void> {
     },
     {
       name: "Washing Machine",
-      icon: "🧺",
       category: "Laundry",
       roomName: "Laundry",
       ratedWatts: 0,
@@ -206,7 +190,6 @@ async function seed(): Promise<void> {
     },
     {
       name: "Refrigerator",
-      icon: "🧊",
       category: "Kitchen",
       roomName: "Kitchen",
       ratedWatts: 180,
@@ -214,7 +197,6 @@ async function seed(): Promise<void> {
     },
     {
       name: "Water Heater",
-      icon: "🚿",
       category: "Bathroom",
       roomName: "Bathroom",
       ratedWatts: 1500,

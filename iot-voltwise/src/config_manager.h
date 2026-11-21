@@ -4,13 +4,6 @@
 #include <Preferences.h>
 #include "secrets.h"
 
-struct DeviceConfig {
-  String wifiSsid;
-  String wifiPassword;
-  String deviceUid;
-  bool isConfigured;
-};
-
 class ConfigManager {
 private:
   static Preferences prefs;
@@ -59,15 +52,6 @@ public:
 #endif
     }
     return uid;
-  }
-
-  static DeviceConfig loadConfig() {
-    DeviceConfig config;
-    config.wifiSsid = getWifiSsid();
-    config.wifiPassword = getWifiPassword();
-    config.deviceUid = getDeviceUid();
-    config.isConfigured = hasSavedConfig();
-    return config;
   }
 
   static bool saveWifi(const String& ssid, const String& password, const String& uid = "") {

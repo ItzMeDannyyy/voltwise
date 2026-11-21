@@ -7,19 +7,6 @@
   }
 }
 
-/* Custom glow and micro-interaction utilities */
-.glow-emerald {
-  box-shadow: 0 0 50px -10px rgba(16, 185, 129, 0.35);
-}
-
-.glow-card {
-  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6), 0 0 30px -10px rgba(16, 185, 129, 0.15);
-}
-
-.glow-danger {
-  box-shadow: 0 0 50px -10px rgba(239, 68, 68, 0.5);
-}
-
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

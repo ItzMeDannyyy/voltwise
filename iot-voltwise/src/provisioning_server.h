@@ -559,11 +559,6 @@ public:
     return isRunning;
   }
 
-  static String getApSsid()
-  {
-    return apSsid;
-  }
-
   static void handleClient()
   {
     if (!isRunning)

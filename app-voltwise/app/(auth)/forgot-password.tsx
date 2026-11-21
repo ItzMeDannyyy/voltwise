@@ -72,7 +72,7 @@ export default function ForgotPasswordScreen() {
 
     try {
       const data = await api.post<{ resetToken: string; email: string }>(
-        "/auth/forgot-password",
+        "/auth/forgot-password", // http://localhost:3000/api/auth/forgot-password
         { email: email.trim() }
       );
       setResetToken(data.resetToken);

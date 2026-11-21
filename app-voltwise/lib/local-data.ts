@@ -70,9 +70,6 @@ export const LOCAL_DATA_ENTRIES: LocalDataEntry[] = [
   },
 ];
 
-/** Deliberately never cleared here — see the module comment. */
-export const EXCLUDED_KEYS = ["voltwise.jwt"];
-
 export interface LocalDataStatus {
   /** Per entry: whether anything is actually stored for it right now. */
   stored: Record<LocalDataEntry["id"], boolean>;

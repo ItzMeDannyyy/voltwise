@@ -15,13 +15,6 @@ export const DeviceStatus = {
 } as const;
 export type DeviceStatus = (typeof DeviceStatus)[keyof typeof DeviceStatus];
 
-export const AlertType = {
-  CRITICAL: "CRITICAL",
-  WARNING: "WARNING",
-  INFO: "INFO",
-} as const;
-export type AlertType = (typeof AlertType)[keyof typeof AlertType];
-
 export interface MLPrediction {
   cluster: number;
   interpretation: string;
@@ -62,28 +55,11 @@ export interface ApplianceMatchResult {
 let lastUnregisteredAlertAt = 0;
 const UNREGISTERED_ALERT_COOLDOWN_MS = 120_000; // 2 minutes
 
-export const getMlServiceUrl = (): string =>
+const getMlServiceUrl = (): string =>
   process.env.ML_SERVICE_URL ?? "http://localhost:8000";
 
 export const isMlEnabled = (): boolean =>
   process.env.NODE_ENV !== "test" && process.env.ML_INFERENCE_ENABLED !== "false";
-
-/**
- * Checks if the ML microservice is online and loaded.
- */
-export const checkMlHealth = async (): Promise<boolean> => {
-  if (!isMlEnabled()) return false;
-  try {
-    const res = await fetch(`${getMlServiceUrl()}/health`, {
-      signal: AbortSignal.timeout(1500),
-    });
-    if (!res.ok) return false;
-    const data = (await res.json()) as { status?: string; model_loaded?: boolean };
-    return data.status === "ok" && data.model_loaded === true;
-  } catch {
-    return false;
-  }
-};
 
 /**
  * Sends one telemetry reading to the ml-voltwise service for sliding window

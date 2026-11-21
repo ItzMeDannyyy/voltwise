@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Dimensions,
   FlatList,
   Animated,
   Easing,
@@ -24,15 +23,12 @@ import DeviceUsageChart from "../../components/DeviceUsageChart";
 import { getStoredBillingCycle, saveBillingCycle } from "../../lib/billing-storage";
 import {
   defaultRangeState,
-  dotRadiusFor,
-  axisLabelStep,
   rangeLabel,
   rangeQuery,
-  thinLabels,
   type BillingCycle,
   type RangeState,
 } from "../../lib/range-prefs";
-import { RELAY_REASON_LABELS } from "../../lib/iot-prefs";
+import { RELAY_REASON_LABELS, TELEMETRY_FRESH_MS } from "../../lib/iot-prefs";
 import AppHeader from "../../components/AppHeader";
 import { PullToRefresh } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
@@ -46,8 +42,6 @@ import type { ThemeColors } from "../../constants/theme";
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 // Metric display definitions — order determines grid order.
 const METRIC_DEFS: {
@@ -90,10 +84,6 @@ function createPillStyles(colors: ThemeColors, fontScale: number) {
 }
 
 type LiveMetrics = Omit<Reading, "timestamp">;
-
-// Telemetry older than this is stale — the device publishes every ~2 s, so a
-// 10 s gap means the feed is effectively down and the UI must say so.
-const TELEMETRY_FRESH_MS = 10_000;
 
 // What is currently driving the live metrics. There is no third option on
 // purpose: either real PZEM telemetry is arriving, or the panel shows nothing.

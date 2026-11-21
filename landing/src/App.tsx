@@ -14,7 +14,7 @@ import { Footer } from './components/Footer';
 import { StickyMobileBar } from './components/StickyMobileBar';
 import { TrialModal } from './components/TrialModal';
 
-export function App() {
+function App() {
   const [isTrialOpen, setIsTrialOpen] = useState(false);
 
   const handleOpenTrial = () => {

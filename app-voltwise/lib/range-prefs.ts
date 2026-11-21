@@ -384,43 +384,6 @@ export function resolveBuckets(state: RangeState, now: Date = new Date()): Resol
 // ─── Chart axis ──────────────────────────────────────────────────────────────
 
 /**
- * Blanks out labels so a dense axis stays readable while keeping every data
- * point.
- *
- * A day is 24 hourly points and a month is up to 31 daily ones; drawing a label
- * under each turns the axis into a grey smear. Thinning the *labels* rather than
- * the points keeps the line at full resolution — the tooltip still names the
- * exact hour a dot belongs to, because it reads the untouched label array.
- *
- * Accepts the full label list, roughly how many should remain visible, and an
- * optional fixed step that overrides that estimate.
- *
- * The fixed step exists for the hourly axis: derived spacing would label every
- * second hour on a part-finished day and every third on a complete one, so the
- * clock times under the chart would shift as the day went on. Pinning it to 3
- * keeps the labels on 12mn / 3am / 6am / 9am / 12nn / 3pm / 6pm / 9pm all day.
- *
- * Returns a list of the same length with the in-between entries emptied.
- */
-export function thinLabels(
-  labels: string[],
-  maxVisible = 8,
-  fixedStep?: number
-): string[] {
-  if (fixedStep === undefined && labels.length <= maxVisible) return labels;
-  const step = fixedStep ?? Math.ceil(labels.length / maxVisible);
-  if (step <= 1) return labels;
-  return labels.map((label, index) => (index % step === 0 ? label : ""));
-}
-
-/** How often the axis should be labelled for a given period. */
-export function axisLabelStep(period: RangePeriod): number | undefined {
-  // Hours read as clock times, so they get fixed 3-hour anchors. Everything
-  // else is spaced to fit.
-  return period === "Day" ? 3 : undefined;
-}
-
-/**
  * Dot radius for a chart with this many points. Dots are the tap targets on the
  * dashboard, so they cannot simply shrink away — but at 24 or 31 points the
  * full-size dot swallows the line it sits on.

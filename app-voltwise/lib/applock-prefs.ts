@@ -98,13 +98,6 @@ export function shouldLockOnResume(input: {
  */
 export type LockAvailability = "ready" | "not-enrolled" | "no-hardware" | "unsupported";
 
-export const LOCK_AVAILABILITY_LABELS: Record<LockAvailability, string> = {
-  ready: "Available",
-  "not-enrolled": "Nothing enrolled",
-  "no-hardware": "No sensor",
-  unsupported: "Not supported",
-};
-
 export const LOCK_AVAILABILITY_HINTS: Record<LockAvailability, string> = {
   ready: "",
   "not-enrolled":

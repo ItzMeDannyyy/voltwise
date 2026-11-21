@@ -1,10 +1,6 @@
 // Documentation only: Defines TypeScript types for the dashboard module response shapes.
 // These match the exact JSON fields expected by the VoltWise mobile app's dashboard screen.
 
-// Re-exported from the shared resolver so there is one definition of a period
-// in the codebase. "Cycle" is a user-defined billing window (from/to).
-export type { RangePeriod as DashboardPeriod } from "../../lib/range.ts";
-
 // The window the payload actually describes, echoed back so the client can
 // confirm the server read its request the way it meant it.
 export interface RangeSummaryDto {

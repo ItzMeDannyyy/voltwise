@@ -309,12 +309,6 @@ export function getDemoCurrentWatts(options?: DemoPowerLineOptions): number {
   }, 0);
 }
 
-/** Whole-home draw right now: the sum of everything currently running. */
-export const DEMO_CURRENT_WATTS = PROFILES.reduce(
-  (sum, profile) => sum + profile.device.watts,
-  0
-);
-
 // ─── Synthesis ───────────────────────────────────────────────────────────────
 
 /**

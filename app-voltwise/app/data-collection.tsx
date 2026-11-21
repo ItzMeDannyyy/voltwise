@@ -33,20 +33,10 @@ import {
   loadActiveSessionBackup,
   clearActiveSessionBackup,
   type ActiveSessionBackup,
+  type TelemetryRecord,
 } from "../lib/collection-recovery";
 import { saveExport, type SaveResult } from "../lib/export-file";
 import type { ThemeColors } from "../constants/theme";
-
-interface TelemetryRecord {
-  timestamp: string;
-  appliance: string;
-  voltage: number;
-  current: number;
-  watts: number;
-  kwh: number;
-  frequency: number;
-  powerFactor: number;
-}
 
 interface CompletedSessionData {
   applianceName: string;
@@ -91,7 +81,7 @@ export default function DataCollectionScreen() {
   const { formatPower, formatEnergy } = useUnits();
 
   // Hardware telemetry & connection
-  const { telemetry, relayState, safetyState, countdownState } = useMqtt();
+  const { telemetry, relayState, safetyState } = useMqtt();
   const {
     masterOn,
     highOn,
@@ -126,33 +116,6 @@ export default function DataCollectionScreen() {
       setNoticeMessage(err instanceof Error ? err.message : "Failed to toggle safety cutoff.");
     } finally {
       setSafetyToggling(false);
-    }
-  };
-
-  // Auto-Shutdown Countdown quick toggle
-  const [countdownLocal, setCountdownLocal] = useState<boolean | null>(null);
-  const [countdownToggling, setCountdownToggling] = useState(false);
-
-  useEffect(() => {
-    if (countdownState === null) return;
-    setCountdownLocal(null);
-    setCountdownToggling(false);
-  }, [countdownState]);
-
-  const effectiveCountdownEnabled =
-    countdownLocal !== null ? countdownLocal : countdownState?.enabled ?? false;
-  const effectiveCountdownSeconds = countdownState?.seconds ?? 1800;
-
-  const handleToggleCountdown = async (next: boolean) => {
-    setCountdownLocal(next);
-    setCountdownToggling(true);
-    try {
-      await setCountdownTimer(next, effectiveCountdownSeconds);
-    } catch (err) {
-      setCountdownLocal(null);
-      setNoticeMessage(err instanceof Error ? err.message : "Failed to toggle countdown timer.");
-    } finally {
-      setCountdownToggling(false);
     }
   };
 

@@ -1,5 +1,3 @@
-import os
-import sys
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.units import inch
@@ -12,7 +10,6 @@ from reportlab.platypus import (
     TableStyle,
     PageBreak,
     KeepTogether,
-    HRFlowable,
 )
 from reportlab.pdfgen import canvas
 
@@ -84,7 +81,6 @@ def create_pdf(filename="VoltWise_System_Feature_Audit_Checklist.pdf"):
     # Custom Palette
     C_PRIMARY = colors.HexColor("#0F172A")   # Slate 900
     C_SECONDARY = colors.HexColor("#0369A1") # Sky 700
-    C_ACCENT = colors.HexColor("#0EA5E9")    # Sky 500
     C_LIGHT_BG = colors.HexColor("#F8FAFC")  # Slate 50
     C_ALT_ROW = colors.HexColor("#F1F5F9")   # Slate 100
     C_BORDER = colors.HexColor("#CBD5E1")    # Slate 300

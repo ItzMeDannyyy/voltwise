@@ -32,12 +32,6 @@ const int PZEM_TX_PIN = 17; // ESP32 TX2 sends to PZEM RX
 const int RELAY_LOW_PIN = 25;
 const int RELAY_HIGH_PIN = 26;
 
-const int NUM_RELAYS = 2;
-
-const int RELAY_PINS[NUM_RELAYS] = {
-    RELAY_LOW_PIN,
-    RELAY_HIGH_PIN};
-
 // Most relay modules are active LOW.
 // If your relay turns ON when you write HIGH, change this to false.
 const bool RELAY_ACTIVE_LOW = true;
@@ -61,7 +55,6 @@ const bool RELAY_ACTIVE_LOW = true;
 // Can be dynamically enabled/disabled and configured via MQTT topic voltwise/<uid>/safety/set.
 bool safetyCutoffEnabled = true;
 float maxAllowedPowerWatts = 3000.0;
-const float MAX_ALLOWED_POWER_WATTS = 3000.0;
 
 // Read sensor every 2 seconds
 const unsigned long SENSOR_READ_INTERVAL_MS = 2000;
@@ -82,8 +75,6 @@ const int SENSOR_READ_RETRIES = 3;
 bool shutdownCountdownEnabled = false;
 unsigned long shutdownCountdownSeconds = 1800; // Default: 30 minutes when enabled
 float currentDetectThresholdAmps = 0.05;
-const float CURRENT_DETECT_THRESHOLD_AMPS = 0.05;
-const unsigned long SHUTDOWN_COUNTDOWN_SECONDS = 30;
 
 // =========================
 // Network Configuration
@@ -198,7 +189,6 @@ struct PowerReadings
 void setupRelays();
 void applyRelays(bool on, const char *reason);
 void applyLineRelay(const char *line, bool on, const char *reason);
-void setRelay(int relayNumber, bool turnOn);
 void writeRelayPin(int pin, bool turnOn);
 void tickStaggeredPowerActivation();
 void checkSmartHybridBootPower();
@@ -211,9 +201,6 @@ void printDiagnostics(PowerReadings readings);
 
 void updateShutdownCountdown(PowerReadings readings);
 void tickShutdownCountdown();
-
-int getRelayOnState();
-int getRelayOffState();
 
 const char *getWifiStatusString(wl_status_t status);
 const char *getRssiQuality(int rssi);
@@ -265,7 +252,6 @@ bool wifiConnecting = false;
 bool offlineModeActive = false;
 int wifiAttemptCount = 0;
 unsigned long lastWifiAttempt = 0;
-unsigned long lastWifiProgressPrint = 0;
 
 bool ntpStarted = false;
 bool timeSynced = false;
@@ -730,44 +716,6 @@ void checkSmartHybridBootPower()
   }
 }
 
-void setRelay(int relayNumber, bool turnOn)
-{
-  if (relayNumber == 1)
-  {
-    applyLineRelay("low", turnOn, "manual");
-  }
-  else if (relayNumber == 2)
-  {
-    applyLineRelay("high", turnOn, "manual");
-  }
-  else
-  {
-    Serial.print("Invalid relay number: ");
-    Serial.print(relayNumber);
-    Serial.println(". Use 1 (Low Line / Pin 25) or 2 (High Line / Pin 26).");
-  }
-}
-
-int getRelayOnState()
-{
-  if (RELAY_ACTIVE_LOW)
-  {
-    return LOW;
-  }
-
-  return HIGH;
-}
-
-int getRelayOffState()
-{
-  if (RELAY_ACTIVE_LOW)
-  {
-    return HIGH;
-  }
-
-  return LOW;
-}
-
 // =========================
 // PZEM Sensor Functions
 // =========================
@@ -1012,10 +960,6 @@ void tickShutdownCountdown()
     Serial.println(" s...");
   }
 }
-
-// =========================
-// WiFi / Time / MQTT
-// =========================
 
 // =========================
 // WiFi / Time / MQTT

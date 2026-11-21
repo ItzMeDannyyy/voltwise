@@ -270,12 +270,6 @@ export default function RegisterScreen() {
         err instanceof Error ? err.message : "Registration failed. Please try again.";
       if (msg.includes("409") || msg.toLowerCase().includes("already")) {
         setError("An account with that email already exists.");
-      } else if (
-        msg.includes("400") ||
-        msg.toLowerCase().includes("password") ||
-        msg.toLowerCase().includes("policy")
-      ) {
-        setError(msg);
       } else {
         setError(msg);
       }
