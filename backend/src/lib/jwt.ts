@@ -16,13 +16,13 @@ export interface JwtPayload {
   sid: string;
 }
 
-// How long an issued token remains valid before the client must log in again.
-const TOKEN_EXPIRY = "7d";
+// How long an issued token remains valid before the client must log in again (1 month / 30 days).
+const TOKEN_EXPIRY = "30d";
 
 // The same window in milliseconds, so a Session row can be given an expiresAt
 // that matches the token it was issued alongside. Keeping both derived from one
 // constant stops the DB and the JWT from disagreeing about when a session ended.
-export const TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+export const TOKEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
 
 // Documentation only: Reads JWT_SECRET_KEY from the environment.
 // Throws an Error if the variable is missing so that a misconfigured deployment

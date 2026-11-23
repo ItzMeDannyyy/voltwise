@@ -6,6 +6,10 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <SPI.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7789.h>
+#include <Adafruit_ST7735.h>
 
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
@@ -32,11 +36,17 @@ const int PZEM_TX_PIN = 17; // ESP32 TX2 sends to PZEM RX
 const int RELAY_LOW_PIN = 25;
 const int RELAY_HIGH_PIN = 26;
 
-const int NUM_RELAYS = 2;
+// 7-Pin 1.3" TFT SPI LCD Display Pins (Top to Bottom: CS, DC, RST, SDA, SCL, VCC, GND)
+const int OLED_CS_PIN = 5;   // 1. CS  -> GPIO 5
+const int OLED_DC_PIN = 23;  // 2. DC  -> GPIO 23
+const int OLED_RST_PIN = 4;  // 3. RST -> GPIO 4
+const int OLED_SDA_PIN = 19; // 4. SDA -> GPIO 19 (SPI MOSI)
+const int OLED_SCL_PIN = 18; // 5. SCL -> GPIO 18 (SPI SCK)
+// 6. VCC -> ESP32 3V3
+// 7. GND -> ESP32 GND
 
-const int RELAY_PINS[NUM_RELAYS] = {
-    RELAY_LOW_PIN,
-    RELAY_HIGH_PIN};
+const int TFT_SCREEN_WIDTH = 240;
+const int TFT_SCREEN_HEIGHT = 240;
 
 // Most relay modules are active LOW.
 // If your relay turns ON when you write HIGH, change this to false.
@@ -61,7 +71,6 @@ const bool RELAY_ACTIVE_LOW = true;
 // Can be dynamically enabled/disabled and configured via MQTT topic voltwise/<uid>/safety/set.
 bool safetyCutoffEnabled = true;
 float maxAllowedPowerWatts = 3000.0;
-const float MAX_ALLOWED_POWER_WATTS = 3000.0;
 
 // Read sensor every 2 seconds
 const unsigned long SENSOR_READ_INTERVAL_MS = 2000;
@@ -82,8 +91,6 @@ const int SENSOR_READ_RETRIES = 3;
 bool shutdownCountdownEnabled = false;
 unsigned long shutdownCountdownSeconds = 1800; // Default: 30 minutes when enabled
 float currentDetectThresholdAmps = 0.05;
-const float CURRENT_DETECT_THRESHOLD_AMPS = 0.05;
-const unsigned long SHUTDOWN_COUNTDOWN_SECONDS = 30;
 
 // =========================
 // Network Configuration
@@ -171,6 +178,14 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 PZEM004Tv30 pzem(Serial2, PZEM_RX_PIN, PZEM_TX_PIN);
 
 // =========================
+// 1.3" 240x240 ST7789 TFT LCD Display Object (7-Pin Hardware SPI: SDA=19, SCL=18, DC=23, RST=4, CS=5)
+// =========================
+
+Adafruit_ST7789 tft = Adafruit_ST7789(&SPI, OLED_CS_PIN, OLED_DC_PIN, OLED_RST_PIN);
+GFXcanvas16 *canvasPtr = nullptr;
+bool oledAvailable = false;
+
+// =========================
 // Network Objects
 // =========================
 
@@ -191,14 +206,21 @@ struct PowerReadings
   float powerFactor;
 };
 
+PowerReadings latestReadings = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+bool latestReadingsValid = false;
+unsigned long highLineJustActivatedTime = 0;
+
 // =========================
 // Function Prototypes
 // =========================
 
+void setupOled();
+void showOledBootScreen();
+void updateOledDisplay();
+
 void setupRelays();
 void applyRelays(bool on, const char *reason);
 void applyLineRelay(const char *line, bool on, const char *reason);
-void setRelay(int relayNumber, bool turnOn);
 void writeRelayPin(int pin, bool turnOn);
 void tickStaggeredPowerActivation();
 void checkSmartHybridBootPower();
@@ -211,9 +233,6 @@ void printDiagnostics(PowerReadings readings);
 
 void updateShutdownCountdown(PowerReadings readings);
 void tickShutdownCountdown();
-
-int getRelayOnState();
-int getRelayOffState();
 
 const char *getWifiStatusString(wl_status_t status);
 const char *getRssiQuality(int rssi);
@@ -265,7 +284,6 @@ bool wifiConnecting = false;
 bool offlineModeActive = false;
 int wifiAttemptCount = 0;
 unsigned long lastWifiAttempt = 0;
-unsigned long lastWifiProgressPrint = 0;
 
 bool ntpStarted = false;
 bool timeSynced = false;
@@ -334,6 +352,8 @@ void setup()
   pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
 
   setupRelays();
+  setupOled();
+  showOledBootScreen();
 
   // Smart Hybrid: Relays remain safely OFF at power-on to eliminate relay coil current draw
   // during ESP32 initialization and initial Wi-Fi RF power surge.
@@ -453,6 +473,8 @@ void loop()
 
     if (valid)
     {
+      latestReadings = readings;
+      latestReadingsValid = true;
       printReadings(readings);
       publishTelemetry(readings);
       handlePowerSafety(readings);
@@ -460,6 +482,7 @@ void loop()
     }
     else
     {
+      latestReadingsValid = false;
       Serial.println("Sensor reading failed. Check PZEM wiring, AC input, RX/TX, and GND.");
       if (DIAGNOSTIC_MODE)
       {
@@ -469,6 +492,7 @@ void loop()
       // we still publish baseline telemetry so the backend and mobile app recognize the device
       // as LIVE and ONLINE rather than displaying "Device offline".
       PowerReadings zeroReadings = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+      latestReadings = zeroReadings;
       publishTelemetry(zeroReadings);
     }
 
@@ -490,6 +514,9 @@ void loop()
   maintainWifi();
   maintainTimeSync();
   maintainMqtt();
+
+  // Refresh the 7-pin SPI OLED display (connecting / staggered countdown / live dashboard)
+  updateOledDisplay();
 
   if (ProvisioningServer::active())
   {
@@ -659,6 +686,7 @@ void tickStaggeredPowerActivation()
     writeRelayPin(RELAY_HIGH_PIN, true);
     highLineOn = true;
     relaysAreOn = true;
+    highLineJustActivatedTime = millis();
 
     Serial.println();
     Serial.println("==================================================");
@@ -728,44 +756,6 @@ void checkSmartHybridBootPower()
     }
     return;
   }
-}
-
-void setRelay(int relayNumber, bool turnOn)
-{
-  if (relayNumber == 1)
-  {
-    applyLineRelay("low", turnOn, "manual");
-  }
-  else if (relayNumber == 2)
-  {
-    applyLineRelay("high", turnOn, "manual");
-  }
-  else
-  {
-    Serial.print("Invalid relay number: ");
-    Serial.print(relayNumber);
-    Serial.println(". Use 1 (Low Line / Pin 25) or 2 (High Line / Pin 26).");
-  }
-}
-
-int getRelayOnState()
-{
-  if (RELAY_ACTIVE_LOW)
-  {
-    return LOW;
-  }
-
-  return HIGH;
-}
-
-int getRelayOffState()
-{
-  if (RELAY_ACTIVE_LOW)
-  {
-    return HIGH;
-  }
-
-  return LOW;
 }
 
 // =========================
@@ -1012,10 +1002,6 @@ void tickShutdownCountdown()
     Serial.println(" s...");
   }
 }
-
-// =========================
-// WiFi / Time / MQTT
-// =========================
 
 // =========================
 // WiFi / Time / MQTT
@@ -1663,5 +1649,502 @@ void publishCountdownState()
   if (!mqtt.publish(topicCountdownState.c_str(), (const uint8_t *)buffer, length, true))
   {
     Serial.println("Countdown state publish failed (check MQTT buffer size / connection).");
+  }
+}
+
+// =========================
+// 7-Pin 1.3" ST7789 TFT SPI LCD Display Functions
+// =========================
+
+// RGB565 Theme Palette for VoltWise
+const uint16_t COLOR_BG      = 0x0863; // Deep Navy (#0F172A)
+const uint16_t COLOR_CARD    = 0x1926; // Slate Card (#1E293B)
+const uint16_t COLOR_BORDER  = 0x3269; // Border (#334155)
+const uint16_t COLOR_CYAN    = 0x3DF8; // Electric Cyan (#38BDF8)
+const uint16_t COLOR_GREEN   = 0x266B; // Emerald ON (#22C55E)
+const uint16_t COLOR_AMBER   = 0xFD20; // Amber Warning (#F59E0B)
+const uint16_t COLOR_RED     = 0xF800; // Danger Red (#EF4444)
+const uint16_t COLOR_WHITE   = 0xFFFF; // Pure White
+const uint16_t COLOR_MUTED   = 0x9CD3; // Muted Gray (#94A3B8)
+const uint16_t COLOR_BLACK   = 0x0000;
+
+void setupOled()
+{
+  // 1. Wait 150ms for the 3.3V power rail to stabilize
+  delay(150);
+
+  // 2. Route ESP32 Hardware SPI peripheral via GPIO matrix to your custom pins:
+  //    SCK = GPIO 18 (SCL), MISO = -1 (unused), MOSI = GPIO 19 (SDA), SS = GPIO 5 (CS)
+  SPI.begin(OLED_SCL_PIN, -1, OLED_SDA_PIN, OLED_CS_PIN);
+
+  // 3. Initialize 1.3" 240x240 ST7789 IPS TFT LCD.
+  //    We initialize SPI_MODE3 (default for 1.3" ST7789 modules) or SPI_MODE0 (when CS pin is wired).
+  tft.init(TFT_SCREEN_WIDTH, TFT_SCREEN_HEIGHT, SPI_MODE3);
+  tft.setSPISpeed(20000000UL); // 20 MHz smooth frame transfers
+  tft.setRotation(0);
+  tft.setTextWrap(false);
+  tft.fillScreen(COLOR_BG);
+
+  oledAvailable = true;
+  Serial.println("[TFT] 7-Pin 1.3\" ST7789 240x240 TFT LCD initialized (CS=5, DC=23, RST=4, SDA=19, SCL=18).");
+}
+
+void showOledBootScreen()
+{
+  if (!oledAvailable)
+  {
+    return;
+  }
+
+  tft.fillScreen(COLOR_BG);
+  tft.drawRoundRect(6, 6, 228, 228, 12, COLOR_CYAN);
+  tft.drawRoundRect(7, 7, 226, 226, 12, COLOR_CYAN);
+
+  // Title
+  tft.setTextColor(COLOR_CYAN, COLOR_BG);
+  tft.setTextSize(3);
+  tft.setCursor(46, 45);
+  tft.print("VOLTWISE");
+
+  // Subtitle
+  tft.setTextColor(COLOR_WHITE, COLOR_BG);
+  tft.setTextSize(2);
+  tft.setCursor(24, 90);
+  tft.print("Smart Energy");
+  tft.setCursor(48, 114);
+  tft.print("IoT Guard");
+
+  // Progress Bar Outline
+  tft.drawRoundRect(30, 190, 180, 18, 6, COLOR_WHITE);
+
+  for (int step = 1; step <= 4; step++)
+  {
+    tft.setTextColor(COLOR_AMBER, COLOR_BG);
+    tft.setTextSize(2);
+    tft.setCursor(54, 156);
+    tft.print("BOOTING");
+    for (int d = 0; d < step; d++)
+    {
+      tft.print(".");
+    }
+    tft.print("   ");
+
+    tft.fillRoundRect(32, 192, step * 44, 14, 4, COLOR_GREEN);
+    delay(250);
+  }
+}
+
+void updateOledDisplay()
+{
+  if (!oledAvailable)
+  {
+    return;
+  }
+
+  static unsigned long lastOledRefresh = 0;
+  static int lastStage = -1;
+  unsigned long now = millis();
+  if (now - lastOledRefresh < 350)
+  {
+    return;
+  }
+  lastOledRefresh = now;
+
+  // Determine which stage we are in:
+  // 1 = Connecting Internet / Hotspot
+  // 2 = Staggered Power Countdown (1st Line ON -> 3s wait -> 2nd Line)
+  // 3 = 2nd Line Just Activated Banner (1.5s)
+  // 4 = Live Electricity Telemetry Dashboard
+  int currentStage = 4;
+  if (!bootPowerEnergized)
+  {
+    currentStage = 1;
+  }
+  else if (highLinePendingOn)
+  {
+    currentStage = 2;
+  }
+  else if (highLineJustActivatedTime > 0 && (now - highLineJustActivatedTime < 1500UL))
+  {
+    currentStage = 3;
+  }
+
+  bool stageChanged = (currentStage != lastStage);
+  lastStage = currentStage;
+
+  // -----------------------------------------------------------------
+  // STAGE 1: Connecting to Internet / Hotspot Setup (before boot power energizes)
+  // -----------------------------------------------------------------
+  if (currentStage == 1)
+  {
+    String storedSsid = ConfigManager::getWifiSsid();
+    String apName = ProvisioningServer::getApSsid();
+
+    if (stageChanged)
+    {
+      tft.fillScreen(COLOR_BG);
+      // Header Banner
+      tft.fillRect(0, 0, 240, 34, COLOR_CYAN);
+      tft.setTextColor(COLOR_BLACK, COLOR_CYAN);
+      tft.setTextSize(2);
+      tft.setCursor(12, 9);
+      tft.print("NETWORK SETUP");
+
+      // Wi-Fi Status Card
+      tft.fillRoundRect(8, 44, 224, 86, 8, COLOR_CARD);
+      tft.drawRoundRect(8, 44, 224, 86, 8, COLOR_BORDER);
+
+      // Hotspot Info Card
+      tft.fillRoundRect(8, 140, 224, 90, 8, COLOR_CARD);
+      tft.drawRoundRect(8, 140, 224, 90, 8, COLOR_CYAN);
+
+      tft.setTextColor(COLOR_CYAN, COLOR_CARD);
+      tft.setTextSize(1);
+      tft.setCursor(18, 150);
+      tft.print("HOTSPOT PORTAL (OPEN):");
+
+      tft.setTextColor(COLOR_WHITE, COLOR_CARD);
+      tft.setTextSize(2);
+      tft.setCursor(18, 168);
+      tft.print(apName.substring(0, 17));
+
+      tft.setTextColor(COLOR_GREEN, COLOR_CARD);
+      tft.setTextSize(2);
+      tft.setCursor(18, 198);
+      tft.print("IP: 192.168.4.1");
+    }
+
+    if (storedSsid.length() > 0)
+    {
+      tft.setTextColor(COLOR_MUTED, COLOR_CARD);
+      tft.setTextSize(1);
+      tft.setCursor(18, 54);
+      tft.print("CONNECTING TO WI-FI:");
+
+      tft.setTextColor(COLOR_WHITE, COLOR_CARD);
+      tft.setTextSize(2);
+      tft.setCursor(18, 70);
+      tft.printf("%-16s", storedSsid.substring(0, 16).c_str());
+
+      long elapsedSec = (now - bootStartTime) / 1000UL;
+      long leftSec = (long)NETWORK_CONNECT_TIMEOUT_SEC - elapsedSec;
+      if (leftSec < 0)
+        leftSec = 0;
+
+      tft.setTextColor(COLOR_AMBER, COLOR_CARD);
+      tft.setTextSize(2);
+      tft.setCursor(18, 100);
+      tft.printf("Try %d/%d (%2lds)   ", wifiAttemptCount > 0 ? wifiAttemptCount : 1, MAX_WIFI_BOOT_ATTEMPTS, leftSec);
+    }
+    else
+    {
+      tft.setTextColor(COLOR_AMBER, COLOR_CARD);
+      tft.setTextSize(2);
+      tft.setCursor(18, 58);
+      tft.print("No Wi-Fi Saved  ");
+      tft.setTextColor(COLOR_WHITE, COLOR_CARD);
+      tft.setTextSize(1);
+      tft.setCursor(18, 92);
+      tft.print("Connect phone to Hotspot below");
+    }
+    return;
+  }
+
+  // -----------------------------------------------------------------
+  // STAGE 2: Starting Line Power (1st Line ON -> 3s Countdown -> 2nd Line)
+  // -----------------------------------------------------------------
+  if (currentStage == 2)
+  {
+    unsigned long elapsedMs = now - highLinePendingStartTime;
+    unsigned long totalMs = (unsigned long)(INTERVAL_TIME * 1000UL);
+    long remainingSec = 1;
+    if (elapsedMs < totalMs)
+    {
+      remainingSec = (long)((totalMs - elapsedMs + 999UL) / 1000UL);
+    }
+
+    if (stageChanged)
+    {
+      tft.fillScreen(COLOR_BG);
+      // Header
+      tft.fillRect(0, 0, 240, 34, COLOR_AMBER);
+      tft.setTextColor(COLOR_BLACK, COLOR_AMBER);
+      tft.setTextSize(2);
+      tft.setCursor(12, 9);
+      tft.print("STARTING POWER");
+
+      // 1st Line Active Badge
+      tft.fillRoundRect(10, 44, 220, 44, 8, COLOR_GREEN);
+      tft.setTextColor(COLOR_BLACK, COLOR_GREEN);
+      tft.setTextSize(2);
+      tft.setCursor(20, 58);
+      tft.print("1st Line: ON");
+
+      // 2nd Line Countdown Box
+      tft.fillRoundRect(10, 98, 220, 132, 10, COLOR_CARD);
+      tft.drawRoundRect(10, 98, 220, 132, 10, COLOR_AMBER);
+
+      tft.setTextColor(COLOR_WHITE, COLOR_CARD);
+      tft.setTextSize(2);
+      tft.setCursor(22, 112);
+      tft.print("2nd Line (HIGH)");
+      tft.setTextColor(COLOR_MUTED, COLOR_CARD);
+      tft.setTextSize(1);
+      tft.setCursor(32, 138);
+      tft.print("INRUSH SURGE PROTECTION");
+    }
+
+    tft.setTextColor(COLOR_AMBER, COLOR_CARD);
+    tft.setTextSize(5);
+    tft.setCursor(86, 162);
+    tft.printf("%lds ", remainingSec);
+    return;
+  }
+
+  // -----------------------------------------------------------------
+  // STAGE 3: Brief 1.5s Confirmation Banner Right When 2nd Line (HIGH) Activates
+  // -----------------------------------------------------------------
+  if (currentStage == 3)
+  {
+    if (stageChanged)
+    {
+      tft.fillScreen(COLOR_BG);
+      tft.fillRect(0, 0, 240, 34, COLOR_GREEN);
+      tft.setTextColor(COLOR_BLACK, COLOR_GREEN);
+      tft.setTextSize(2);
+      tft.setCursor(18, 9);
+      tft.print("ALL LINES READY");
+
+      tft.fillRoundRect(10, 48, 220, 50, 8, COLOR_GREEN);
+      tft.setTextColor(COLOR_BLACK, COLOR_GREEN);
+      tft.setTextSize(2);
+      tft.setCursor(20, 65);
+      tft.print("1st Line: [ON]");
+
+      tft.fillRoundRect(10, 110, 220, 50, 8, COLOR_GREEN);
+      tft.setTextColor(COLOR_BLACK, COLOR_GREEN);
+      tft.setTextSize(2);
+      tft.setCursor(20, 127);
+      tft.print("2nd Line: [ON]");
+
+      tft.fillRoundRect(10, 174, 220, 52, 8, COLOR_CYAN);
+      tft.setTextColor(COLOR_BLACK, COLOR_CYAN);
+      tft.setTextSize(2);
+      tft.setCursor(18, 192);
+      tft.print("2ND LINE ACTIVE!");
+    }
+    return;
+  }
+
+  // -----------------------------------------------------------------
+  // STAGE 4: Live Electricity Telemetry Dashboard + Line 1 & Line 2 ON/OFF States
+  // -----------------------------------------------------------------
+  static bool prevLowLine = false;
+  static bool prevHighLine = false;
+  static int prevNetState = -1;
+
+  if (stageChanged)
+  {
+    tft.fillScreen(COLOR_BG);
+    // Top Status Bar
+    tft.fillRect(0, 0, 240, 30, COLOR_CARD);
+    tft.drawFastHLine(0, 30, 240, COLOR_BORDER);
+    tft.setTextColor(COLOR_CYAN, COLOR_CARD);
+    tft.setTextSize(2);
+    tft.setCursor(8, 7);
+    tft.print("VOLTWISE");
+
+    // Main Active Power Card (Watts)
+    tft.fillRoundRect(8, 36, 224, 54, 8, COLOR_CARD);
+    tft.drawRoundRect(8, 36, 224, 54, 8, COLOR_BORDER);
+    tft.setTextColor(COLOR_MUTED, COLOR_CARD);
+    tft.setTextSize(1);
+    tft.setCursor(16, 42);
+    tft.print("ACTIVE POWER");
+
+    // 2x2 Grid Outlines: Voltage, Current, Energy, Power Factor
+    tft.fillRoundRect(8, 96, 108, 40, 6, COLOR_CARD);
+    tft.setTextColor(COLOR_MUTED, COLOR_CARD);
+    tft.setTextSize(1);
+    tft.setCursor(14, 101);
+    tft.print("VOLTAGE");
+
+    tft.fillRoundRect(124, 96, 108, 40, 6, COLOR_CARD);
+    tft.setCursor(130, 101);
+    tft.print("CURRENT");
+
+    tft.fillRoundRect(8, 142, 134, 40, 6, COLOR_CARD);
+    tft.setCursor(14, 147);
+    tft.print("ENERGY (kWh)");
+
+    tft.fillRoundRect(148, 142, 84, 40, 6, COLOR_CARD);
+    tft.setCursor(154, 147);
+    tft.print("PF");
+
+    prevLowLine = !lowLineOn;
+    prevHighLine = !highLineOn;
+    prevNetState = -1;
+  }
+
+  // Update Network Badge only when state changes
+  int netState = 0; // 0=OFFLINE, 1=AP SETUP, 2=WIFI ONLY, 3=MQTT LIVE
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    netState = mqtt.connected() ? 3 : 2;
+  }
+  else if (ProvisioningServer::active())
+  {
+    netState = 1;
+  }
+
+  if (netState != prevNetState)
+  {
+    prevNetState = netState;
+    tft.setTextSize(1);
+    if (netState == 3)
+    {
+      tft.fillRoundRect(156, 6, 76, 18, 4, COLOR_GREEN);
+      tft.setTextColor(COLOR_BLACK, COLOR_GREEN);
+      tft.setCursor(164, 11);
+      tft.print("MQTT LIVE");
+    }
+    else if (netState == 2)
+    {
+      tft.fillRoundRect(156, 6, 76, 18, 4, COLOR_AMBER);
+      tft.setTextColor(COLOR_BLACK, COLOR_AMBER);
+      tft.setCursor(164, 11);
+      tft.print("WIFI ONLY");
+    }
+    else if (netState == 1)
+    {
+      tft.fillRoundRect(156, 6, 76, 18, 4, COLOR_AMBER);
+      tft.setTextColor(COLOR_BLACK, COLOR_AMBER);
+      tft.setCursor(168, 11);
+      tft.print("AP SETUP");
+    }
+    else
+    {
+      tft.fillRoundRect(156, 6, 76, 18, 4, COLOR_RED);
+      tft.setTextColor(COLOR_WHITE, COLOR_RED);
+      tft.setCursor(170, 11);
+      tft.print("OFFLINE");
+    }
+  }
+
+  float v = isnan(latestReadings.voltage) ? 0.0f : latestReadings.voltage;
+  float a = isnan(latestReadings.current) ? 0.0f : latestReadings.current;
+  float w = isnan(latestReadings.power) ? 0.0f : latestReadings.power;
+  float kwh = isnan(latestReadings.energy) ? 0.0f : latestReadings.energy;
+  float pf = isnan(latestReadings.powerFactor) ? 0.0f : latestReadings.powerFactor;
+
+  // Sensor AC status indicator
+  tft.setTextSize(1);
+  tft.setCursor(150, 42);
+  if (!latestReadingsValid)
+  {
+    tft.setTextColor(COLOR_AMBER, COLOR_CARD);
+    tft.print("NO AC INPUT");
+  }
+  else
+  {
+    tft.setTextColor(COLOR_GREEN, COLOR_CARD);
+    tft.print("AC SENSING ");
+  }
+
+  // Active Power Value
+  tft.setTextColor(COLOR_WHITE, COLOR_CARD);
+  tft.setTextSize(3);
+  tft.setCursor(16, 56);
+  if (w >= 1000.0f)
+  {
+    tft.printf("%-8s", (String(w / 1000.0f, 2) + " kW").c_str());
+  }
+  else
+  {
+    tft.printf("%-8s", (String(w, 1) + " W").c_str());
+  }
+
+  // Voltage Value
+  tft.setTextColor(COLOR_CYAN, COLOR_CARD);
+  tft.setTextSize(2);
+  tft.setCursor(14, 114);
+  tft.printf("%-7s", (String(v, 1) + "V").c_str());
+
+  // Current Value
+  tft.setTextColor(COLOR_CYAN, COLOR_CARD);
+  tft.setTextSize(2);
+  tft.setCursor(130, 114);
+  tft.printf("%-7s", (String(a, 2) + "A").c_str());
+
+  // Energy (kWh) Value
+  tft.setTextColor(COLOR_WHITE, COLOR_CARD);
+  tft.setTextSize(2);
+  tft.setCursor(14, 160);
+  tft.printf("%-8s", String(kwh, 3).c_str());
+
+  // PF Value
+  tft.setTextColor(COLOR_WHITE, COLOR_CARD);
+  tft.setTextSize(2);
+  tft.setCursor(154, 160);
+  tft.printf("%-5s", String(pf, 2).c_str());
+
+  // Update 1st Line (LOW - Pin 25) badge only when state changes
+  if (lowLineOn != prevLowLine)
+  {
+    prevLowLine = lowLineOn;
+    if (lowLineOn)
+    {
+      tft.fillRoundRect(8, 188, 108, 44, 8, COLOR_GREEN);
+      tft.setTextColor(COLOR_BLACK, COLOR_GREEN);
+      tft.setTextSize(1);
+      tft.setCursor(18, 194);
+      tft.print("1ST LINE (LOW)");
+      tft.setTextSize(2);
+      tft.setCursor(44, 208);
+      tft.print("ON");
+    }
+    else
+    {
+      tft.fillRoundRect(8, 188, 108, 44, 8, COLOR_CARD);
+      tft.drawRoundRect(8, 188, 108, 44, 8, COLOR_RED);
+      tft.setTextColor(COLOR_MUTED, COLOR_CARD);
+      tft.setTextSize(1);
+      tft.setCursor(18, 194);
+      tft.print("1ST LINE (LOW)");
+      tft.setTextColor(COLOR_RED, COLOR_CARD);
+      tft.setTextSize(2);
+      tft.setCursor(38, 208);
+      tft.print("OFF");
+    }
+  }
+
+  // Update 2nd Line (HIGH - Pin 26) badge only when state changes
+  if (highLineOn != prevHighLine)
+  {
+    prevHighLine = highLineOn;
+    if (highLineOn)
+    {
+      tft.fillRoundRect(124, 188, 108, 44, 8, COLOR_GREEN);
+      tft.setTextColor(COLOR_BLACK, COLOR_GREEN);
+      tft.setTextSize(1);
+      tft.setCursor(132, 194);
+      tft.print("2ND LINE (HIGH)");
+      tft.setTextSize(2);
+      tft.setCursor(160, 208);
+      tft.print("ON");
+    }
+    else
+    {
+      tft.fillRoundRect(124, 188, 108, 44, 8, COLOR_CARD);
+      tft.drawRoundRect(124, 188, 108, 44, 8, COLOR_RED);
+      tft.setTextColor(COLOR_MUTED, COLOR_CARD);
+      tft.setTextSize(1);
+      tft.setCursor(132, 194);
+      tft.print("2ND LINE (HIGH)");
+      tft.setTextColor(COLOR_RED, COLOR_CARD);
+      tft.setTextSize(2);
+      tft.setCursor(154, 208);
+      tft.print("OFF");
+    }
   }
 }

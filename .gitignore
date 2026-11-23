@@ -20,7 +20,14 @@ build/
 Thumbs.db
 
 
-.venv
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Binaries & Skill Artifacts
+voltwise.apk
+.taste-skill/
 
 password.txt
 
@@ -30,3 +37,4 @@ dump.txt
 
 VoltWise_Research_Proposal.docx
 VoltWise_Research_Proposal33.pdf
+VoltWise-Development-Server_key.pem

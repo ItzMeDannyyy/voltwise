@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
-import { defaultCycle, validateCycle, type BillingCycle } from "./range-prefs";
+import { validateCycle, type BillingCycle } from "./range-prefs";
 
 /**
  * Remembers the utility billing window the user tracks their usage against —
@@ -39,14 +39,6 @@ async function setItem(key: string, value: string): Promise<void> {
   await SecureStore.setItemAsync(key, value);
 }
 
-async function removeItem(key: string): Promise<void> {
-  if (Platform.OS === "web") {
-    localStorage.removeItem(key);
-    return;
-  }
-  await SecureStore.deleteItemAsync(key);
-}
-
 /** Shape-checks a parsed blob before it is trusted as a cycle. */
 function isBillingCycle(value: unknown): value is BillingCycle {
   if (!value || typeof value !== "object") return false;
@@ -81,10 +73,3 @@ export async function getStoredBillingCycle(): Promise<BillingCycle | null> {
 export async function saveBillingCycle(cycle: BillingCycle): Promise<void> {
   await setItem(BILLING_CYCLE_KEY, JSON.stringify(cycle));
 }
-
-/** Forget the saved window so the current calendar month applies again. */
-export async function clearBillingCycle(): Promise<void> {
-  await removeItem(BILLING_CYCLE_KEY);
-}
-
-export { defaultCycle };

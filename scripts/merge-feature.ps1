@@ -110,7 +110,6 @@ if (Test-Path $commitMsgPath) {
         $existing = (Get-ChildItem -Path "docs/commit-messages/commit-message(pushed-$today*).md" -ErrorAction SilentlyContinue | Measure-Object).Count
         $batch = $existing + 1
         $archiveName = "commit-message(pushed-$today-batch$batch).md"
-        $archivePath = "docs/commit-messages/$archiveName"
         
         Rename-Item -Path $commitMsgPath -NewName $archiveName -Force
         

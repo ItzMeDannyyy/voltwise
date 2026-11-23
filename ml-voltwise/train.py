@@ -71,7 +71,6 @@ def auto_label_cluster(row: pd.Series, dominant_appliance: Optional[str] = None)
     """
     power = row.get("power_mean", 0.0)
     max_power = row.get("power_max", 0.0)
-    pf = row.get("power_factor_mean", 1.0)
 
     app_tag = f" ({dominant_appliance})" if dominant_appliance else ""
     app_lower = (dominant_appliance or "").lower()

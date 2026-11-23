@@ -16,8 +16,6 @@ import { useUnits } from "../context/UnitsContext";
 import { useThemedStyles } from "./themed";
 import type { ThemeColors } from "../constants/theme";
 import {
-  thinLabels,
-  axisLabelStep,
   dotRadiusFor,
   type RangePeriod,
 } from "../lib/range-prefs";

@@ -23,7 +23,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 import ConfirmModal from "../../components/ConfirmModal";
 import { api, ApiDevice, ApiDeviceReading, resolveAssetUrl, DEVICES_CHANGED_EVENT, emitDevicesChanged } from "../../lib/api";
-import { DEMO_DEVICES, DEMO_HIGH_LINE_IDS, DEMO_LOW_LINE_IDS, demoDeviceReading, isDemoDevicePowered } from "../../lib/demo-data";
+import { DEMO_DEVICES, DEMO_HIGH_LINE_IDS, demoDeviceReading, isDemoDevicePowered } from "../../lib/demo-data";
 import { PullToRefresh, PullToRefreshList } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useTheme } from "../../context/ThemeContext";
@@ -111,7 +111,7 @@ export default function DevicesScreen() {
   const [formPhotoUri, setFormPhotoUri] = useState<string | null>(null);
 
   const { relayState, connected, configured, deviceOnline, telemetryAt } = useMqtt();
-  const { masterOn, highOn, lowOn } = usePowerControl();
+  const { highOn, lowOn } = usePowerControl();
 
   // Mirrors the backend rule in devices.controller.ts: power counts as
   // available only on positive evidence — a live link AND a closed relay.
@@ -133,7 +133,6 @@ export default function DevicesScreen() {
   // The list the screen actually renders.
   const listDevices = demoData ? demoDevices : devices;
 
-  const originalsRef = useRef<Record<string, { status: DeviceStatus; watts: number }>>({});
   const accordionHeightsRef = useRef<Partial<Record<string, number>>>({});
   const accordionAnimsRef = useRef<Partial<Record<string, Animated.Value>>>({});
 
@@ -149,15 +148,6 @@ export default function DevicesScreen() {
   useEffect(() => {
     if (!demoData) return;
     setDemoDevices(DEMO_DEVICES);
-    // Remember each sample device's running figures so switching one off and
-    // back on restores its draw instead of leaving it at 0 W. Demo ids can't
-    // collide with server ids, and the next real fetch replaces this map whole.
-    for (const device of DEMO_DEVICES) {
-      originalsRef.current[device.id] = {
-        status: device.status === "OFF" ? "ACTIVE" : device.status,
-        watts: device.watts,
-      };
-    }
   }, [demoData]);
 
   // ── Deep link: ?openAdd=1 auto-opens the add-device form ─────────────────
@@ -199,9 +189,6 @@ export default function DevicesScreen() {
     // don't fall back to anything.
     const list = data ?? [];
     setDevices(list);
-    originalsRef.current = Object.fromEntries(
-      list.map((d) => [d.id, { status: d.status, watts: d.watts }])
-    );
   }, []);
 
   useEffect(() => {
@@ -369,10 +356,6 @@ export default function DevicesScreen() {
             : d
         )
       );
-      originalsRef.current[editingDevice.id] = {
-        status: effectiveStatus(editingDevice),
-        watts,
-      };
       setEditingDevice(null);
       setModalVisible(false);
       resetForm();
@@ -397,10 +380,6 @@ export default function DevicesScreen() {
       setDevices((prev) =>
         prev.map((d) => (d.id === editingDevice.id ? { ...d, ...updated } : d))
       );
-      originalsRef.current[editingDevice.id] = {
-        status: updated.status,
-        watts: updated.watts,
-      };
 
       if (Platform.OS === "ios" || Platform.OS === "android") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -430,7 +409,6 @@ export default function DevicesScreen() {
     try {
       await api.delete(`/devices/${device.id}`);
       setDevices((prev) => prev.filter((d) => d.id !== device.id));
-      delete originalsRef.current[device.id];
 
       if (Platform.OS === "ios" || Platform.OS === "android") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -457,11 +435,6 @@ export default function DevicesScreen() {
     const id = `${Date.now()}`;
     const room = formRoom.trim() || "Unassigned";
     const category = formCategory.trim() || null;
-
-    originalsRef.current[id] = {
-      status,
-      watts,
-    };
 
     const newDevice: Device = {
       id,
@@ -491,7 +464,6 @@ export default function DevicesScreen() {
       .post<ApiDevice>("/devices", { name, room, watts, enabled: true, category })
       .then(async (created) => {
         if (!created) return;
-        originalsRef.current[created.id] = { status: created.status, watts: created.watts };
 
         // The photo is a local file — send it as multipart so the backend can
         // store it in its uploads bucket and hand back a served URL.

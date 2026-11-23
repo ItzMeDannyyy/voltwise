@@ -224,10 +224,6 @@ export function costOf(kwh: number, prefs: UnitPrefs): number {
   return safe * prefs.ratePerKwh;
 }
 
-export function formatCostOf(kwh: number, prefs: UnitPrefs): string {
-  return formatCost(costOf(kwh, prefs), prefs);
-}
-
 /** The tariff itself, e.g. "₱10.50 /kWh". Always per kWh regardless of energyUnit — utilities bill in kWh. */
 export function formatRate(prefs: UnitPrefs): string {
   return `${currencyFor(prefs.currencyCode).symbol}${prefs.ratePerKwh.toFixed(2)} /kWh`;

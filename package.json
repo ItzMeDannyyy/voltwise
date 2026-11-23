@@ -2,20 +2,17 @@
   "name": "voltwise",
   "version": "1.0.0",
   "description": "> A smart power management and optimization platform designed to monitor, analyze, and reduce power consumption in real-time.",
-  "main": "index.js",
   "directories": {
     "doc": "docs"
   },
   "scripts": {
     "dev": "concurrently --kill-others-on-fail --names \"ml,backend,app\" --prefix-colors \"yellow,cyan,magenta\" \"npm run dev:ml\" \"npm run dev --prefix backend\" \"npm run start --prefix app-voltwise -- -c\"",
-    "dev:all": "concurrently --kill-others-on-fail --names \"ml,backend,app\" --prefix-colors \"yellow,cyan,magenta\" \"npm run dev:ml\" \"npm run dev --prefix backend\" \"npm run start --prefix app-voltwise -- -c\"",
     "dev:ml": "cd ml-voltwise && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload",
     "dev:backend": "npm run dev --prefix backend",
     "dev:app": "npm run start --prefix app-voltwise -- -c",
     "dev:landing": "npm run dev --prefix landing",
     "build:landing": "npm run build --prefix landing",
     "merge:dev": "powershell -ExecutionPolicy Bypass -File scripts/merge-feature.ps1",
-    "test": "echo \"Error: no test specified\" && exit 1",
     "install:backend": "cd backend && npm install",
     "install:app": "cd app-voltwise && npm install",
     "install:landing": "cd landing && npm install",

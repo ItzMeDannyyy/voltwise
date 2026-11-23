@@ -4,8 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Dimensions,
-  FlatList,
   Animated,
   Easing,
   LayoutAnimation,
@@ -15,24 +13,36 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { api, checkHealth, DashboardData, DashboardDevice, Reading, DEVICES_CHANGED_EVENT } from "../../lib/api";
+import { useRouter } from "expo-router";
+import {
+  api,
+  checkHealth,
+  ApiDevice,
+  ApiDeviceReading,
+  DashboardData,
+  DashboardDevice,
+  Reading,
+  DEVICES_CHANGED_EVENT,
+} from "../../lib/api";
 import { useMqtt } from "../../context/MqttContext";
 import { useDemoData } from "../../context/DemoDataContext";
-import { demoDashboard, demoLiveReading } from "../../lib/demo-data";
+import {
+  DEMO_HIGH_LINE_IDS,
+  DEMO_LOW_LINE_IDS,
+  demoDashboard,
+  demoLiveReading,
+} from "../../lib/demo-data";
 import RangeNavigator from "../../components/RangeNavigator";
 import DeviceUsageChart from "../../components/DeviceUsageChart";
 import { getStoredBillingCycle, saveBillingCycle } from "../../lib/billing-storage";
 import {
   defaultRangeState,
-  dotRadiusFor,
-  axisLabelStep,
   rangeLabel,
   rangeQuery,
-  thinLabels,
   type BillingCycle,
   type RangeState,
 } from "../../lib/range-prefs";
-import { RELAY_REASON_LABELS } from "../../lib/iot-prefs";
+import { RELAY_REASON_LABELS, TELEMETRY_FRESH_MS } from "../../lib/iot-prefs";
 import AppHeader from "../../components/AppHeader";
 import { PullToRefresh } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
@@ -46,8 +56,6 @@ import type { ThemeColors } from "../../constants/theme";
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 // Metric display definitions — order determines grid order.
 const METRIC_DEFS: {
@@ -91,10 +99,6 @@ function createPillStyles(colors: ThemeColors, fontScale: number) {
 
 type LiveMetrics = Omit<Reading, "timestamp">;
 
-// Telemetry older than this is stale — the device publishes every ~2 s, so a
-// 10 s gap means the feed is effectively down and the UI must say so.
-const TELEMETRY_FRESH_MS = 10_000;
-
 // What is currently driving the live metrics. There is no third option on
 // purpose: either real PZEM telemetry is arriving, or the panel shows nothing.
 // The UI must never invent a reading.
@@ -112,7 +116,8 @@ type IotState = "live" | "nolink" | "unknown" | "offline";
 export default function DashboardScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const { formatPower, formatEnergy, formatCostOf, powerParts, energyParts } = useUnits();
+  const router = useRouter();
+  const { formatEnergy, formatCostOf, powerParts, energyParts } = useUnits();
   const { demoData } = useDemoData();
   // null until the backend or the sensor supplies a real figure.
   const [currentKw, setCurrentKw]         = useState<number | null>(null);
@@ -171,8 +176,55 @@ export default function DashboardScreen() {
 
   // Fetch dashboard data — shared by the range effect below and pull-to-refresh.
   const fetchDashboard = useCallback(async () => {
-    const data = await api.get<DashboardData>(`/dashboard?${rangeKey}`);
-    setDashboard(data);
+    const [data, deviceList] = await Promise.all([
+      api.get<DashboardData>(`/dashboard?${rangeKey}`),
+      api.get<ApiDevice[]>("/devices").catch(() => null),
+    ]);
+
+    const baseDevices = data.devices ?? [];
+    const deviceMetaMap = new Map(
+      (deviceList ?? []).map((d) => [String(d.id), d])
+    );
+
+    const readingsEntries = await Promise.all(
+      baseDevices.map(async (d) => {
+        try {
+          const reading = await api.get<ApiDeviceReading | null>(
+            `/devices/${d.id}/readings/latest`
+          );
+          return [String(d.id), reading] as const;
+        } catch {
+          return [String(d.id), null] as const;
+        }
+      })
+    );
+    const readingsMap = new Map(readingsEntries);
+
+    const enrichedDevices: DashboardDevice[] = baseDevices.map((d) => {
+      const meta = deviceMetaMap.get(String(d.id));
+      const reading = readingsMap.get(String(d.id));
+      const status = meta?.status ?? (d.active ? "ACTIVE" : "IDLE");
+      const active = status === "ACTIVE";
+      const watts = active ? (reading?.watts ?? d.watts) : 0;
+      return {
+        ...d,
+        watts,
+        active,
+        room: meta?.room ?? d.room,
+        category: meta?.category ?? d.category ?? null,
+        status,
+        voltage: reading?.voltage ?? d.voltage ?? null,
+        current: reading?.current ?? d.current ?? null,
+        frequency: reading?.frequency ?? d.frequency ?? null,
+        powerFactor: reading?.powerFactor ?? d.powerFactor ?? null,
+        todayKwh: reading?.todayKwh ?? d.todayKwh ?? null,
+        totalKwh: reading?.kwh ?? d.totalKwh ?? null,
+        costToday: reading?.costToday ?? d.costToday ?? null,
+        lastActiveAt: reading?.timestamp ?? d.lastActiveAt ?? null,
+      };
+    });
+
+    setDashboard({ ...data, devices: enrichedDevices });
     setCurrentKw(data.currentKw);
     setIotOnline(data.iotOnline ?? false);
   }, [rangeKey]);
@@ -381,6 +433,33 @@ export default function DashboardScreen() {
   const devices        = view?.devices        ?? [];
   const topConsumers   = view?.topConsumers   ?? [];
   const totalToday     = view?.totalTodayKwh  ?? 0;
+
+  // Sort appliances from newest to oldest activity, then display the top 3.
+  const sortedDevices = useMemo(() => {
+    const parseTime = (iso?: string | null) => {
+      if (!iso) return 0;
+      const ms = Date.parse(iso);
+      return Number.isFinite(ms) ? ms : 0;
+    };
+    const parseIdNum = (id: string) => {
+      const num = Number(id.replace(/[^0-9]/g, ""));
+      return Number.isFinite(num) ? num : 0;
+    };
+
+    return [...devices].sort((a, b) => {
+      // 1. Currently active appliances (drawing power right now) come first
+      if (a.active !== b.active) return a.active ? -1 : 1;
+      // 2. Most recent activity timestamp (newest to oldest)
+      const timeDiff = parseTime(b.lastActiveAt) - parseTime(a.lastActiveAt);
+      if (timeDiff !== 0) return timeDiff;
+      // 3. Live power draw descending
+      if (b.watts !== a.watts) return b.watts - a.watts;
+      // 4. Most recently created/registered ID
+      return parseIdNum(b.id) - parseIdNum(a.id);
+    });
+  }, [devices]);
+
+  const recentDevices = useMemo(() => sortedDevices.slice(0, 3), [sortedDevices]);
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
@@ -621,40 +700,263 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Device Cards */}
-        {devices.length === 0 ? (
-          <View style={styles.emptyStrip}>
-            <Ionicons name="flash-outline" size={16} color={colors.sub} />
-            <Text style={styles.emptyStripText}>
-              No devices registered — add them in the Devices tab.
-            </Text>
-          </View>
-        ) : (
-        <FlatList
-          data={devices}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.deviceList}
-          renderItem={({ item }: { item: DashboardDevice }) => (
-            <View style={styles.deviceCard}>
-              <View style={styles.deviceStatusRow}>
-                <View
-                  style={[
-                    styles.statusDot,
-                    { backgroundColor: item.active ? colors.accent : colors.yellow },
-                  ]}
-                />
-                <Text style={styles.deviceStatus}>
-                  {item.active ? "Active" : "Standby"}
+        {/* Appliance Banners — top 3 sorted from newest to latest activity */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleGroup}>
+              <Text style={styles.sectionTitle}>Appliances</Text>
+              {devices.length > 0 && (
+                <Text style={styles.sectionMeta}>
+                  {devices.filter((d) => d.active).length} active · {devices.length} total
                 </Text>
-              </View>
-              <Text style={styles.deviceName}>{item.name}</Text>
-              <Text style={styles.deviceWatts}>{formatPower(item.watts)}</Text>
+              )}
+            </View>
+            {devices.length > 0 && (
+              <TouchableOpacity
+                onPress={() => router.push("/(tabs)/devices")}
+                activeOpacity={0.7}
+                style={styles.headerSeeMoreBtn}
+                accessibilityRole="button"
+                accessibilityLabel="See more appliances in Devices screen"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.headerSeeMoreText}>See more</Text>
+                <Ionicons name="arrow-forward" size={14} color={colors.accent} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {devices.length === 0 ? (
+            <View style={styles.emptyStrip}>
+              <Ionicons name="flash-outline" size={16} color={colors.sub} />
+              <Text style={styles.emptyStripText}>
+                No devices registered — add them in the Devices tab.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.applianceBannerStack}>
+              {recentDevices.map((item) => {
+                const status = item.status ?? (item.active ? "ACTIVE" : "IDLE");
+                const statusColor =
+                  status === "ACTIVE"
+                    ? colors.accent
+                    : status === "IDLE"
+                      ? colors.yellow
+                      : status === "OFF"
+                        ? colors.red
+                        : colors.sub;
+                const statusLabel =
+                  status === "ACTIVE"
+                    ? "Active"
+                    : status === "IDLE"
+                      ? "Standby"
+                      : status === "OFF"
+                        ? "Off"
+                        : "Circuit off";
+
+                const lineTier = DEMO_HIGH_LINE_IDS.has(item.id)
+                  ? "High load"
+                  : DEMO_LOW_LINE_IDS.has(item.id)
+                    ? "Low load"
+                    : null;
+
+                let activityLabel: string | null = null;
+                if (item.active) {
+                  activityLabel = "Active now";
+                } else if (item.lastActiveAt) {
+                  const elapsedMin = Math.max(
+                    0,
+                    Math.round((Date.now() - Date.parse(item.lastActiveAt)) / 60_000)
+                  );
+                  if (Number.isFinite(elapsedMin)) {
+                    if (elapsedMin < 1) activityLabel = "Just now";
+                    else if (elapsedMin < 60) activityLabel = `${elapsedMin}m ago`;
+                    else if (elapsedMin < 1440)
+                      activityLabel = `${Math.round(elapsedMin / 60)}h ago`;
+                    else activityLabel = `${Math.round(elapsedMin / 1440)}d ago`;
+                  }
+                }
+
+                const metaParts = [
+                  activityLabel,
+                  item.room && item.room !== "Unassigned" ? item.room : null,
+                  item.category || null,
+                  lineTier,
+                ].filter(Boolean) as string[];
+
+                const livePower = powerParts(item.watts);
+                const todayEnergy =
+                  item.todayKwh != null
+                    ? energyParts(item.todayKwh, 2)
+                    : { value: "—", unit: energyParts(0, 2).unit };
+                const todayCost =
+                  item.todayKwh != null ? formatCostOf(item.todayKwh) : null;
+
+                const bannerMetrics: {
+                  key: string;
+                  label: string;
+                  value: string;
+                  unit: string;
+                }[] = [
+                  {
+                    key: "voltage",
+                    label: "Voltage",
+                    value:
+                      item.voltage != null ? item.voltage.toFixed(1) : "—",
+                    unit: "V",
+                  },
+                  {
+                    key: "current",
+                    label: "Current",
+                    value:
+                      item.current != null ? item.current.toFixed(2) : "—",
+                    unit: "A",
+                  },
+                  {
+                    key: "activePower",
+                    label: "Active power",
+                    value: livePower.value,
+                    unit: livePower.unit,
+                  },
+                  {
+                    key: "energyToday",
+                    label: "Energy today",
+                    value: todayEnergy.value,
+                    unit: todayEnergy.unit,
+                  },
+                  {
+                    key: "frequency",
+                    label: "Frequency",
+                    value:
+                      item.frequency != null ? item.frequency.toFixed(2) : "—",
+                    unit: "Hz",
+                  },
+                  {
+                    key: "powerFactor",
+                    label: "Power factor",
+                    value:
+                      item.powerFactor != null
+                        ? item.powerFactor.toFixed(2)
+                        : "—",
+                    unit: "PF",
+                  },
+                ];
+
+                return (
+                  <View key={item.id} style={styles.applianceBanner}>
+                    <View
+                      style={[
+                        styles.applianceBannerEdge,
+                        { backgroundColor: statusColor },
+                      ]}
+                    />
+                    <View style={styles.applianceBannerBody}>
+                      {/* Banner Header: Identity & Primary Live Draw */}
+                      <View style={styles.applianceBannerTop}>
+                        <View style={styles.applianceBannerIdentity}>
+                          <Text
+                            style={styles.applianceBannerName}
+                            numberOfLines={1}
+                          >
+                            {item.name}
+                          </Text>
+                          <View style={styles.applianceBannerMetaRow}>
+                            <View
+                              style={[
+                                styles.applianceStatusDot,
+                                { backgroundColor: statusColor },
+                              ]}
+                            />
+                            <Text
+                              style={[
+                                styles.applianceStatusText,
+                                { color: statusColor },
+                              ]}
+                            >
+                              {statusLabel}
+                            </Text>
+                            {metaParts.length > 0 && (
+                              <Text
+                                style={styles.applianceMetaContext}
+                                numberOfLines={1}
+                              >
+                                {" · "}
+                                {metaParts.join(" · ")}
+                              </Text>
+                            )}
+                          </View>
+                        </View>
+
+                        <View style={styles.applianceBannerPrimary}>
+                          <Text
+                            style={[
+                              styles.appliancePrimaryWatts,
+                              !item.active && { color: colors.sub },
+                            ]}
+                          >
+                            {livePower.value}
+                            <Text style={styles.appliancePrimaryUnit}>
+                              {" "}
+                              {livePower.unit}
+                            </Text>
+                          </Text>
+                          {todayCost !== null && (
+                            <Text style={styles.applianceCostToday}>
+                              {todayCost} today
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+
+                      {/* 3x2 Electrical Telemetry Strip — hairline grid, no nested boxes */}
+                      <View style={styles.applianceTelemetryGrid}>
+                        {bannerMetrics.map((m, idx) => {
+                          const isRightCol = idx % 3 === 2;
+                          const isBottomRow = idx >= 3;
+                          return (
+                            <View
+                              key={m.key}
+                              style={[
+                                styles.applianceTelemetryCell,
+                                !isRightCol && styles.applianceTelemetryCellBorderRight,
+                                isBottomRow && styles.applianceTelemetryCellBorderTop,
+                              ]}
+                            >
+                              <Text style={styles.applianceTelemetryValue}>
+                                {m.value}
+                                <Text style={styles.applianceTelemetryUnit}>
+                                  {" "}
+                                  {m.unit}
+                                </Text>
+                              </Text>
+                              <Text style={styles.applianceTelemetryLabel}>
+                                {m.label}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+
+              {/* See more button -> redirects to Devices screen */}
+              <TouchableOpacity
+                onPress={() => router.push("/(tabs)/devices")}
+                activeOpacity={0.75}
+                style={styles.seeMoreBannerBtn}
+                accessibilityRole="button"
+                accessibilityLabel="See more appliances in Devices screen"
+              >
+                <Text style={styles.seeMoreBannerText}>
+                  See more{devices.length > 3 ? ` (${devices.length - 3} more)` : ""}
+                </Text>
+                <Ionicons name="arrow-forward" size={16} color={colors.text} />
+              </TouchableOpacity>
             </View>
           )}
-        />
-        )}
+        </View>
 
         {/* Usage History */}
         <View style={styles.section}>
@@ -955,56 +1257,155 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       fontWeight: "600",
       color: colors.text,
     },
-    deviceList: {
-      gap: 10,
-      paddingRight: 4,
-      marginBottom: 24,
-    },
     emptyStrip: {
       flexDirection: "row",
       alignItems: "center",
       gap: 8,
       backgroundColor: colors.card,
       borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
       padding: 14,
-      marginBottom: 24,
     },
     emptyStripText: {
       color: colors.sub,
       fontSize: 13 * fontScale,
       flex: 1,
     },
-    deviceCard: {
-      backgroundColor: colors.card,
-      borderRadius: 14,
-      padding: 14,
-      width: 120,
+    applianceBannerStack: {
+      gap: 12,
     },
-    deviceStatusRow: {
+    applianceBanner: {
+      flexDirection: "row",
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: "hidden",
+    },
+    applianceBannerEdge: {
+      width: 3,
+      alignSelf: "stretch",
+    },
+    applianceBannerBody: {
+      flex: 1,
+    },
+    applianceBannerTop: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      paddingTop: 14,
+      paddingBottom: 12,
+      gap: 12,
+    },
+    applianceBannerIdentity: {
+      flex: 1,
+      gap: 4,
+    },
+    applianceBannerName: {
+      color: colors.text,
+      fontSize: 16 * fontScale,
+      fontWeight: "600",
+      lineHeight: 22 * fontScale,
+    },
+    applianceBannerMetaRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 5,
-      marginBottom: 8,
     },
-    statusDot: {
-      width: 7,
-      height: 7,
-      borderRadius: 4,
+    applianceStatusDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      marginRight: 6,
     },
-    deviceStatus: {
+    applianceStatusText: {
+      fontSize: 12 * fontScale,
+      fontWeight: "600",
+      lineHeight: 16 * fontScale,
+    },
+    applianceMetaContext: {
       color: colors.sub,
       fontSize: 12 * fontScale,
+      lineHeight: 16 * fontScale,
+      flexShrink: 1,
     },
-    deviceName: {
-      color: colors.text,
-      fontSize: 15 * fontScale,
-      fontWeight: "600",
-      marginBottom: 4,
+    applianceBannerPrimary: {
+      alignItems: "flex-end",
+      gap: 2,
     },
-    deviceWatts: {
+    appliancePrimaryWatts: {
       color: colors.text,
       fontSize: 18 * fontScale,
       fontWeight: "700",
+      lineHeight: 22 * fontScale,
+      fontVariant: ["tabular-nums"],
+    },
+    appliancePrimaryUnit: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      fontWeight: "500",
+    },
+    applianceCostToday: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      lineHeight: 16 * fontScale,
+      fontVariant: ["tabular-nums"],
+    },
+    applianceTelemetryGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    applianceTelemetryCell: {
+      width: "33.3333%",
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      alignItems: "flex-start",
+    },
+    applianceTelemetryCellBorderRight: {
+      borderRightWidth: 1,
+      borderRightColor: colors.border,
+    },
+    applianceTelemetryCellBorderTop: {
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    applianceTelemetryValue: {
+      color: colors.text,
+      fontSize: 14 * fontScale,
+      fontWeight: "600",
+      lineHeight: 18 * fontScale,
+      fontVariant: ["tabular-nums"],
+    },
+    applianceTelemetryUnit: {
+      color: colors.sub,
+      fontSize: 11 * fontScale,
+      fontWeight: "400",
+    },
+    applianceTelemetryLabel: {
+      color: colors.sub,
+      fontSize: 11 * fontScale,
+      lineHeight: 15 * fontScale,
+      marginTop: 2,
+    },
+    seeMoreBannerBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      height: 46,
+      backgroundColor: colors.card,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 16,
+    },
+    seeMoreBannerText: {
+      color: colors.text,
+      fontSize: 14 * fontScale,
+      fontWeight: "600",
     },
     section: {
       marginBottom: 24,
@@ -1015,10 +1416,32 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       justifyContent: "space-between",
       marginBottom: 12,
     },
+    sectionTitleGroup: {
+      flexDirection: "row",
+      alignItems: "baseline",
+      gap: 8,
+    },
     sectionTitle: {
       color: colors.text,
       fontSize: 18 * fontScale,
       fontWeight: "700",
+    },
+    sectionMeta: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+      fontWeight: "500",
+    },
+    headerSeeMoreBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingVertical: 4,
+      paddingHorizontal: 2,
+    },
+    headerSeeMoreText: {
+      color: colors.accent,
+      fontSize: 13 * fontScale,
+      fontWeight: "600",
     },
     navigatorWrap: {
       marginBottom: 12,

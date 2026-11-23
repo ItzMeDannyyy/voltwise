@@ -309,12 +309,6 @@ export function getDemoCurrentWatts(options?: DemoPowerLineOptions): number {
   }, 0);
 }
 
-/** Whole-home draw right now: the sum of everything currently running. */
-export const DEMO_CURRENT_WATTS = PROFILES.reduce(
-  (sum, profile) => sum + profile.device.watts,
-  0
-);
-
 // ─── Synthesis ───────────────────────────────────────────────────────────────
 
 /**
@@ -510,13 +504,37 @@ export function demoDashboard(
   return {
     currentKw: round(activeWatts / 1000, 2),
     totalTodayKwh: dayTotal(now),
-    devices: PROFILES.map((profile) => {
+    devices: PROFILES.map((profile, idx) => {
       const powered = isDemoDevicePowered(profile.device.id, options);
+      const reading = demoDeviceReading(profile.device.id, now, options);
+      const status = !powered ? "UNPOWERED" : profile.device.status;
+      const isActive = powered && profile.device.status === "ACTIVE";
+      // Compute a deterministic activity timestamp ordered from newest to oldest activity:
+      // Active devices have live timestamps (staggered by seconds), idle devices reflect
+      // their most recent active window earlier today, and off devices reflect an older run.
+      const offsetMs = isActive
+        ? idx * 15_000
+        : profile.device.status === "IDLE"
+          ? (2 + idx) * 3_600_000
+          : (18 + idx) * 3_600_000;
+      const lastActiveAt = new Date(now.getTime() - offsetMs).toISOString();
+
       return {
         id: profile.device.id,
         name: profile.device.name,
         watts: powered ? profile.device.watts : 0,
-        active: powered && profile.device.status === "ACTIVE",
+        active: isActive,
+        room: profile.device.room,
+        category: profile.device.category,
+        status,
+        voltage: reading?.voltage ?? null,
+        current: reading?.current ?? null,
+        frequency: reading?.frequency ?? null,
+        powerFactor: reading?.powerFactor ?? null,
+        todayKwh: reading?.todayKwh ?? 0,
+        totalKwh: reading?.kwh ?? 0,
+        costToday: reading?.costToday ?? 0,
+        lastActiveAt,
       };
     }),
     history: { labels, data: totals },

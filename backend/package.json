@@ -21,10 +21,8 @@
     "start": "ts-node src/index.ts",
     "dev": "node --import ts-node/esm --watch src/index.ts",
     "seed": "node --import ts-node/esm prisma/seed.ts",
-    "add:module": "node scripts/createModule.js",
     "fresh:db": "prisma migrate reset --force --skip-seed",
-    "setup:ts": "npm install -D typescript ts-node-dev @types/node @types/express prisma",
-    "test:prisma": "ts-node scripts/testPrisma.ts"
+    "setup:ts": "npm install -D typescript ts-node-dev @types/node @types/express prisma"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",

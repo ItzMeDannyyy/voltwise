@@ -39,19 +39,9 @@ export interface CollectionStopResponseDto {
   status: IotStatusDto;
 }
 
-export interface SafetyCommandDto {
-  enabled: boolean;
-  thresholdWatts?: number;
-}
-
 export interface SafetyConfigDto {
   enabled: boolean;
   thresholdWatts: number;
-}
-
-export interface CountdownCommandDto {
-  enabled: boolean;
-  seconds?: number;
 }
 
 export interface CountdownConfigDto {

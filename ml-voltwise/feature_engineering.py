@@ -1,7 +1,5 @@
-import glob
 from pathlib import Path
 from typing import List, Optional, Union
-import numpy as np
 import pandas as pd
 
 # The 10 engineered features derived from PZEM-004T raw telemetry
