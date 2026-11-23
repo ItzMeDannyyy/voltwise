@@ -559,6 +559,20 @@ public:
     return isRunning;
   }
 
+  static String getApSsid()
+  {
+    if (apSsid == "VoltWise-Setup")
+    {
+      String mac = WiFi.macAddress();
+      mac.replace(":", "");
+      if (mac.length() >= 4)
+      {
+        apSsid = "VoltWise-Setup-" + mac.substring(mac.length() - 4);
+      }
+    }
+    return apSsid;
+  }
+
   static void handleClient()
   {
     if (!isRunning)

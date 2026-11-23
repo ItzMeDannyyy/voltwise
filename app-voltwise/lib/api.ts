@@ -81,7 +81,7 @@ export function clientDescriptor(): ClientDescriptor {
  */
 export const API_BASE_URL =
   process.env.EXPO_PUBLIC_BASE_URL ||
-  (__DEV__ ? "http://localhost:3000/api" : "https://voltwise-wf2l.onrender.com/api");
+  (__DEV__ ? "http://localhost:3000/api" : "https://voltwise-dev-server.onrender.com/api");
 
 // Logged once at startup so you can confirm which URL the app is actually using
 // (catches a stale .env that needs `npx expo start --clear`).
