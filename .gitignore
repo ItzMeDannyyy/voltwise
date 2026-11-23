@@ -25,6 +25,10 @@ __pycache__/
 *.py[cod]
 .venv/
 
+# Binaries & Skill Artifacts
+voltwise.apk
+.taste-skill/
+
 password.txt
 
 dump.txt

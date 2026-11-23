@@ -144,8 +144,8 @@ describe("createSession", () => {
     expect(data.userId).toBe(7);
     expect(data.label).toBe("iPhone 15");
     expect(data.platform).toBe("ios");
-    // Mirrors the seven-day token: comfortably in the future, not unbounded.
-    expect(data.expiresAt.getTime()).toBeGreaterThan(Date.now() + 6 * 24 * HOUR);
+    // Mirrors the 30-day (1-month) token: comfortably in the future, not unbounded.
+    expect(data.expiresAt.getTime()).toBeGreaterThan(Date.now() + 29 * 24 * HOUR);
   });
 });
 

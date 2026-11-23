@@ -81,7 +81,7 @@ export function clientDescriptor(): ClientDescriptor {
  */
 export const API_BASE_URL =
   process.env.EXPO_PUBLIC_BASE_URL ||
-  (__DEV__ ? "http://localhost:3000/api" : "https://voltwise-dev-server.onrender.com/api");
+  (__DEV__ ? "http://localhost:3000/api" : "https://20-255-50-101.sslip.io/api");
 
 // Logged once at startup so you can confirm which URL the app is actually using
 // (catches a stale .env that needs `npx expo start --clear`).
@@ -296,6 +296,17 @@ export interface DashboardDevice {
   name: string;
   watts: number;
   active: boolean;
+  room?: string;
+  category?: string | null;
+  status?: "ACTIVE" | "IDLE" | "OFF" | "UNPOWERED";
+  voltage?: number | null;
+  current?: number | null;
+  frequency?: number | null;
+  powerFactor?: number | null;
+  todayKwh?: number | null;
+  totalKwh?: number | null;
+  costToday?: number | null;
+  lastActiveAt?: string | null;
 }
 
 export interface ConsumerSlice {

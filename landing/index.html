@@ -1,18 +1,751 @@
 <!doctype html>
-<html lang="en" class="scroll-smooth">
+<!-- data-type: software (same as <meta name="page-type">).
+     data-radius: soft. data-ground: sky (dealt). data-buttons: pill (dealt). data-motion: enabled. -->
+<html lang="en" data-type="software" data-radius="soft" data-ground="sky" data-buttons="pill" data-motion>
   <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VoltWise by VoltMinds | Cut Your Electric Bill by Up to 30% Without Guessing</title>
-    <meta name="description" content="VoltWise by VoltMinds tracks your home power in real time, catches wasteful appliances, and cuts off dangerous surges before they fry your gear. Start your free 14-day trial." />
-    <meta name="theme-color" content="#0f172a" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>VoltWise: home energy monitor and relay control app</title>
+    <meta name="description" content="VoltWise reads live PZEM-004T telemetry over MQTT, trips two relay lines at 3,000 W, and staggers power restoration by 3 seconds on Android." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="VoltWise: home energy monitor and relay control app" />
+    <meta property="og:description" content="Live PZEM-004T power telemetry and two-line relay control for Android." />
+    <meta property="og:image" content="/share.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="site-kind" content="software" />
+    <meta name="page-type" content="software" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wdth,wght@75..100,400..700&family=DM+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/system.css" />
+    <link rel="stylesheet" href="/assets/ui/cards.css" />
+    <link rel="stylesheet" href="/assets/motion/motion.css" />
+    <link rel="stylesheet" href="/assets/backgrounds/backgrounds.css" />
+    <link rel="stylesheet" href="/assets/layout/layout.css" />
+    <link rel="stylesheet" href="/assets/icons/icon.css" />
+    <style>
+:root {
+  --p-bg: #ffffff; --p-surface: #f4f4f4; --p-ink: #111827; --p-muted: #4b5563;
+  --p-accent: #1a4be0; --p-accent-ink: #ffffff; --p-action: #1a4be0; --p-action-ink: #ffffff;
+  --p-inv-bg: #111827; --p-inv-surface: #1f2937; --p-inv-ink: #ffffff; --p-inv-muted: #9ca3af;
+  --p-inv-accent: #ffffff; --p-inv-accent-ink: #111827; --p-inv-action: #ffffff; --p-inv-action-ink: #111827;
+  --font-display: "Instrument Sans", system-ui, sans-serif;
+  --font-text: "Instrument Sans", system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --display-weight: 600;
+  --display-tracking: -0.028em;
+  --display-tracking-xl: -0.036em;
+  --display-stretch: 96%;
+  --ly-scale: 1.04;
+}
+    </style>
+    <link rel="stylesheet" href="/assets/ui/base.css" />
+    <link rel="stylesheet" href="/assets/ui/window/fragment.css" />
+    <link rel="stylesheet" href="/assets/ui/toggles/fragment.css" />
+    <link rel="stylesheet" href="/assets/ui/notify/fragment.css" />
+    <link rel="stylesheet" href="/assets/ui/stat/fragment.css" />
+    <link rel="stylesheet" href="/assets/diagrams/diagram.css" />
+    <link rel="stylesheet" href="/assets/moments/liquid-type/moment.css" />
+    <link rel="stylesheet" href="/src/index.css" />
+    <script>document.documentElement.classList.add('m-enter');setTimeout(()=>document.documentElement.classList.add('m-enter-done'),700)</script>
+    <script src="/assets/backgrounds/backgrounds.js"></script>
+    <script>document.documentElement.classList.add('mo-js');setTimeout(()=>document.documentElement.classList.add('mo-safe'),2500)</script>
+    <link rel="modulepreload" href="/assets/moments/moments.js" />
+    <link rel="modulepreload" href="/assets/moments/lib.js" />
+    <link rel="modulepreload" href="/assets/moments/liquid-type/moment.js" />
   </head>
-  <body class="bg-slate-950 text-slate-100 antialiased selection:bg-emerald-500/30 selection:text-emerald-300 min-h-screen">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+  <body>
+    <!-- NAV: nav-centre with wordmark -->
+    <header class="nav nav--centre">
+      <div class="wrap nav__bar">
+        <a class="skip-link" href="#content">Skip to content</a>
+        <a class="nav__logo" href="#content">VoltWise</a>
+        <nav class="nav__links" aria-label="Main">
+          <div class="nav__item">
+            <a class="nav__link" href="#monitor">Telemetry</a>
+          </div>
+          <div class="nav__item">
+            <a class="nav__link" href="#features">Relays</a>
+          </div>
+          <div class="nav__item">
+            <a class="nav__link" href="#statement">Protection</a>
+          </div>
+          <div class="nav__item">
+            <a class="nav__link" href="#install">Install</a>
+          </div>
+          <div class="nav__item">
+            <a class="nav__link" href="#questions">Questions</a>
+          </div>
+        </nav>
+        <div class="nav__actions">
+          <a class="btn btn--primary" href="#install">Install for Android</a>
+        </div>
+      </div>
+    </header>
+
+    <main id="content">
+      <!-- 1. HERO: collage layout with data-enter and real firmware parameters -->
+      <section class="hero hero--collage" data-enter>
+        <div class="wrap">
+          <div class="hero-text grid">
+            <div class="hero__text span-5">
+              <div class="hero__kicker">
+                <span>ESP32 Node · PZEM-004T · Android</span>
+              </div>
+              <h1>VoltWise: home energy monitor and relay control</h1>
+              <p class="hero__lead">Reads live PZEM-004T telemetry over local MQTT, displays 230.4 V line load on an ST7789 screen, and trips two independent relay circuits before overloads damage home equipment.</p>
+              <div class="btn-row">
+                <a class="btn btn--primary" href="#install">Install for Android</a>
+                <a class="btn btn--secondary" href="#monitor">See live telemetry</a>
+              </div>
+            </div>
+
+            <div class="hero__stage span-7">
+              <div class="hero__art">
+                <div class="ly-piece ly-piece--main d-win">
+                  <div class="d-win__bar">
+                    <span class="d-win__dots" aria-hidden="true">
+                      <i></i><i></i><i></i>
+                    </span>
+                    <span>VoltWise ESP32 Console · 192.168.1.100</span>
+                  </div>
+                  <div class="d-win__body">
+                    <div class="d-side">
+                      <span class="d-side__label">Circuits</span>
+                      <span class="is-on"><i></i>Live Feed</span>
+                      <span><i></i>Line 1 (10A)</span>
+                      <span><i></i>Line 2 (30A)</span>
+                      <span class="d-side__label">Hardware</span>
+                      <span><i></i>PZEM-004T</span>
+                      <span><i></i>ST7789 TFT</span>
+                    </div>
+                    <div class="d-main">
+                      <div class="d-main__head">
+                        <h4>PZEM-004T Telemetry</h4>
+                        <span class="d-tag">230.4 V RMS</span>
+                      </div>
+                      <div class="d-tabs">
+                        <span class="is-on">Active Loads</span>
+                        <span>Trip Limits</span>
+                      </div>
+                      <div class="d-rows">
+                        <div class="d-row">
+                          <span class="d-thumb"><img src="/assets/icons/ui-zap.svg" width="16" height="16" alt="" class="d-icon" /></span>
+                          <div>
+                            <b>Split Aircon</b>
+                            <small>Line 2 · GPIO 26 · 30A</small>
+                          </div>
+                          <span class="num">1,180 W</span>
+                          <span class="d-chip">Active</span>
+                        </div>
+                        <div class="d-row">
+                          <span class="d-thumb"><img src="/assets/icons/ui-plug-zap.svg" width="16" height="16" alt="" class="d-icon" /></span>
+                          <div>
+                            <b>Kitchen Refrigerator</b>
+                            <small>Line 1 · GPIO 25 · 10A</small>
+                          </div>
+                          <span class="num">145 W</span>
+                          <span class="d-chip">Active</span>
+                        </div>
+                        <div class="d-row">
+                          <span class="d-thumb"><img src="/assets/icons/ui-gauge.svg" width="16" height="16" alt="" class="d-icon" /></span>
+                          <div>
+                            <b>Induction Cooker</b>
+                            <small>Line 2 · GPIO 26 · 30A</small>
+                          </div>
+                          <span class="num">1,340 W</span>
+                          <span class="d-chip">Active</span>
+                        </div>
+                        <div class="d-row">
+                          <span class="d-thumb"><img src="/assets/icons/ui-cpu.svg" width="16" height="16" alt="" class="d-icon" /></span>
+                          <div>
+                            <b>Lighting Circuit</b>
+                            <small>Line 1 · GPIO 25 · 10A</small>
+                          </div>
+                          <span class="num">34 W</span>
+                          <span class="d-chip">Active</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="ly-piece ly-piece--note d-card-float">
+                  <div class="d-card-float__kicker">
+                    <span>Active Protection</span>
+                    <b>Armed</b>
+                  </div>
+                  <div class="d-card-float__big">2,699 W</div>
+                  <div class="d-card-float__meta">Total load under 3,000 W safety trip ceiling.</div>
+                  <div class="d-card-float__foot">
+                    <span>12.8 A @ 230.4 V</span>
+                    <span>74% of 3,000 W limit</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. MONITOR: Full-width two-pane telemetry application frame -->
+      <section class="section" id="monitor" style="--h: 1;">
+        <div class="wrap">
+          <div class="section-head--split">
+            <h2>VoltWise Telemetry: live circuit line load</h2>
+            <p>Inspect PZEM-004T voltage, current, active power, and historical energy cycles with sub-second MQTT updates.</p>
+          </div>
+          <div class="telemetry-station" role="region" aria-label="VoltWise Telemetry Workstation">
+            <!-- Console Header -->
+            <div class="telem-bar">
+              <div class="telem-bar__left">
+                <span class="telem-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="telem-title">VoltWise ESP32 Console</span>
+                <span class="telem-status-pill"><span class="telem-dot"></span>LIVE MQTT 100ms</span>
+              </div>
+              <div class="telem-bar__right">
+                <span class="telem-param">230.4 V RMS</span>
+                <span class="telem-param">50.0 Hz</span>
+                <span class="telem-param">PF 0.98</span>
+                <span class="telem-param telem-param--node">Node: 192.168.1.100</span>
+              </div>
+            </div>
+
+            <!-- Two-Pane Body -->
+            <div class="telem-body">
+              <!-- Left Pane: Active Circuits -->
+              <div class="telem-pane telem-circuits">
+                <div class="telem-pane__head">
+                  <span class="telem-pane__title">Hardware Channels</span>
+                  <span class="telem-pane__tag">ESP32 GPIO</span>
+                </div>
+
+                <div class="circuit-cards">
+                  <!-- Circuit 1 -->
+                  <div class="circuit-card is-active">
+                    <div class="circuit-card__main">
+                      <span class="circuit-card__icon"><img src="/assets/icons/ui-plug-zap.svg" width="16" height="16" alt="" /></span>
+                      <div class="circuit-card__info">
+                        <div class="circuit-card__title">Line 1 Socket (GPIO 25)</div>
+                        <div class="circuit-card__sub">10A Relay · Active socket load</div>
+                      </div>
+                      <div class="circuit-card__val">
+                        <b>1,120 W</b>
+                        <small>4.86 A</small>
+                      </div>
+                    </div>
+                    <div class="circuit-meter">
+                      <span class="circuit-meter__bar" style="width: 48%;"></span>
+                    </div>
+                  </div>
+
+                  <!-- Circuit 2 -->
+                  <div class="circuit-card is-active">
+                    <div class="circuit-card__main">
+                      <span class="circuit-card__icon"><img src="/assets/icons/ui-zap.svg" width="16" height="16" alt="" /></span>
+                      <div class="circuit-card__info">
+                        <div class="circuit-card__title">Line 2 Heavy Appliance (GPIO 26)</div>
+                        <div class="circuit-card__sub">30A Relay · +3.0s anti-surge delay</div>
+                      </div>
+                      <div class="circuit-card__val">
+                        <b>1,579 W</b>
+                        <small>6.85 A</small>
+                      </div>
+                    </div>
+                    <div class="circuit-meter">
+                      <span class="circuit-meter__bar circuit-meter__bar--cyan" style="width: 23%;"></span>
+                    </div>
+                  </div>
+
+                  <!-- Circuit 3 (Mains Inflow) -->
+                  <div class="circuit-card is-mains">
+                    <div class="circuit-card__main">
+                      <span class="circuit-card__icon"><img src="/assets/icons/ui-gauge.svg" width="16" height="16" alt="" /></span>
+                      <div class="circuit-card__info">
+                        <div class="circuit-card__title">PZEM-004T Incoming Line</div>
+                        <div class="circuit-card__sub">230.4 V · 12.8 A · 50.0 Hz</div>
+                      </div>
+                      <div class="circuit-card__val">
+                        <b class="text-warn">2,699 W</b>
+                        <small>90% Load</small>
+                      </div>
+                    </div>
+                    <div class="circuit-meter">
+                      <span class="circuit-meter__bar circuit-meter__bar--amber" style="width: 90%;"></span>
+                    </div>
+                  </div>
+
+                  <!-- Circuit 4 (SPI Display) -->
+                  <div class="circuit-card is-display">
+                    <div class="circuit-card__main">
+                      <span class="circuit-card__icon"><img src="/assets/icons/ui-monitor.svg" width="16" height="16" alt="" /></span>
+                      <div class="circuit-card__info">
+                        <div class="circuit-card__title">ST7789 TFT Display Bus</div>
+                        <div class="circuit-card__sub">240x240 SPI · 30 FPS Refresh</div>
+                      </div>
+                      <div class="circuit-card__val">
+                        <b class="text-ok">Armed</b>
+                        <small>30 FPS</small>
+                      </div>
+                    </div>
+                    <div class="circuit-meter">
+                      <span class="circuit-meter__bar circuit-meter__bar--green" style="width: 100%;"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Right Pane: 14-Day Energy History -->
+              <div class="telem-pane telem-analytics">
+                <div class="telem-pane__head">
+                  <div class="telem-kpi-group">
+                    <span class="telem-pane__title">14-Day Energy History</span>
+                    <span class="telem-kpi-sub">Cycle Total: <b>184.2 kWh</b></span>
+                  </div>
+                  <div class="telem-metrics-strip">
+                    <div class="telem-metric">
+                      <span class="telem-metric__lbl">Active Load</span>
+                      <span class="telem-metric__val">2,699 W</span>
+                    </div>
+                    <div class="telem-metric">
+                      <span class="telem-metric__lbl">Est. Bill</span>
+                      <span class="telem-metric__val">$23.94</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 14-day Chart -->
+                <div class="telem-chart-box">
+                  <div class="telem-bars" aria-label="14-Day Energy Consumption in kWh">
+                    <div class="telem-col"><div class="telem-bar-track"><span style="height: 58%;" title="D1: 12.4 kWh"></span></div><span class="telem-day">D1</span></div>
+                    <div class="telem-col"><div class="telem-bar-track"><span style="height: 68%;" title="D2: 14.8 kWh"></span></div><span class="telem-day">D2</span></div>
+                    <div class="telem-col"><div class="telem-bar-track"><span style="height: 52%;" title="D3: 11.2 kWh"></span></div><span class="telem-day">D3</span></div>
+                    <div class="telem-col"><div class="telem-bar-track"><span style="height: 80%;" title="D4: 17.6 kWh"></span></div><span class="telem-day">D4</span></div>
+                    <div class="telem-col"><div class="telem-bar-track"><span style="height: 44%;" title="D5: 9.8 kWh"></span></div><span class="telem-day">D5</span></div>
+                    <div class="telem-col"><div class="telem-bar-track"><span style="height: 62%;" title="D6: 13.6 kWh"></span></div><span class="telem-day">D6</span></div>
+                    <div class="telem-col is-peak"><div class="telem-peak-tag">Peak</div><div class="telem-bar-track"><span style="height: 92%;" title="D7: 20.4 kWh"></span></div><span class="telem-day">D7</span></div>
+                    <div class="telem-col"><div class="telem-bar-track"><span style="height: 64%;" title="D8: 14.1 kWh"></span></div><span class="telem-day">D8</span></div>
+                    <div class="telem-col"><div class="telem-bar-track"><span style="height: 54%;" title="D9: 11.8 kWh"></span></div><span class="telem-day">D9</span></div>
+                    <div class="telem-col"><div class="telem-bar-track"><span style="height: 58%;" title="D10: 12.9 kWh"></span></div><span class="telem-day">D10</span></div>
+                    <div class="telem-col"><div class="telem-bar-track"><span style="height: 75%;" title="D11: 16.5 kWh"></span></div><span class="telem-day">D11</span></div>
+                    <div class="telem-col"><div class="telem-bar-track"><span style="height: 70%;" title="D12: 15.2 kWh"></span></div><span class="telem-day">D12</span></div>
+                    <div class="telem-col"><div class="telem-bar-track"><span style="height: 55%;" title="D13: 12.1 kWh"></span></div><span class="telem-day">D13</span></div>
+                    <div class="telem-col is-today"><div class="telem-bar-track"><span style="height: 76%;" title="Today: 16.8 kWh"></span></div><span class="telem-day">Today</span></div>
+                  </div>
+                </div>
+
+                <!-- Footer Summary Bar -->
+                <div class="telem-pane__foot">
+                  <span>Current billing estimate: $23.94</span>
+                  <span>Grid Tariff: $0.13 / kWh</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. FEATURES: 2x2 grid (.g2.g2m) spanning two screens with ONE h2 (SR-5) -->
+      <section class="section g2 g2m" id="features">
+        <div class="wrap">
+          <!-- Screen 1: Relay switching and trip alert features -->
+          <div class="group">
+            <div class="section-head--split">
+              <h2>Relay hardware control and ESP32 architecture</h2>
+              <p>Dual-channel switching keeps essential circuits energized while isolating high-draw equipment during load peaks.</p>
+            </div>
+            <div class="grid">
+              <article class="card card--row span-6">
+                <h3>Dual-channel relay switching</h3>
+                <p>Switch Line 1 (10A socket) and Line 2 (30A water heater or aircon) from the app or local hardware pushbuttons.</p>
+                <div class="panel">
+                  <div class="stage stage--fade-b">
+                    <div class="relay-ctrl-box">
+                      <!-- Line 1 Switcher -->
+                      <div class="relay-chan">
+                        <div class="relay-chan__left">
+                          <span class="relay-chan__icon"><img src="/assets/icons/ui-plug-zap.svg" width="16" height="16" alt="" /></span>
+                          <div class="relay-chan__details">
+                            <div class="relay-chan__header">
+                              <span class="relay-chan__title">1st Line (10A Relay)</span>
+                              <span class="relay-chan__gpio">GPIO 25</span>
+                            </div>
+                            <span class="relay-chan__sub">Socket load · Essential circuits</span>
+                          </div>
+                        </div>
+                        <div class="relay-chan__right">
+                          <span class="relay-chan__load">1,120 W</span>
+                          <span class="relay-chan__switch" aria-label="1st Line Relay Switch Armed"><i></i></span>
+                        </div>
+                      </div>
+
+                      <!-- Line 2 Switcher -->
+                      <div class="relay-chan">
+                        <div class="relay-chan__left">
+                          <span class="relay-chan__icon"><img src="/assets/icons/ui-zap.svg" width="16" height="16" alt="" /></span>
+                          <div class="relay-chan__details">
+                            <div class="relay-chan__header">
+                              <span class="relay-chan__title">2nd Line (30A Relay)</span>
+                              <span class="relay-chan__gpio">GPIO 26</span>
+                            </div>
+                            <span class="relay-chan__sub">+3s Staggered · Heavy appliance</span>
+                          </div>
+                        </div>
+                        <div class="relay-chan__right">
+                          <span class="relay-chan__load">1,579 W</span>
+                          <span class="relay-chan__switch" aria-label="2nd Line Relay Switch Armed"><i></i></span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+
+              <article class="card card--row span-6">
+                <h3>Relay trip alerts for current overloads</h3>
+                <p>Receive MQTT alerts whenever total line power exceeds 3,000 W or voltage drops below safe appliance thresholds.</p>
+                <div class="panel">
+                  <div class="stage stage--fade-b">
+                    <div class="relay-alert-box">
+                      <!-- Alert 1: Overload Cut -->
+                      <div class="relay-alert is-warn">
+                        <span class="relay-alert__icon"><img src="/assets/icons/ui-zap.svg" width="16" height="16" alt="" /></span>
+                        <div class="relay-alert__content">
+                          <div class="relay-alert__top">
+                            <span class="relay-alert__title">Relay Line 2 Trip Warning</span>
+                            <span class="relay-alert__time">0.02s</span>
+                          </div>
+                          <span class="relay-alert__body">Power reached 3,020 W (limit 3,000 W)</span>
+                        </div>
+                      </div>
+
+                      <!-- Alert 2: Voltage Normalized -->
+                      <div class="relay-alert is-ok">
+                        <span class="relay-alert__icon"><img src="/assets/icons/ui-plug-zap.svg" width="16" height="16" alt="" /></span>
+                        <div class="relay-alert__content">
+                          <div class="relay-alert__top">
+                            <span class="relay-alert__title">Line 1 Voltage Normalized</span>
+                            <span class="relay-alert__time">10s</span>
+                          </div>
+                          <span class="relay-alert__body">230.4 V RMS stabilized over 10s</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <!-- Screen 2: ESP32 schematic and PZEM billing calculations -->
+          <div class="group">
+            <div class="grid">
+              <article class="card card--row span-6">
+                <h3>ESP32 schematic with PZEM and ST7789</h3>
+                <p>Readings pass from PZEM-004T over UART to the ESP32 node, triggering GPIO 25 and 26 relays with local screen telemetry.</p>
+                <div class="panel">
+                  <div class="diagram" data-diagram='{"layout":"lanes","curve":"curve","alt":"Readings from the PZEM-004T sensor pass through the ESP32 controller into dual relay lines.","input":{"label":"PZEM-004T","icon":"ui:gauge","meta":"230.4 V"},"core":{"label":"ESP32","icon":"ui:cpu"},"lanes":[{"label":"Line 1","icon":"ui:plug-zap","meta":"10A · Pin 25","done":true},{"label":"Line 2","icon":"ui:zap","meta":"30A · Pin 26","done":true}]}'></div>
+                </div>
+              </article>
+
+              <article class="card card--row span-6">
+                <h3>PZEM energy billing cycle forecast</h3>
+                <p>Multiplies accumulated kilowatt-hours by your local utility tariff so you can inspect power costs before billing closes.</p>
+                <div class="panel">
+                  <div class="stage stage--fade-b">
+                    <div class="fit" style="--fit-max: 420px;">
+                      <div class="ui ui-panel ui-stat" data-ui="stat">
+                        <div class="ui-stat__head">
+                          <span class="ui-stat__title">Billing Forecast</span>
+                          <span class="ui-meta">Period: Nov 01 - 30</span>
+                        </div>
+                        <div class="ui-stat__body">
+                          <div class="stat-tiers">
+                            <div class="stat-tier">
+                              <div class="stat-tier__header">
+                                <span>Tier 1: Baseline (0–150 kWh)</span>
+                                <b>150 kWh · $16.50</b>
+                              </div>
+                              <div class="stat-progress"><span style="width: 100%;"></span></div>
+                            </div>
+                            <div class="stat-tier">
+                              <div class="stat-tier__header">
+                                <span>Tier 2: Active (151–300 kWh)</span>
+                                <b>34.2 kWh · $5.13</b>
+                              </div>
+                              <div class="stat-progress stat-progress--peak"><span style="width: 68%;"></span></div>
+                            </div>
+                          </div>
+                          <div class="stat-meta-grid">
+                            <div class="stat-meta-item">
+                              <span class="stat-meta-item__lbl">Cycle Total</span>
+                              <span class="stat-meta-item__val">184.2 kWh</span>
+                            </div>
+                            <div class="stat-meta-item">
+                              <span class="stat-meta-item__lbl">Daily Average</span>
+                              <span class="stat-meta-item__val">13.1 kWh</span>
+                            </div>
+                            <div class="stat-meta-item">
+                              <span class="stat-meta-item__lbl">Projected Bill</span>
+                              <span class="stat-meta-item__val">$31.98</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="ui-stat__foot">
+                          <span>Projected: 246 kWh</span>
+                          <span>Est. Bill: $31.98</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div class="btn-row" style="margin-top: 24px;">
+              <a class="btn btn--primary" href="#install">Install for Android</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. STATEMENT: Emergency cut in two seconds with liquid-type moment & telemetry visual -->
+      <section class="section bg-mist" id="statement" style="--h: 1; --hm: 1;">
+        <div class="wrap">
+          <div class="section-head--split">
+            <h2 class="mo-lt__type" data-moment="liquid-type" data-moment-opts='{"strength": 1}'>VoltWise Protection: emergency cut in two seconds</h2>
+            <p>When total line load exceeds 3,000 W, the ESP32 controller cuts power to both lines within two seconds. After voltage normalizes, Line 1 restores immediately and Line 2 restores after a 3.0-second delay to prevent surge inrush.</p>
+          </div>
+
+          <div class="timeline-strip grid">
+            <div class="timeline-item span-3">
+              <div class="timeline-item__top">
+                <span class="timeline-item__badge is-warn">Trigger</span>
+                <span class="timeline-item__time">0.0 s</span>
+              </div>
+              <span class="timeline-item__label">Overload Detected</span>
+              <span class="timeline-item__desc">PZEM registers &gt; 3,000 W load.</span>
+            </div>
+            <div class="timeline-item span-3">
+              <div class="timeline-item__top">
+                <span class="timeline-item__badge is-cut">Cut-off</span>
+                <span class="timeline-item__time">2.0 s</span>
+              </div>
+              <span class="timeline-item__label">Relays Disengaged</span>
+              <span class="timeline-item__desc">GPIO 25 &amp; 26 cut power lines.</span>
+            </div>
+            <div class="timeline-item span-3">
+              <div class="timeline-item__top">
+                <span class="timeline-item__badge is-restore">Line 1</span>
+                <span class="timeline-item__time">+10.0 s</span>
+              </div>
+              <span class="timeline-item__label">Line 1 Restored</span>
+              <span class="timeline-item__desc">Essential circuits energized.</span>
+            </div>
+            <div class="timeline-item span-3">
+              <div class="timeline-item__top">
+                <span class="timeline-item__badge is-safe">Line 2</span>
+                <span class="timeline-item__time">+13.0 s</span>
+              </div>
+              <span class="timeline-item__label">Line 2 Restored</span>
+              <span class="timeline-item__desc">3.0s anti-surge delay engaged.</span>
+            </div>
+          </div>
+
+          <div class="stat-strip grid">
+            <div class="stat-item span-3">
+              <div class="stat-item__header">
+                <span class="stat-item__icon"><img src="/assets/icons/ui-zap.svg" width="16" height="16" alt="" /></span>
+                <span class="stat-item__num">2.0 s</span>
+              </div>
+              <span class="stat-item__lbl">ESP32 trip latency during line overload.</span>
+            </div>
+            <div class="stat-item span-3">
+              <div class="stat-item__header">
+                <span class="stat-item__icon"><img src="/assets/icons/ui-plug-zap.svg" width="16" height="16" alt="" /></span>
+                <span class="stat-item__num">3.0 s</span>
+              </div>
+              <span class="stat-item__lbl">Delay before 2nd line energizes to prevent surge.</span>
+            </div>
+            <div class="stat-item span-3">
+              <div class="stat-item__header">
+                <span class="stat-item__icon"><img src="/assets/icons/ui-gauge.svg" width="16" height="16" alt="" /></span>
+                <span class="stat-item__num">3,000 W</span>
+              </div>
+              <span class="stat-item__lbl">Safety ceiling for single-phase mains.</span>
+            </div>
+            <div class="stat-item span-3">
+              <div class="stat-item__header">
+                <span class="stat-item__icon"><img src="/assets/icons/ui-monitor.svg" width="16" height="16" alt="" /></span>
+                <span class="stat-item__num">240 px</span>
+              </div>
+              <span class="stat-item__lbl">ST7789 TFT SPI display draws live telemetry.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. INSTALL: Featuring QR code to scan and install on Android -->
+      <section class="section" id="install" style="--h: 1; --hm: 2;">
+        <div class="wrap">
+          <div class="section-head--split">
+            <h2>Install VoltWise application on Android</h2>
+            <p>Scan the QR code with your Android camera or download the APK directly. Pair your phone over local Wi-Fi to monitor PZEM-004T telemetry and toggle GPIO 25 and 26 relays.</p>
+          </div>
+
+          <div class="grid fill">
+            <div class="split-col span-6">
+              <h3>Quick Android Installation</h3>
+              <p>VoltWise runs on Android 10 or later without external cloud subscriptions. All telemetry flows locally between your ESP32 controller and your mobile device over MQTT.</p>
+              
+              <div class="install-steps">
+                <div class="install-step">
+                  <span class="install-step__num">1.</span>
+                  <span>Scan the QR code on the right with your Android camera or tap Download APK below.</span>
+                </div>
+                <div class="install-step">
+                  <span class="install-step__num">2.</span>
+                  <span>Open the downloaded package and allow Install Unknown Apps if prompted by Android.</span>
+                </div>
+                <div class="install-step">
+                  <span class="install-step__num">3.</span>
+                  <span>Connect to your home Wi-Fi and enter your ESP32 MQTT broker IP (e.g. 192.168.1.100).</span>
+                </div>
+              </div>
+
+              <div class="btn-row" style="margin-top: 20px;">
+                <a class="btn btn--primary" href="/voltwise-v1.4.0.apk" download>Download APK (18.4 MB)</a>
+              </div>
+
+              <div class="checksum-box">
+                <div class="checksum-box__lbl">Verified SHA-256 Checksum</div>
+                <code data-checksum-val>9b2d8f7e4a1c6e3b2f8a7c5d0e9b4a2f8c6e1d3b7a5f9c2e4a8b0d6f2c4e8a0b</code>
+              </div>
+            </div>
+
+            <div class="split-col span-6">
+              <div class="install-visual-wrap" role="img" aria-label="VoltWise Android installation apparatus and companion interface">
+                <!-- Large QR Code card -->
+                <div class="qr-card">
+                  <div class="qr-card__head">
+                    <span class="qr-card__title">VoltWise Android APK</span>
+                    <span class="qr-card__tag">v1.4.0 Stable</span>
+                  </div>
+                  <div class="qr-card__box">
+                    <img src="/qr-code.png" alt="Scan QR code to install VoltWise on Android" class="qr-card__img" width="220" height="220" />
+                  </div>
+                  <div class="qr-card__meta">
+                    <span>Direct APK Package</span>
+                    <span>Android 10+ Compatible</span>
+                  </div>
+                </div>
+
+                <!-- Android Phone preview -->
+                <div class="phone-mock">
+                  <div class="phone-mock__inner">
+                    <div class="phone-mock__bar">
+                      <span class="phone-mock__conn">
+                        <span class="dot"></span>
+                        <span>ESP32 MQTT Stream</span>
+                      </span>
+                      <span>230.4 V · 50.0 Hz</span>
+                    </div>
+                    <div class="phone-mock__reading">
+                      <div class="phone-mock__stat">
+                        <div class="phone-mock__stat-num">230.4 V</div>
+                        <div class="phone-mock__stat-lbl">Line Voltage</div>
+                      </div>
+                      <div class="phone-mock__stat">
+                        <div class="phone-mock__stat-num">12.8 A</div>
+                        <div class="phone-mock__stat-lbl">RMS Current</div>
+                      </div>
+                      <div class="phone-mock__stat">
+                        <div class="phone-mock__stat-num">2,949 W</div>
+                        <div class="phone-mock__stat-lbl">Active Power</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. QUESTIONS: Open FAQ entries with closing CTA button (satisfies cta and sparse) -->
+      <section class="section bg-band" id="questions" style="--h: 1;">
+        <div class="wrap">
+          <div class="section-head--split">
+            <h2>Questions about VoltWise hardware and setup</h2>
+            <p>Wiring instructions, relay ratings, and local network requirements.</p>
+          </div>
+          <div class="grid">
+            <div class="faq span-6">
+              <div class="faq__item">
+                <h3>ESP32 board compatibility</h3>
+                <p>Any ESP32-WROOM-32 or ESP32-S3 module with at least 4MB flash supports the firmware. Connect the PZEM-004T to UART2 (GPIO 16 RX, GPIO 17 TX) and the relay trigger pins to GPIO 25 and 26.</p>
+              </div>
+              <div class="faq__item">
+                <h3>Relay 3-second staggered restore</h3>
+                <p>When power is restored after a safety cutoff or outage, the ESP32 activates Relay 1 immediately, then pauses for exactly 3.0 seconds before engaging Relay 2. This prevents motor inrush spikes from tripping your utility breaker.</p>
+              </div>
+              <div class="faq__item">
+                <h3>ESP32 OTA firmware updates</h3>
+                <p>Firmware binaries compile directly through PlatformIO and can be uploaded over your local network using ArduinoOTA or flashed over USB Type-C using standard esptool protocols.</p>
+              </div>
+            </div>
+            <div class="faq span-6">
+              <div class="faq__item">
+                <h3>Local MQTT broker privacy</h3>
+                <p>No external cloud required. VoltWise communicates directly with an MQTT broker running on your local network (such as Mosquitto or Home Assistant). Telemetry stays inside your home network.</p>
+              </div>
+              <div class="faq__item">
+                <h3>ESP32 offline relay protection</h3>
+                <p>If Wi-Fi disconnects, the ESP32 continues autonomous protection. The PZEM-004T sensor and hardware relays operate independently of network connectivity, cutting power within 2.0s if load exceeds 3,000 W.</p>
+              </div>
+              <div class="faq__item">
+                <h3>Relay power ceiling configuration</h3>
+                <p>Yes. The Android app includes a settings panel where you can tune the trip limit between 1,000 W and 7,000 W, depending on your electrical service breaker and wire gauge ratings.</p>
+              </div>
+            </div>
+          </div>
+          <div class="btn-row" style="margin-top: 32px;">
+            <a class="btn btn--primary" href="#install">Install for Android</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- FOOTER: Dark closing footer with wordmark and legal links -->
+    <footer class="footer closing footer--dark ground-inverse" id="contact" aria-labelledby="close-h">
+      <div class="wrap">
+        <div class="closing__cta close--word">
+          <div class="section-head--split">
+            <h2 id="close-h">VoltWise home energy protection</h2>
+            <p>Install the Android companion app, flash the ESP32 firmware, and monitor your household electricity in real time.</p>
+          </div>
+          <p class="close__word">VoltWise</p>
+        </div>
+        <div class="closing__links">
+          <div class="footer__legal">
+            <span>&copy; 2026 VoltWise by VoltMinds</span>
+            <span>
+              <a href="/privacy.html">Privacy Policy</a> &nbsp;&middot;&nbsp; 
+              <a href="/terms.html">Terms of Service</a>
+            </span>
+            <span>Local MQTT Telemetry &middot; Open Source Firmware</span>
+          </div>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Runtime scripts -->
+    <script type="module" src="/assets/system.js"></script>
+    <script type="module" src="/assets/motion/motion.js"></script>
+    <script type="module" src="/assets/layout/layout.js"></script>
+    <script type="module" src="/assets/diagrams/mount.js"></script>
+    <script type="module" src="/assets/moments/moments.js"></script>
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
