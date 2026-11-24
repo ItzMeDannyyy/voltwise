@@ -15,6 +15,10 @@ from feature_engineering import (
     FEATURE_COLUMNS,
     build_training_windows_from_folder,
 )
+from nilm_disaggregator import (
+    DEFAULT_CENTROIDS_FILE,
+    extract_nilm_centroids,
+)
 
 DEFAULT_RAW_DIR = Path("data/raw")
 DEFAULT_PROCESSED_FILE = Path("data/processed/windows.csv")
@@ -238,8 +242,12 @@ def train(
     print(f"      Saved cluster profiles to: {profiles_path}")
 
     # Save model artifact
-    print(f"\n[5/5] Saving model pipeline artifact to: {model_path}...")
+    print(f"\n[5/6] Saving model pipeline artifact to: {model_path}...")
     cluster_profiles_dict = profiles.reset_index().to_dict(orient="records")
+
+    # Extract NILM isolated appliance centroids (Power Plane delta P vs delta Q)
+    print(f"\n[6/6] Extracting NILM appliance centroids (delta P vs delta Q) from {raw_dir}...")
+    nilm_centroids = extract_nilm_centroids(raw_dir=raw_dir)
 
     artifact = {
         "pipeline": pipeline,
@@ -251,6 +259,7 @@ def train(
         "window_seconds": window_seconds,
         "n_samples": len(windows),
         "cluster_profiles": cluster_profiles_dict,
+        "nilm_centroids": nilm_centroids,
         "trained_at": datetime.now(timezone.utc).isoformat(),
     }
     joblib.dump(artifact, model_path)

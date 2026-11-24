@@ -85,6 +85,13 @@ export interface MqttEvent {
   type: string;
   /** Size of the detected power jump, for new_load events. */
   deltaWatts?: number;
+  event?: {
+    delta_p: number;
+    delta_q: number;
+  };
+  candidates?: any[];
+  transition?: string;
+  activeAppliances?: string[];
   dominantAppliance?: string;
   deviceName?: string;
   interpretation?: string;

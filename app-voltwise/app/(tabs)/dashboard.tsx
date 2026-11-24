@@ -44,6 +44,7 @@ import {
 } from "../../lib/range-prefs";
 import { RELAY_REASON_LABELS, TELEMETRY_FRESH_MS } from "../../lib/iot-prefs";
 import AppHeader from "../../components/AppHeader";
+import PowerPlaneClusterMap from "../../components/PowerPlaneClusterMap";
 import { PullToRefresh } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useTheme } from "../../context/ThemeContext";
@@ -134,7 +135,12 @@ export default function DashboardScreen() {
   const [iotOnline, setIotOnline]       = useState<boolean | null>(null);
 
   // Real-time IoT feed (direct MQTT subscription to the broker).
-  const { telemetry, telemetryAt, relayState } = useMqtt();
+  const { telemetry, telemetryAt, relayState, lastEvent } = useMqtt();
+
+  const powerPlaneEvent =
+    lastEvent?.type === "power_plane_event" ? lastEvent.event : null;
+  const powerPlaneCandidates =
+    lastEvent?.type === "power_plane_event" ? lastEvent.candidates : undefined;
   const {
     masterOn,
     highOn,
@@ -956,6 +962,14 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             </View>
           )}
+        </View>
+
+        {/* NILM Power-Plane Event Disaggregation (image.png) */}
+        <View style={styles.section}>
+          <PowerPlaneClusterMap
+            event={powerPlaneEvent}
+            candidates={powerPlaneCandidates}
+          />
         </View>
 
         {/* Usage History */}

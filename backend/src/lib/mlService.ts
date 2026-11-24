@@ -15,6 +15,32 @@ export const DeviceStatus = {
 } as const;
 export type DeviceStatus = (typeof DeviceStatus)[keyof typeof DeviceStatus];
 
+export interface NILMCandidate {
+  id: string;
+  appliance: string;
+  category: string;
+  centroid_p: number;
+  centroid_q: number;
+  distance: number;
+  tolerance_radius: number;
+  status: "Match" | "Outside r";
+  is_match: boolean;
+  formula: string;
+}
+
+export interface NILMEvent {
+  is_event: boolean;
+  transition: "ON" | "OFF" | "STEADY";
+  delta_p: number;
+  delta_q: number;
+  abs_delta_p?: number;
+  abs_delta_q?: number;
+  dominant_appliance: string;
+  is_match: boolean;
+  candidates: NILMCandidate[];
+  active_appliances: string[];
+}
+
 export interface MLPrediction {
   cluster: number;
   interpretation: string;
@@ -24,6 +50,7 @@ export interface MLPrediction {
   is_anomaly: boolean;
   alert_level: string;
   message: string;
+  nilm_event?: NILMEvent;
 }
 
 export interface MLTelemetryResponse {
@@ -31,6 +58,7 @@ export interface MLTelemetryResponse {
   panel_id?: string;
   readings_in_window?: number;
   prediction?: MLPrediction;
+  nilm_event?: NILMEvent;
 }
 
 export interface TelemetryReadingInput {
@@ -91,7 +119,25 @@ export const classifyTelemetry = async (
 
     const body = (await res.json()) as MLTelemetryResponse;
     if (body.status === "predicted" && body.prediction) {
+      if (body.nilm_event) {
+        body.prediction.nilm_event = body.nilm_event;
+      }
       return body.prediction;
+    }
+
+    // If warming up but a valid NILM step event occurred, return event prediction immediately
+    if (body.nilm_event && body.nilm_event.is_event) {
+      return {
+        cluster: 0,
+        interpretation: `${body.nilm_event.dominant_appliance} (NILM delta P vs delta Q Event)`,
+        dominant_appliance: body.nilm_event.dominant_appliance,
+        nearest_distance: 0.1,
+        distance_threshold: 1.5,
+        is_anomaly: !body.nilm_event.is_match,
+        alert_level: body.nilm_event.is_match ? "normal" : "warning",
+        message: `NILM ${body.nilm_event.transition} event detected for ${body.nilm_event.dominant_appliance}.`,
+        nilm_event: body.nilm_event,
+      };
     }
     return null;
   } catch (error) {
@@ -141,12 +187,17 @@ export const matchesAppliance = (
 
   // 4. Light Bulb / Lighting
   if (domLower.includes("light") || domLower.includes("bulb")) {
+    const isPhoneTarget =
+      nameLower.includes("phone") ||
+      nameLower.includes("charger") ||
+      nameLower.includes("cell");
     if (
-      nameLower.includes("light") ||
-      nameLower.includes("bulb") ||
-      nameLower.includes("lamp") ||
-      nameLower.includes("chandelier") ||
-      catLower.includes("light")
+      !isPhoneTarget &&
+      (nameLower.includes("light") ||
+        nameLower.includes("bulb") ||
+        nameLower.includes("lamp") ||
+        nameLower.includes("chandelier") ||
+        catLower.includes("light"))
     ) {
       return true;
     }
@@ -157,15 +208,22 @@ export const matchesAppliance = (
     domLower.includes("phone") ||
     domLower.includes("cell") ||
     domLower.includes("charg") ||
-    domLower.includes("samsung")
+    domLower.includes("samsung") ||
+    domLower.includes("small electronics")
   ) {
+    const isLightTarget =
+      nameLower.includes("light") ||
+      nameLower.includes("bulb") ||
+      catLower.includes("light");
     if (
-      nameLower.includes("phone") ||
-      nameLower.includes("cell") ||
-      nameLower.includes("charg") ||
-      nameLower.includes("samsung") ||
-      catLower.includes("charger") ||
-      catLower.includes("phone")
+      !isLightTarget &&
+      (nameLower.includes("phone") ||
+        nameLower.includes("cell") ||
+        nameLower.includes("charg") ||
+        nameLower.includes("samsung") ||
+        catLower.includes("charger") ||
+        catLower.includes("phone") ||
+        catLower.includes("electronics"))
     ) {
       return true;
     }
@@ -218,16 +276,19 @@ export const matchOrTagDevice = async (
   );
 
   if (matched && !prediction.is_anomaly) {
-    // Matched a registered device! Update its status to ACTIVE
-    if (matched.status !== DeviceStatus.ACTIVE) {
+    // Matched a registered device! Update its status based on transition
+    const isTurnOff = prediction.nilm_event?.transition === "OFF";
+    const targetStatus = isTurnOff ? DeviceStatus.IDLE : DeviceStatus.ACTIVE;
+
+    if (matched.status !== targetStatus) {
       await prisma.device.update({
         where: { id: matched.id },
-        data: { status: DeviceStatus.ACTIVE },
+        data: { status: targetStatus },
       });
     }
 
     // Set any placeholder Unregistered Load to IDLE since the active load is now accounted for
-    if (typeof prisma.device.updateMany === "function") {
+    if (!isTurnOff && typeof prisma.device.updateMany === "function") {
       await prisma.device.updateMany({
         where: {
           userId,
@@ -242,10 +303,20 @@ export const matchOrTagDevice = async (
     let cleanDominant = prediction.dominant_appliance;
     const catLower = (matched.category ?? "").toLowerCase();
     const nameLower = matched.name.toLowerCase();
-    if (catLower.includes("light") || nameLower.includes("light") || nameLower.includes("bulb")) {
-      cleanDominant = "Light Bulb";
-    } else if (catLower.includes("charg") || catLower.includes("phone") || nameLower.includes("phone")) {
+    if (
+      cleanDominant === "Phone Charger" ||
+      catLower.includes("charg") ||
+      catLower.includes("phone") ||
+      nameLower.includes("phone")
+    ) {
       cleanDominant = "Phone Charger";
+    } else if (
+      cleanDominant === "Light Bulb" ||
+      catLower.includes("light") ||
+      nameLower.includes("light") ||
+      nameLower.includes("bulb")
+    ) {
+      cleanDominant = "Light Bulb";
     } else if (catLower.includes("cool") || nameLower.includes("air") || nameLower.includes("ac")) {
       cleanDominant = "Air Conditioner";
     } else if (catLower.includes("refrigerat") || nameLower.includes("fridge")) {

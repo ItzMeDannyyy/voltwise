@@ -16,10 +16,18 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from feature_engineering import FEATURE_COLUMNS, build_live_feature_row
+from nilm_disaggregator import (
+    DEFAULT_CENTROIDS_FILE,
+    NILMEventDisaggregator,
+    compute_reactive_power,
+)
 from train import train as run_training
 
 MODEL_PATH = BASE_DIR / "artifacts" / "kmeans_pipeline.joblib"
 PROFILES_PATH = BASE_DIR / "artifacts" / "cluster_profiles.csv"
+CENTROIDS_PATH = BASE_DIR / "artifacts" / "nilm_centroids.json"
+
+nilm_engine = NILMEventDisaggregator(centroids_file=CENTROIDS_PATH)
 
 # Global state
 model_state: Dict[str, Any] = {
@@ -54,7 +62,8 @@ def load_model_artifacts() -> bool:
         model_state["cluster_profiles"] = artifact.get("cluster_profiles", [])
         model_state["trained_at"] = artifact.get("trained_at")
         model_state["loaded"] = True
-        print(f"[VoltWise ML] Successfully loaded model with K={model_state['best_k']}.")
+        nilm_engine.load_centroids()
+        print(f"[VoltWise ML] Successfully loaded model with K={model_state['best_k']} and {len(nilm_engine.centroids)} NILM centroids.")
         return True
     except Exception as e:
         print(f"[VoltWise ML] Error loading model: {e}")
@@ -227,16 +236,108 @@ def predict_features(input_data: FeatureVectorInput):
     }
 
 
+@app.get("/power-plane")
+def get_power_plane(panel_id: str = "main-panel"):
+    """
+    Returns the Power-Plane (delta P vs delta Q) centroids, tolerance ellipses,
+    and current active appliances for the interactive cluster map visualization.
+    """
+    panel_state = nilm_engine.panel_states.get(panel_id, {
+        "baseline_p": 0.0,
+        "baseline_q": 0.0,
+        "active_appliances": [],
+        "last_event": None,
+    })
+    return {
+        "panel_id": panel_id,
+        "centroids": nilm_engine.centroids,
+        "active_appliances": sorted(list(panel_state.get("active_appliances", []))),
+        "baseline_p": round(panel_state.get("baseline_p", 0.0), 2),
+        "baseline_q": round(panel_state.get("baseline_q", 0.0), 2),
+        "last_event": panel_state.get("last_event"),
+    }
+
+
+class DisaggregateRequest(BaseModel):
+    panel_id: str = "main-panel"
+    voltage: float = 230.0
+    current: float = 0.0
+    power: float = 0.0
+    delta_p: Optional[float] = None
+    delta_q: Optional[float] = None
+
+
+@app.post("/disaggregate")
+def disaggregate_endpoint(req: DisaggregateRequest):
+    """
+    Directly disaggregates a reading or explicit delta P / delta Q step event
+    against the Power-Plane cluster map.
+    """
+    if req.delta_p is not None:
+        dp = req.delta_p
+        dq = req.delta_q if req.delta_q is not None else 0.0
+        # Simulated or pre-calculated step
+        abs_dp = abs(dp)
+        abs_dq = abs(dq)
+        candidates = []
+        best_match = None
+        min_dist = float("inf")
+        for c in nilm_engine.centroids:
+            diff_p = abs_dp - c["mu_p"]
+            diff_q = abs_dq - c["mu_q"]
+            dist = (diff_p * diff_p + diff_q * diff_q) ** 0.5
+            status = "Match" if dist <= c["tolerance_radius"] else "Outside r"
+            cand = {
+                "id": c.get("id", c["appliance"]),
+                "appliance": c["appliance"],
+                "category": c["category"],
+                "centroid_p": c["mu_p"],
+                "centroid_q": c["mu_q"],
+                "distance": round(dist, 2),
+                "tolerance_radius": c["tolerance_radius"],
+                "status": status,
+                "is_match": dist <= c["tolerance_radius"],
+                "formula": f"v(({round(abs_dp, 1)} - {round(c['mu_p'], 1)})² + ({round(abs_dq, 1)} - {round(c['mu_q'], 1)})²)",
+            }
+            candidates.append(cand)
+            if dist < min_dist:
+                min_dist = dist
+                best_match = cand
+
+        return {
+            "status": "success",
+            "event": {"delta_p": round(dp, 2), "delta_q": round(dq, 2)},
+            "dominant_appliance": best_match["category"] if best_match and best_match["is_match"] else "Unregistered Load",
+            "is_match": best_match["is_match"] if best_match else False,
+            "candidates": candidates,
+        }
+
+    return nilm_engine.process_reading(
+        voltage=req.voltage,
+        current=req.current,
+        power=req.power,
+        panel_id=req.panel_id,
+    )
+
+
 @app.post("/telemetry")
 def stream_telemetry(reading: TelemetryReading):
     """
     Receives live raw telemetry readings from sensor / MQTT bridge / backend.
-    Maintains a rolling time window per panel, extracts window features,
-    and returns real-time cluster inference and anomaly alerts.
+    Runs NILM Power-Plane finite differencing (delta P, delta Q) in real-time,
+    extracts rolling window statistics, and returns cluster inference and anomaly alerts.
     """
     panel_id = reading.panel_id
     reading_dict = reading.model_dump()
     current_time = reading_dict["timestamp"]
+
+    # 1. Real-time NILM step event detection and Euclidean distance classification
+    nilm_res = nilm_engine.process_reading(
+        voltage=reading.voltage,
+        current=reading.current,
+        power=reading.power,
+        panel_id=panel_id,
+    )
 
     if panel_id not in telemetry_buffers:
         telemetry_buffers[panel_id] = []
@@ -260,6 +361,7 @@ def stream_telemetry(reading: TelemetryReading):
             "readings_collected": buffer_len,
             "minimum_required": MIN_READINGS_FOR_INFERENCE,
             "message": f"Buffering live readings ({buffer_len}/{MIN_READINGS_FOR_INFERENCE} collected).",
+            "nilm_event": nilm_res,
         }
 
     # Build feature row from active buffer
@@ -267,12 +369,21 @@ def stream_telemetry(reading: TelemetryReading):
     feature_df = build_live_feature_row(df_buffer)
 
     prediction = format_prediction_result(feature_df)
+
+    # If NILM detected an exact appliance step event, prioritize NILM's disambiguated appliance label!
+    if nilm_res.get("is_event") and nilm_res.get("is_match"):
+        dominant = nilm_res.get("dominant_appliance")
+        if dominant and dominant not in ("None", "Unregistered Load"):
+            prediction["dominant_appliance"] = dominant
+            prediction["interpretation"] = f"{dominant} (NILM delta P vs delta Q Event)"
+
     return {
         "status": "predicted",
         "panel_id": panel_id,
         "readings_in_window": buffer_len,
         "features": feature_df.iloc[0].round(3).to_dict(),
         "prediction": prediction,
+        "nilm_event": nilm_res,
     }
 
 

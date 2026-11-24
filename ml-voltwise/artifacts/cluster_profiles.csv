@@ -1,6 +1,4 @@
 cluster,voltage_mean,current_mean,current_max,power_mean,power_max,power_min,power_std,energy_delta_wh,frequency_mean,power_factor_mean,anomaly_distance,count,dominant_appliance,interpretation
-0,239.76,0.05,0.06,7.3,9.3,6.9,0.66,0.07,59.88,0.61,1.23,414,Small Electronics / Light Bulb,Low-Power Lighting / Electronics (Small Electronics / Light Bulb)
-1,230.05,8.17,8.17,1878.93,1881.58,1875.85,1.86,15.6,59.98,1.0,0.68,10,Electric Kettle,High Resistive / Heating Load (Electric Kettle)
-2,237.65,3.03,3.11,617.18,632.46,599.8,14.49,5.1,59.95,0.86,1.1,106,Air Conditioner,High Continuous Load (Air Conditioner)
-3,234.59,0.13,0.17,29.87,39.87,27.08,3.77,0.24,59.9,0.98,1.16,397,Refrigerator,Low Load / Cycling (Refrigerator)
-4,234.55,4.51,11.85,1000.25,2474.53,1.2,930.34,7.0,60.04,0.96,4.9,3,Electric Kettle / Air Conditioner,High Resistive / Heating Load (Electric Kettle / Air Conditioner)
+0,237.23,0.09,0.11,18.12,23.48,16.8,1.81,0.15,59.89,0.79,1.76,810,Refrigerator / Small Electronics / Light Bulb,Low-Power Lighting / Electronics (Refrigerator / Small Electronics / Light Bulb)
+1,231.09,7.32,9.02,1676.16,2018.42,1443.24,216.13,13.62,60.0,0.99,6.76,13,Electric Kettle,High Resistive / Heating Load (Electric Kettle)
+2,237.65,3.01,3.11,613.29,632.76,594.21,17.18,5.07,59.95,0.86,1.16,107,Air Conditioner,High Continuous Load (Air Conditioner)

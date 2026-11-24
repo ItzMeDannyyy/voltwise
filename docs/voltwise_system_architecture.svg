@@ -1,0 +1,418 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1120" width="1600" height="1120">
+  <defs>
+    <style>
+      .title { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; font-weight: 800; font-size: 28px; fill: #0f172a; }
+      .subtitle { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; font-weight: 500; font-size: 14px; fill: #64748b; }
+      .tier-header { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; font-weight: 700; font-size: 15px; letter-spacing: 0.5px; text-transform: uppercase; }
+      .box-title { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; font-weight: 700; font-size: 14px; fill: #0f172a; }
+      .box-desc { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; font-weight: 400; font-size: 11px; fill: #475569; line-height: 1.4; }
+      .box-detail { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; font-weight: 600; font-size: 11px; fill: #2563eb; }
+      .badge-text { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; font-weight: 600; font-size: 10px; fill: #ffffff; }
+      .wire-label { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; font-weight: 600; font-size: 11px; fill: #0284c7; }
+      .danger-text { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; font-weight: 700; font-size: 11px; fill: #dc2626; }
+      .mono { font-family: 'Consolas', 'Courier New', monospace; font-size: 11px; }
+    </style>
+
+    <!-- Drop Shadows -->
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0f172a" flood-opacity="0.06"/>
+    </filter>
+    <filter id="card-shadow" x="-5%" y="-5%" width="110%" height="115%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.04"/>
+    </filter>
+
+    <!-- Markers -->
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#0284c7"/>
+    </marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#d97706"/>
+    </marker>
+    <marker id="arrow-emerald" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#059669"/>
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrow-slate" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#64748b"/>
+    </marker>
+
+    <!-- Gradients -->
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="1600" height="1120" fill="#f8fafc"/>
+  
+  <!-- Subtle Grid Pattern -->
+  <g opacity="0.25">
+    <path d="M 0 40 L 1600 40 M 0 80 L 1600 80 M 0 120 L 1600 120 M 0 160 L 1600 160 M 0 200 L 1600 200 M 0 240 L 1600 240 M 0 280 L 1600 280 M 0 320 L 1600 320 M 0 360 L 1600 360 M 0 400 L 1600 400 M 0 440 L 1600 440 M 0 480 L 1600 480 M 0 520 L 1600 520 M 0 560 L 1600 560 M 0 600 L 1600 600 M 0 640 L 1600 640 M 0 680 L 1600 680 M 0 720 L 1600 720 M 0 760 L 1600 760 M 0 800 L 1600 800 M 0 840 L 1600 840 M 0 880 L 1600 880 M 0 920 L 1600 920 M 0 960 L 1600 960 M 0 1000 L 1600 1000 M 0 1040 L 1600 1040 M 0 1080 L 1600 1080" stroke="#cbd5e1" stroke-width="0.5" fill="none"/>
+    <path d="M 40 0 L 40 1120 M 80 0 L 80 1120 M 120 0 L 120 1120 M 160 0 L 160 1120 M 200 0 L 200 1120 M 240 0 L 240 1120 M 280 0 L 280 1120 M 320 0 L 320 1120 M 360 0 L 360 1120 M 400 0 L 400 1120 M 440 0 L 440 1120 M 480 0 L 480 1120 M 520 0 L 520 1120 M 560 0 L 560 1120 M 600 0 L 600 1120 M 640 0 L 640 1120 M 680 0 L 680 1120 M 720 0 L 720 1120 M 760 0 L 760 1120 M 800 0 L 800 1120 M 840 0 L 840 1120 M 880 0 L 880 1120 M 920 0 L 920 1120 M 960 0 L 960 1120 M 1000 0 L 1000 1120 M 1040 0 L 1040 1120 M 1080 0 L 1080 1120 M 1120 0 L 1120 1120 M 1160 0 L 1160 1120 M 1200 0 L 1200 1120 M 1240 0 L 1240 1120 M 1280 0 L 1280 1120 M 1320 0 L 1320 1120 M 1360 0 L 1360 1120 M 1400 0 L 1400 1120 M 1440 0 L 1440 1120 M 1480 0 L 1480 1120 M 1520 0 L 1520 1120 M 1560 0 L 1560 1120" stroke="#cbd5e1" stroke-width="0.5" fill="none"/>
+  </g>
+
+  <!-- ================= HEADER REGION ================= -->
+  <g transform="translate(40, 30)">
+    <rect x="0" y="0" width="1520" height="75" rx="14" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="0" y="0" width="8" height="75" rx="4" fill="url(#headerGrad)"/>
+    
+    <text x="30" y="34" class="title">VoltWise System Architecture</text>
+    <text x="30" y="58" class="subtitle">IoT Non-Intrusive Load Monitoring (NILM), Real-Time Telemetry Pipeline &amp; Automated Appliance Protection</text>
+
+    <!-- Status Badges -->
+    <g transform="translate(980, 24)">
+      <rect x="0" y="0" width="110" height="26" rx="13" fill="#0284c7"/>
+      <text x="55" y="17" text-anchor="middle" class="badge-text">ESP32 + PZEM</text>
+
+      <rect x="120" y="0" width="120" height="26" rx="13" fill="#7c3aed"/>
+      <text x="180" y="17" text-anchor="middle" class="badge-text">HiveMQ Cloud</text>
+
+      <rect x="250" y="0" width="135" height="26" rx="13" fill="#059669"/>
+      <text x="317" y="17" text-anchor="middle" class="badge-text">Express 5 + Prisma</text>
+
+      <rect x="395" y="0" width="125" height="26" rx="13" fill="#d97706"/>
+      <text x="457" y="17" text-anchor="middle" class="badge-text">Expo React Native</text>
+    </g>
+  </g>
+
+  <!-- ================= TIER 1: PHYSICAL IOT & SENSORS ================= -->
+  <g transform="translate(40, 135)">
+    <!-- Container -->
+    <rect x="0" y="0" width="460" height="945" rx="16" fill="#fffbeb" stroke="#fde68a" stroke-width="2" filter="url(#shadow)"/>
+    <rect x="20" y="18" width="4" height="20" rx="2" fill="#d97706"/>
+    <text x="32" y="34" class="tier-header" fill="#92400e">1. Physical IoT &amp; Sensor Tier</text>
+    <text x="32" y="52" class="box-desc">Hardware telemetry capture &amp; 2-stage automated relay cutoff</text>
+
+    <!-- Sub-Box: AC Mains Input & Power Supply -->
+    <g transform="translate(20, 70)">
+      <rect x="0" y="0" width="420" height="105" rx="10" fill="#ffffff" stroke="#fcd34d" stroke-width="1.5" filter="url(#card-shadow)"/>
+      <text x="16" y="24" class="box-title">AC Mains Inlet &amp; Isolated Supply</text>
+      <text x="16" y="44" class="box-desc">230V AC @ 60Hz single-phase input protected via 2-pole breaker.</text>
+      <text x="16" y="62" class="box-desc">Hi-Link HLK-PM01 step-down transformer converts mains to clean 5V DC (3W)</text>
+      <rect x="16" y="74" width="130" height="20" rx="4" fill="#fee2e2"/>
+      <text x="24" y="88" class="danger-text">⚠ Live Mains Isolated</text>
+      <rect x="155" y="74" width="120" height="20" rx="4" fill="#fef3c7"/>
+      <text x="163" y="88" class="box-detail" fill="#b45309">5V DC Power Bus</text>
+    </g>
+
+    <!-- Sub-Box: PZEM-004T v3.0 Sensor -->
+    <g transform="translate(20, 190)">
+      <rect x="0" y="0" width="420" height="155" rx="10" fill="#ffffff" stroke="#fcd34d" stroke-width="1.5" filter="url(#card-shadow)"/>
+      <text x="16" y="24" class="box-title">PZEM-004T v3.0 Power Monitor</text>
+      <text x="16" y="44" class="box-desc">Measures high-precision electrical parameters at 2-second sampling:</text>
+      <text x="28" y="64" class="mono" fill="#0f172a">• Voltage (80-260V) · Current (0-100A via CT clamp)</text>
+      <text x="28" y="82" class="mono" fill="#0f172a">• Active Power (0-23kW) · Total Energy (kWh)</text>
+      <text x="28" y="100" class="mono" fill="#0f172a">• Grid Frequency (45-65Hz) · Power Factor (0-1.00)</text>
+      <rect x="16" y="118" width="180" height="24" rx="5" fill="#fef3c7"/>
+      <text x="24" y="134" class="box-detail" fill="#92400e">100A Split-Core CT Sensor</text>
+      <rect x="206" y="118" width="198" height="24" rx="5" fill="#e0f2fe"/>
+      <text x="214" y="134" class="box-detail" fill="#0369a1">UART Modbus RTU (Serial2)</text>
+    </g>
+
+    <!-- Sub-Box: Logic Level Converter -->
+    <g transform="translate(20, 360)">
+      <rect x="0" y="0" width="420" height="65" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#card-shadow)"/>
+      <text x="16" y="22" class="box-title">4-CH Bi-directional Logic Level Shifter</text>
+      <text x="16" y="42" class="box-desc">Converts 5V PZEM RX/TX signals to safe 3.3V logic for ESP32 GPIOs</text>
+      <text x="310" y="42" class="mono" fill="#64748b">CH1:RX · CH2:TX</text>
+    </g>
+
+    <!-- Sub-Box: ESP32 Microcontroller -->
+    <g transform="translate(20, 440)">
+      <rect x="0" y="0" width="420" height="210" rx="10" fill="#ffffff" stroke="#f59e0b" stroke-width="2" filter="url(#card-shadow)"/>
+      <rect x="16" y="12" width="70" height="20" rx="4" fill="#d97706"/>
+      <text x="22" y="26" class="badge-text">CORE MCU</text>
+      <text x="96" y="28" class="box-title">ESP32-WROOM-32 (PlatformIO)</text>
+      
+      <text x="16" y="54" class="box-desc">Firmware Engine (<tspan class="mono">iot-voltwise/src/main.cpp</tspan>):</text>
+      <text x="28" y="74" class="box-desc">1. Dedicated UART2 Reader (<tspan class="mono">RX: GPIO16, TX: GPIO17</tspan>)</text>
+      <text x="28" y="92" class="box-desc">2. Diagnostics Mode &amp; PZEM Slave Address Resolver</text>
+      <text x="28" y="110" class="box-desc">3. Safety Cutoff Watchdog (<tspan class="danger-text">&gt;MAX_ALLOWED_WATTS</tspan>)</text>
+      <text x="28" y="128" class="box-desc">4. Automated 30s Shutdown Countdown Timer</text>
+      <text x="28" y="146" class="box-desc">5. TLS MQTT Client with Last Will &amp; Testament (LWT)</text>
+
+      <rect x="16" y="165" width="190" height="30" rx="6" fill="#f0fdf4" stroke="#86efac"/>
+      <text x="26" y="184" class="box-detail" fill="#166534">Wi-Fi WPA2 (802.11 b/g/n)</text>
+      <rect x="216" y="165" width="188" height="30" rx="6" fill="#faf5ff" stroke="#d8b4fe"/>
+      <text x="226" y="184" class="box-detail" fill="#6b21a8">mbedTLS Secure Sockets</text>
+    </g>
+
+    <!-- Sub-Box: Dual-Tier Relays & Sockets -->
+    <g transform="translate(20, 665)">
+      <rect x="0" y="0" width="420" height="255" rx="10" fill="#ffffff" stroke="#fcd34d" stroke-width="1.5" filter="url(#card-shadow)"/>
+      <text x="16" y="24" class="box-title">6-Socket Dual-Tier Relay Subsystem</text>
+      <text x="16" y="42" class="box-desc">Automated overload protection &amp; remote power intervention</text>
+
+      <!-- Tier A -->
+      <rect x="16" y="55" width="388" height="85" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+      <text x="28" y="75" class="box-title" fill="#334155">Tier 1: 4× 10A Low-Load Sockets</text>
+      <text x="28" y="95" class="box-desc">4-Channel Optocoupled Relay Module (<tspan class="mono">GPIO 12, 13, 14, 15</tspan>)</text>
+      <text x="28" y="113" class="box-desc">Designed for laptops, monitors, lamps, consumer electronics</text>
+      <text x="28" y="130" class="box-detail" fill="#0284c7">Individual / master software shutoff</text>
+
+      <!-- Tier B -->
+      <rect x="16" y="150" width="388" height="85" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+      <text x="28" y="170" class="box-title" fill="#b91c1c">Tier 2: 2× 30A High-Load Heavy Sockets</text>
+      <text x="28" y="190" class="box-desc">2× High-Current SLA-05VDC Relay Modules (<tspan class="mono">GPIO 25, 26</tspan>)</text>
+      <text x="28" y="208" class="box-desc">Designed for AC units, water heaters, induction cookers</text>
+      <text x="28" y="225" class="danger-text">Overpower Hard-Latch Cutoff Protection</text>
+    </g>
+  </g>
+
+  <!-- ================= TIER 2: MQTT BROKER & COMMUNICATION ================= -->
+  <g transform="translate(530, 135)">
+    <!-- Container -->
+    <rect x="0" y="0" width="540" height="215" rx="16" fill="#faf5ff" stroke="#e9d5ff" stroke-width="2" filter="url(#shadow)"/>
+    <rect x="20" y="18" width="4" height="20" rx="2" fill="#7c3aed"/>
+    <text x="32" y="34" class="tier-header" fill="#6b21a8">2. Cloud Communication &amp; Broker Tier</text>
+    <text x="32" y="52" class="box-desc">HiveMQ Cloud fully managed cluster — Pub/Sub contract keyed by Device UID</text>
+
+    <!-- HiveMQ Card -->
+    <g transform="translate(20, 65)">
+      <rect x="0" y="0" width="500" height="130" rx="10" fill="#ffffff" stroke="#d8b4fe" stroke-width="1.5" filter="url(#card-shadow)"/>
+      <text x="16" y="24" class="box-title">HiveMQ Cloud Broker (TLS / WSS)</text>
+
+      <g transform="translate(16, 36)">
+        <text x="0" y="16" class="mono" fill="#4c1d95"><tspan font-weight="700">voltwise/&lt;uid&gt;/telemetry</tspan> → PZEM JSON stream (~2s period)</text>
+        <text x="0" y="34" class="mono" fill="#4c1d95"><tspan font-weight="700">voltwise/&lt;uid&gt;/relay/state</tspan> → Retained: { on, reason }</text>
+        <text x="0" y="52" class="mono" fill="#4c1d95"><tspan font-weight="700">voltwise/&lt;uid&gt;/relay/set</tspan> → Command: { on: boolean }</text>
+        <text x="0" y="70" class="mono" fill="#4c1d95"><tspan font-weight="700">voltwise/&lt;uid&gt;/status</tspan> → LWT Retained: "online" / "offline"</text>
+      </g>
+
+      <rect x="16" y="94" width="135" height="24" rx="4" fill="#ede9fe"/>
+      <text x="24" y="110" class="box-detail" fill="#6b21a8">Port 8883 (MQTTS TLS)</text>
+      <rect x="160" y="94" width="150" height="24" rx="4" fill="#ede9fe"/>
+      <text x="168" y="110" class="box-detail" fill="#6b21a8">Port 8884 (WSS Websocket)</text>
+      <rect x="320" y="94" width="165" height="24" rx="4" fill="#fef3c7"/>
+      <text x="328" y="110" class="box-detail" fill="#b45309">voltwise/+/status Discovery</text>
+    </g>
+  </g>
+
+  <!-- ================= TIER 3: BACKEND APPLICATION TIER ================= -->
+  <g transform="translate(530, 375)">
+    <!-- Container -->
+    <rect x="0" y="0" width="540" height="425" rx="16" fill="#f0f9ff" stroke="#bae6fd" stroke-width="2" filter="url(#shadow)"/>
+    <rect x="20" y="18" width="4" height="20" rx="2" fill="#0284c7"/>
+    <text x="32" y="34" class="tier-header" fill="#0369a1">3. Backend Application Tier</text>
+    <text x="32" y="52" class="box-desc">Modular Express 5 · TypeScript (ESM) · Node.js API Service</text>
+
+    <!-- Sub-Box: Ingestion & Load Detector -->
+    <g transform="translate(20, 68)">
+      <rect x="0" y="0" width="500" height="105" rx="8" fill="#ffffff" stroke="#7dd3fc" stroke-width="1.5" filter="url(#card-shadow)"/>
+      <text x="14" y="22" class="box-title">Telemetry Ingestion &amp; Real-Time Load Detection</text>
+      <text x="14" y="42" class="box-desc">• <tspan class="mono" font-weight="700">src/lib/mqtt.ts</tspan>: Client singleton connects via TLS; ingests telemetry</text>
+      <text x="14" y="60" class="box-desc">• Writes whole-home <tspan class="mono">EnergyReading</tspan> rows (<tspan class="mono">deviceId: null</tspan>)</text>
+      <text x="14" y="78" class="box-desc">• <tspan class="mono" font-weight="700">loadDetector.ts</tspan>: Pure EMA baseline step-change detector triggers</text>
+      <text x="24" y="95" class="box-desc">instant appliance switch-on alerts without blocking ingestion stream</text>
+    </g>
+
+    <!-- Sub-Box: Modular REST API (Routes -> Controller -> Service -> DTO) -->
+    <g transform="translate(20, 185)">
+      <rect x="0" y="0" width="500" height="225" rx="8" fill="#ffffff" stroke="#7dd3fc" stroke-width="1.5" filter="url(#card-shadow)"/>
+      <text x="14" y="22" class="box-title">Modular REST Controllers &amp; Business Services</text>
+      
+      <!-- Module Grid -->
+      <g transform="translate(14, 34)">
+        <rect x="0" y="0" width="225" height="50" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="10" y="18" class="box-title" font-size="12">/api/auth &amp; /security</text>
+        <text x="10" y="36" class="box-desc">Bcrypt hash · Revocable JWTs (sid)</text>
+
+        <rect x="245" y="0" width="225" height="50" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="10" y="18" class="box-title" font-size="12">/api/dashboard</text>
+        <text x="10" y="36" class="box-desc">Live metrics, Day/Wk/Mo buckets</text>
+
+        <rect x="0" y="58" width="225" height="50" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="10" y="18" class="box-title" font-size="12">/api/devices</text>
+        <text x="10" y="36" class="box-desc">Virtual registry, room grouping</text>
+
+        <rect x="245" y="58" width="225" height="50" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="10" y="18" class="box-title" font-size="12">/api/alerts</text>
+        <text x="10" y="36" class="box-desc">Overpower, spikes, load events</text>
+
+        <rect x="0" y="116" width="225" height="50" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="10" y="18" class="box-title" font-size="12">/api/analytics</text>
+        <text x="10" y="36" class="box-desc">Bill forecasting, top consumers</text>
+
+        <rect x="245" y="116" width="225" height="50" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="10" y="18" class="box-title" font-size="12">/api/iot &amp; /export</text>
+        <text x="10" y="36" class="box-desc">Master relay POST, CSV/JSON export</text>
+      </g>
+
+      <rect x="14" y="195" width="470" height="22" rx="4" fill="#e0f2fe"/>
+      <text x="249" y="210" text-anchor="middle" class="mono" fill="#0369a1">Prisma 7 Client (@prisma/adapter-pg) Integration</text>
+    </g>
+  </g>
+
+  <!-- ================= TIER 4: DATA PERSISTENCE TIER ================= -->
+  <g transform="translate(530, 825)">
+    <!-- Container -->
+    <rect x="0" y="0" width="540" height="255" rx="16" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="2" filter="url(#shadow)"/>
+    <rect x="20" y="18" width="4" height="20" rx="2" fill="#059669"/>
+    <text x="32" y="34" class="tier-header" fill="#047857">4. Data Persistence Tier</text>
+    <text x="32" y="52" class="box-desc">PostgreSQL (voltwise_db) &amp; Dual-Purpose Energy Schema</text>
+
+    <!-- Database Card -->
+    <g transform="translate(20, 68)">
+      <rect x="0" y="0" width="500" height="165" rx="8" fill="#ffffff" stroke="#86efac" stroke-width="1.5" filter="url(#card-shadow)"/>
+      
+      <text x="16" y="22" class="box-title">PostgreSQL Database Entities (Prisma Migrations)</text>
+
+      <g transform="translate(16, 36)">
+        <rect x="0" y="0" width="145" height="42" rx="4" fill="#f1f5f9"/>
+        <text x="10" y="18" class="mono" font-weight="700">User &amp; Session</text>
+        <text x="10" y="32" class="box-desc">Revocable tokens (sid)</text>
+
+        <rect x="155" y="0" width="155" height="42" rx="4" fill="#f1f5f9"/>
+        <text x="10" y="18" class="mono" font-weight="700">Room &amp; Device</text>
+        <text x="10" y="32" class="box-desc">Appliance profiles &amp; state</text>
+
+        <rect x="320" y="0" width="145" height="42" rx="4" fill="#f1f5f9"/>
+        <text x="10" y="18" class="mono" font-weight="700">Alert</text>
+        <text x="10" y="32" class="box-desc">Type, read, recommendation</text>
+      </g>
+
+      <!-- Dual Reading Highlight -->
+      <rect x="16" y="88" width="468" height="65" rx="6" fill="#ecfdf5" stroke="#a7f3d0"/>
+      <text x="28" y="108" class="box-title" fill="#065f46">EnergyReading Dual-Use Table Pattern</text>
+      <text x="28" y="126" class="box-desc">• <tspan class="mono" font-weight="700">deviceId = null</tspan> : Whole-Home Aggregate (Live Dashboard kW, Today's kWh)</text>
+      <text x="28" y="142" class="box-desc">• <tspan class="mono" font-weight="700">deviceId != null</tspan>: Per-Device Telemetry (NILM Disaggregation, Top Consumers)</text>
+    </g>
+  </g>
+
+  <!-- ================= TIER 5: ML & NILM INFERENCE ================= -->
+  <g transform="translate(1110, 135)">
+    <!-- Container -->
+    <rect x="0" y="0" width="450" height="280" rx="16" fill="#fdf4ff" stroke="#f0abfc" stroke-width="2" filter="url(#shadow)"/>
+    <rect x="20" y="18" width="4" height="20" rx="2" fill="#c026d3"/>
+    <text x="32" y="34" class="tier-header" fill="#a21caf">5. ML &amp; NILM Analytics Service</text>
+    <text x="32" y="52" class="box-desc">FastAPI Microservice · Scikit-learn Machine Learning (ml-voltwise)</text>
+
+    <g transform="translate(20, 68)">
+      <rect x="0" y="0" width="410" height="190" rx="10" fill="#ffffff" stroke="#e879f9" stroke-width="1.5" filter="url(#card-shadow)"/>
+      <text x="16" y="24" class="box-title">Non-Intrusive Load Monitoring (NILM)</text>
+      <text x="16" y="44" class="box-desc">Disaggregates aggregate meter data into individual appliance loads</text>
+
+      <g transform="translate(16, 56)">
+        <rect x="0" y="0" width="378" height="40" rx="6" fill="#faf5ff"/>
+        <text x="10" y="16" class="mono" font-weight="700">kmeans_pipeline.joblib</text>
+        <text x="10" y="30" class="box-desc">Unsupervised power step clustering &amp; state transitions</text>
+
+        <rect x="0" y="48" width="378" height="40" rx="6" fill="#faf5ff"/>
+        <text x="10" y="16" class="mono" font-weight="700">cluster_profiles.csv</text>
+        <text x="10" y="30" class="box-desc">Pre-trained appliance power signatures &amp; peak profiles</text>
+      </g>
+
+      <rect x="16" y="152" width="180" height="24" rx="4" fill="#fae8ff"/>
+      <text x="24" y="168" class="box-detail" fill="#86198f">Predictive Bill Forecast</text>
+      <rect x="206" y="152" width="188" height="24" rx="4" fill="#fae8ff"/>
+      <text x="214" y="168" class="box-detail" fill="#86198f">Vampire Load Detection</text>
+    </g>
+  </g>
+
+  <!-- ================= TIER 6: CLIENT / MOBILE APP TIER ================= -->
+  <g transform="translate(1110, 440)">
+    <!-- Container -->
+    <rect x="0" y="0" width="450" height="640" rx="16" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2" filter="url(#shadow)"/>
+    <rect x="20" y="18" width="4" height="20" rx="2" fill="#0284c7"/>
+    <text x="32" y="34" class="tier-header" fill="#0f172a">6. Presentation Tier (Mobile App)</text>
+    <text x="32" y="52" class="box-desc">Expo SDK 54 · React Native 0.81 · expo-router (app-voltwise)</text>
+
+    <!-- Context Stack Hierarchy -->
+    <g transform="translate(20, 68)">
+      <rect x="0" y="0" width="410" height="155" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#card-shadow)"/>
+      <text x="16" y="22" class="box-title">Load-Bearing React Context Hierarchy</text>
+      <text x="16" y="38" class="box-desc">Strict order defined in <tspan class="mono">app/_layout.tsx</tspan>:</text>
+
+      <g transform="translate(16, 46)">
+        <rect x="0" y="0" width="378" height="22" rx="4" fill="#f1f5f9"/>
+        <text x="10" y="15" class="box-desc"><tspan font-weight="700">1. ThemeProvider</tspan> → Color tokens &amp; layout overlays</text>
+
+        <rect x="0" y="26" width="378" height="22" rx="4" fill="#f1f5f9"/>
+        <text x="10" y="41" class="box-desc"><tspan font-weight="700">2. AuthProvider</tspan> → SecureStore JWT, auto-refresh session</text>
+
+        <rect x="0" y="52" width="378" height="22" rx="4" fill="#f1f5f9"/>
+        <text x="10" y="67" class="box-desc"><tspan font-weight="700">3. AppLockProvider</tspan> → Biometrics / OS device passcode gate</text>
+
+        <rect x="0" y="78" width="378" height="22" rx="4" fill="#e0f2fe"/>
+        <text x="10" y="93" class="box-desc"><tspan font-weight="700" fill="#0369a1">4. UnitsProvider → 5. MqttProvider → 6. NotificationProvider</tspan></text>
+      </g>
+    </g>
+
+    <!-- Tab Screens & Features -->
+    <g transform="translate(20, 235)">
+      <rect x="0" y="0" width="410" height="225" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#card-shadow)"/>
+      <text x="16" y="22" class="box-title">App Screens &amp; User Interface Tabs</text>
+
+      <g transform="translate(16, 32)">
+        <rect x="0" y="0" width="378" height="42" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="12" y="18" class="box-title" font-size="12">Dashboard (Live Overview)</text>
+        <text x="12" y="33" class="box-desc">Real-time kW gauge, Master Relay button, historical trend</text>
+
+        <rect x="0" y="48" width="378" height="42" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="12" y="18" class="box-title" font-size="12">Devices &amp; Rooms</text>
+        <text x="12" y="33" class="box-desc">Virtual device toggles (optimistic UI), watts &amp; status</text>
+
+        <rect x="0" y="96" width="378" height="42" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="12" y="18" class="box-title" font-size="12">Instant Alerts &amp; Interventions</text>
+        <text x="12" y="33" class="box-desc">Over-power cutoffs, step-change prompts, safe reset</text>
+
+        <rect x="0" y="144" width="378" height="42" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="12" y="18" class="box-title" font-size="12">Analytics &amp; Forecasting</text>
+        <text x="12" y="33" class="box-desc">Bill predictor (₱), daily/cycle breakdown, top consumers</text>
+      </g>
+    </g>
+
+    <!-- Offline-First & MqttContext -->
+    <g transform="translate(20, 472)">
+      <rect x="0" y="0" width="410" height="150" rx="8" fill="#ffffff" stroke="#0284c7" stroke-width="1.5" filter="url(#card-shadow)"/>
+      <text x="16" y="22" class="box-title" fill="#0369a1">MqttContext &amp; Dynamic IoT Pairing</text>
+      <text x="16" y="42" class="box-desc">• WSS direct subscribe to <tspan class="mono">voltwise/&lt;uid&gt;/telemetry</tspan></text>
+      <text x="16" y="60" class="box-desc">• Settings → Sensor &amp; IoT allows switching Device UID dynamically</text>
+      <text x="16" y="78" class="box-desc">• Stale detection verdict: telemetry &gt;10s old triggers offline state</text>
+      <text x="16" y="96" class="box-desc">• Offline-first mock constants prevent UI disruption during dropouts</text>
+      <rect x="16" y="110" width="378" height="26" rx="4" fill="#f0f9ff"/>
+      <text x="205" y="127" text-anchor="middle" class="box-detail" fill="#0284c7">Optimistic UI Updates for Instant Toggle Feel</text>
+    </g>
+  </g>
+
+  <!-- ================= CONNECTING DATAFLOW LINES & LABELS ================= -->
+  
+  <!-- Line 1: ESP32 to HiveMQ (MQTT Publish) -->
+  <path d="M 500 480 L 610 480 L 610 355" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#arrow-purple)"/>
+  <rect x="520" y="415" width="170" height="24" rx="4" fill="#faf5ff" stroke="#d8b4fe"/>
+  <text x="528" y="431" class="mono" font-size="10" fill="#6b21a8">MQTTS TLS 8883 (Publish)</text>
+
+  <!-- Line 2: HiveMQ to Backend Ingestion -->
+  <path d="M 760 355 L 760 440" fill="none" stroke="#0284c7" stroke-width="2.5" marker-end="url(#arrow-blue)"/>
+  <rect x="690" y="375" width="140" height="22" rx="4" fill="#e0f2fe" stroke="#bae6fd"/>
+  <text x="700" y="390" class="mono" font-size="10" fill="#0369a1">TLS 8883 (Consume)</text>
+
+  <!-- Line 3: HiveMQ to Mobile App (WSS Direct Subscription) -->
+  <path d="M 1070 230 L 1290 230 L 1290 435" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#arrow-purple)"/>
+  <rect x="1115" y="218" width="160" height="24" rx="4" fill="#faf5ff" stroke="#d8b4fe"/>
+  <text x="1125" y="234" class="mono" font-size="10" fill="#6b21a8">WSS 8884 (Live Gauge)</text>
+
+  <!-- Line 4: Backend Ingestion to PostgreSQL DB -->
+  <path d="M 740 805 L 740 890" fill="none" stroke="#059669" stroke-width="2.5" marker-end="url(#arrow-emerald)"/>
+  <rect x="750" y="835" width="150" height="22" rx="4" fill="#ecfdf5" stroke="#a7f3d0"/>
+  <text x="758" y="850" class="mono" font-size="10" fill="#065f46">Prisma INSERT / UPDATE</text>
+
+  <!-- Line 5: Mobile App to Backend REST API (HTTP LAN/WAN) -->
+  <path d="M 1110 590 L 1075 590" fill="none" stroke="#0284c7" stroke-width="2.5" marker-end="url(#arrow-blue)"/>
+  <rect x="990" y="555" width="115" height="24" rx="4" fill="#f0f9ff" stroke="#bae6fd"/>
+  <text x="998" y="571" class="mono" font-size="10" fill="#0369a1">HTTP / JSON</text>
+  <text x="1005" y="605" class="mono" font-size="9" fill="#64748b">Bearer JWT (sid)</text>
+
+  <!-- Line 6: Backend Relay Control Command back to HiveMQ -->
+  <path d="M 670 440 L 670 355" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrow-blue)"/>
+  <text x="615" y="390" class="mono" font-size="9" fill="#dc2626">relay/set</text>
+
+  <!-- Line 7: ML Service Integration Path -->
+  <path d="M 1075 690 L 1220 690 L 1220 420" fill="none" stroke="#c026d3" stroke-width="1.8" stroke-dasharray="4 4" marker-end="url(#arrow-purple)"/>
+  <rect x="1105" y="660" width="135" height="22" rx="4" fill="#fdf4ff" stroke="#f0abfc"/>
+  <text x="1115" y="675" class="mono" font-size="10" fill="#a21caf">Inference Hook (NILM)</text>
+
+</svg>

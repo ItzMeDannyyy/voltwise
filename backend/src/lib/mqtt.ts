@@ -365,6 +365,23 @@ export const handleMessage = async (
             isAnomaly: prediction.is_anomaly,
             at: now.toISOString(),
           });
+
+          // Emit live NILM Power-Plane (delta P vs delta Q) event when step is detected
+          if (prediction.nilm_event && prediction.nilm_event.is_event) {
+            publishEvent({
+              type: "power_plane_event",
+              event: {
+                delta_p: prediction.nilm_event.delta_p,
+                delta_q: prediction.nilm_event.delta_q,
+              },
+              dominantAppliance: prediction.nilm_event.dominant_appliance,
+              transition: prediction.nilm_event.transition,
+              candidates: prediction.nilm_event.candidates,
+              activeAppliances: prediction.nilm_event.active_appliances,
+              isMatch: prediction.nilm_event.is_match,
+              at: now.toISOString(),
+            });
+          }
         } else if (watts < 3.0) {
           if (lastActiveAppliance !== null) {
             lastActiveAppliance = null;
