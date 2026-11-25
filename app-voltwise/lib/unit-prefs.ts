@@ -67,8 +67,8 @@ export interface UnitPrefs {
   ratePerKwh: number;
 }
 
-/** Matches the backend's fallback in backend/src/lib/tariff.ts. */
-export const DEFAULT_RATE_PER_KWH = 10.5;
+/** Matches the backend's fallback in backend/src/lib/tariff.ts (0 until set by user). */
+export const DEFAULT_RATE_PER_KWH = 0;
 
 export const DEFAULT_UNIT_PREFS: UnitPrefs = {
   powerUnit: "auto",
@@ -78,11 +78,9 @@ export const DEFAULT_UNIT_PREFS: UnitPrefs = {
 };
 
 /**
- * Rate bounds. The floor keeps a stray 0 from silently zeroing every bill; the
- * ceiling catches a misplaced decimal (a residential kWh costs single-to-low
- * double digits in every currency listed above).
+ * Rate bounds. 0 means unset; ceiling catches a misplaced decimal.
  */
-export const MIN_RATE_PER_KWH = 0.01;
+export const MIN_RATE_PER_KWH = 0;
 export const MAX_RATE_PER_KWH = 1000;
 
 // ---- Validation ----
@@ -224,7 +222,16 @@ export function costOf(kwh: number, prefs: UnitPrefs): number {
   return safe * prefs.ratePerKwh;
 }
 
+/** Checks if the user has configured an active electricity tariff. */
+export function isTariffSet(prefs: UnitPrefs): boolean {
+  return typeof prefs.ratePerKwh === "number" && prefs.ratePerKwh > 0;
+}
+
 /** The tariff itself, e.g. "₱10.50 /kWh". Always per kWh regardless of energyUnit — utilities bill in kWh. */
 export function formatRate(prefs: UnitPrefs): string {
-  return `${currencyFor(prefs.currencyCode).symbol}${prefs.ratePerKwh.toFixed(2)} /kWh`;
+  const symbol = currencyFor(prefs.currencyCode).symbol;
+  if (!isTariffSet(prefs)) {
+    return `Not set (${symbol}0.00 /kWh)`;
+  }
+  return `${symbol}${prefs.ratePerKwh.toFixed(2)} /kWh`;
 }

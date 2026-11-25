@@ -41,6 +41,7 @@ import {
   MAX_RATE_PER_KWH,
   MIN_RATE_PER_KWH,
 } from "../../lib/unit-prefs";
+import { AlertCircle } from "../../components/LucideIcons";
 import { useThemedStyles } from "../../components/themed";
 import type { ThemeColors } from "../../constants/theme";
 
@@ -305,7 +306,7 @@ export default function AnalyticsScreen() {
           <TouchableOpacity
             style={styles.billRow}
             onPress={() => {
-              setTariffInput(prefs.ratePerKwh.toFixed(2));
+              setTariffInput(prefs.ratePerKwh > 0 ? prefs.ratePerKwh.toFixed(2) : "");
               setTariffError(null);
               setTariffModalVisible(true);
             }}
@@ -315,13 +316,21 @@ export default function AnalyticsScreen() {
           >
             <Text style={styles.billRowLabel}>Electricity Rate</Text>
             <View style={styles.tariffValueContainer}>
-              <Text style={[styles.billRowValue, styles.dashedValue]}>
-                {currency.symbol} {prefs.ratePerKwh.toFixed(2)} /kWh
+              <Text
+                style={[
+                  styles.billRowValue,
+                  styles.dashedValue,
+                  prefs.ratePerKwh <= 0 && { color: colors.yellow },
+                ]}
+              >
+                {prefs.ratePerKwh > 0
+                  ? `${currency.symbol} ${prefs.ratePerKwh.toFixed(2)} /kWh`
+                  : `Not set (${currency.symbol}0.00 /kWh)`}
               </Text>
               <Ionicons
                 name="create-outline"
                 size={14}
-                color={colors.accent}
+                color={prefs.ratePerKwh <= 0 ? colors.yellow : colors.accent}
                 style={{ marginLeft: 6 }}
               />
             </View>
@@ -352,6 +361,25 @@ export default function AnalyticsScreen() {
               ? `Based on the kWh recorded in this billing cycle.\nCycle: ${bill.cycleStart} – ${bill.cycleEnd}`
               : `Based on accumulated kWh since billing period.\nBilling cycle started: ${bill.cycleStart}`}
           </Text>
+
+          {prefs.ratePerKwh <= 0 && (
+            <TouchableOpacity
+              style={styles.tariffWarningBox}
+              onPress={() => {
+                setTariffInput("");
+                setTariffError(null);
+                setTariffModalVisible(true);
+              }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Tariff not set. Tap here to enter your rate."
+            >
+              <AlertCircle size={16} color={colors.yellow} />
+              <Text style={styles.tariffWarningText}>
+                Tariff is not set. Tap here to enter your rate and estimate bills.
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Timeline. Governs everything below: the device trends, breakdown, the top
@@ -579,7 +607,7 @@ export default function AnalyticsScreen() {
                     setTariffInput(text);
                     if (tariffError) setTariffError(null);
                   }}
-                  placeholder="10.50"
+                  placeholder="e.g. 11.50"
                   placeholderTextColor={colors.sub}
                   selectTextOnFocus
                   autoFocus
@@ -716,6 +744,25 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       fontSize: 11 * fontScale,
       marginTop: 8,
       lineHeight: 16 * fontScale,
+    },
+    tariffWarningBox: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.yellow + "14",
+      borderColor: colors.yellow + "4D",
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      marginTop: 12,
+      gap: 8,
+    },
+    tariffWarningText: {
+      flex: 1,
+      fontSize: 11 * fontScale,
+      color: colors.yellow,
+      fontWeight: "500",
+      lineHeight: 15 * fontScale,
     },
     navigatorWrap: {
       marginTop: 20,

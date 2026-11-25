@@ -60,10 +60,10 @@ export const updateTariff = async (
     const userId = req.user!.id;
     const { ratePerKwh, currency } = req.body;
 
-    if (ratePerKwh === undefined || typeof ratePerKwh !== "number" || ratePerKwh <= 0) {
+    if (ratePerKwh === undefined || typeof ratePerKwh !== "number" || isNaN(ratePerKwh) || ratePerKwh < 0) {
       res.status(400).json({
         success: false,
-        message: "Invalid tariff rate. ratePerKwh is required and must be a positive number.",
+        message: "Invalid tariff rate. ratePerKwh is required and must be a non-negative number.",
       });
       return;
     }

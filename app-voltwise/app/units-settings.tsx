@@ -102,7 +102,7 @@ export default function UnitsSettingsScreen() {
   const [offlineNotice, setOfflineNotice] = useState(false);
 
   const openRateEditor = () => {
-    setRateInput(prefs.ratePerKwh.toFixed(2));
+    setRateInput(prefs.ratePerKwh > 0 ? prefs.ratePerKwh.toFixed(2) : "");
     setRateError(null);
     setRateModalVisible(true);
   };
@@ -244,7 +244,9 @@ export default function UnitsSettingsScreen() {
                 <Text style={styles.rowTitle}>Rate per kWh</Text>
                 <Text style={styles.rowSubtitle}>What your provider charges</Text>
               </View>
-              <Text style={styles.rowValue}>{formatRate()}</Text>
+              <Text style={[styles.rowValue, prefs.ratePerKwh <= 0 && { color: colors.yellow }]}>
+                {formatRate()}
+              </Text>
               <Ionicons name="chevron-forward" size={16} color={colors.sub} />
             </Pressable>
           </View>
@@ -289,7 +291,7 @@ export default function UnitsSettingsScreen() {
                     setRateInput(text);
                     if (rateError) setRateError(null);
                   }}
-                  placeholder="10.50"
+                  placeholder="e.g. 11.50"
                   placeholderTextColor={colors.sub}
                   selectTextOnFocus
                   autoFocus

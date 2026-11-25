@@ -5,7 +5,7 @@
 import { prisma } from "./prisma.ts";
 
 // Documentation only: Retrieves the most recently effective tariff for the given user.
-// If no tariff exists, returns a default rate of 10.5 ₱/kWh.
+// If no tariff exists, returns a default rate of 0 ₱/kWh.
 // Accepts userId (number).
 // Returns a Promise resolving to { ratePerKwh: number, currency: string }.
 export const getLatestTariff = async (
@@ -17,7 +17,7 @@ export const getLatestTariff = async (
   });
 
   return {
-    ratePerKwh: latestTariff?.ratePerKwh ?? 10.5,
+    ratePerKwh: latestTariff?.ratePerKwh ?? 0,
     currency: latestTariff?.currency ?? "₱",
   };
 };

@@ -50,6 +50,7 @@ import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useTheme } from "../../context/ThemeContext";
 import { useUnits } from "../../context/UnitsContext";
 import { usePowerControl } from "../../context/PowerControlContext";
+import { AlertCircle, ChevronRight } from "../../components/LucideIcons";
 import { useThemedStyles } from "../../components/themed";
 import type { ThemeColors } from "../../constants/theme";
 
@@ -118,7 +119,7 @@ export default function DashboardScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
-  const { formatEnergy, formatCostOf, powerParts, energyParts } = useUnits();
+  const { formatEnergy, formatCostOf, powerParts, energyParts, prefs } = useUnits();
   const { demoData } = useDemoData();
   // null until the backend or the sensor supplies a real figure.
   const [currentKw, setCurrentKw]         = useState<number | null>(null);
@@ -499,6 +500,28 @@ export default function DashboardScreen() {
           />
           <StatusPill label={iotPill.label} status={iotPill.status} />
         </View>
+
+        {/* Tariff Not Set Warning Banner */}
+        {prefs.ratePerKwh <= 0 && (
+          <TouchableOpacity
+            style={styles.tariffAlertBanner}
+            onPress={() => router.push("/units-settings")}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Electricity tariff not set. Tap here to configure your rate."
+          >
+            <View style={styles.tariffAlertIconWrap}>
+              <AlertCircle size={20} color={colors.yellow} />
+            </View>
+            <View style={styles.tariffAlertContent}>
+              <Text style={styles.tariffAlertTitle}>Electricity Tariff Not Set</Text>
+              <Text style={styles.tariffAlertSubtitle}>
+                Rate is currently ₱0.00 /kWh. Tap to set your rate and calculate power bills.
+              </Text>
+            </View>
+            <ChevronRight size={18} color={colors.sub} />
+          </TouchableOpacity>
+        )}
 
         {/* Current Usage Card — hero always visible, metric grid collapsible */}
         <View style={styles.usageCard}>
@@ -1057,6 +1080,39 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       alignItems: "center",
       gap: 8,
       marginBottom: 12,
+    },
+    tariffAlertBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.card,
+      borderColor: colors.yellow,
+      borderWidth: 1,
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 16,
+      gap: 12,
+    },
+    tariffAlertIconWrap: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.yellow + "1A",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    tariffAlertContent: {
+      flex: 1,
+    },
+    tariffAlertTitle: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: colors.yellow,
+      marginBottom: 2,
+    },
+    tariffAlertSubtitle: {
+      fontSize: 11,
+      color: colors.sub,
+      lineHeight: 16,
     },
     usageCard: {
       backgroundColor: colors.card,

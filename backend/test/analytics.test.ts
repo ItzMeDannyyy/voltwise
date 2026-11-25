@@ -85,7 +85,7 @@ describe("analytics.service (getAnalyticsData)", () => {
 
     expect(data).toMatchObject({
       billPredictor: {
-        tariff: 10.5,
+        tariff: 0,
         currency: "₱",
         accumulatedKwh: 0,
         estimatedBill: 0,

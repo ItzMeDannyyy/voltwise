@@ -176,11 +176,11 @@ describe("getDashboardData (service)", () => {
     const data = await getDashboardData(1, dayRange());
 
     // Total = 10 kWh → 60%, 30%, 10%. Sorted descending, top 5.
-    // No tariff seeded → falls back to the default ₱10.5/kWh rate.
+    // No tariff seeded → falls back to the default ₱0/kWh rate.
     expect(data.topConsumers).toEqual([
-      { id: "10", name: "Aircon", pct: 60, color: "#00d4aa", kwh: 6, cost: 63 },
-      { id: "20", name: "Fridge", pct: 30, color: "#3b82f6", kwh: 3, cost: 31.5 },
-      { id: "30", name: "Lights", pct: 10, color: "#f59e0b", kwh: 1, cost: 10.5 },
+      { id: "10", name: "Aircon", pct: 60, color: "#00d4aa", kwh: 6, cost: 0 },
+      { id: "20", name: "Fridge", pct: 30, color: "#3b82f6", kwh: 3, cost: 0 },
+      { id: "30", name: "Lights", pct: 10, color: "#f59e0b", kwh: 1, cost: 0 },
     ]);
   });
 

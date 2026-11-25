@@ -122,6 +122,41 @@ export const registerUser = async (
     },
   });
 
+  // Create initial 0.00 tariff for the new user account
+  if (typeof prisma.tariff?.create === "function") {
+    try {
+      await prisma.tariff.create({
+        data: {
+          userId: newUser.id,
+          ratePerKwh: 0,
+          currency: "₱",
+          effectiveFrom: new Date(),
+        },
+      });
+    } catch {
+      // Non-blocking in tests where mock may not have tariff
+    }
+  }
+
+  // Create initial warning alert notifying user that the tariff needs to be set
+  if (typeof prisma.alert?.create === "function") {
+    try {
+      await prisma.alert.create({
+        data: {
+          userId: newUser.id,
+          type: "WARNING" as any,
+          title: "Electricity tariff not set",
+          description:
+            "Your electricity tariff is currently set to ₱0.00/kWh. Please set your localized utility rate in Settings → Units & Tariff to calculate your power bill and appliance consumption costs.",
+          recommendation: "Open Settings → Units & Tariff to configure your rate per kWh.",
+          read: false,
+        },
+      });
+    } catch {
+      // Non-blocking in tests
+    }
+  }
+
   const sessionId = await createSession(newUser.id, client);
   const token = signToken({ id: newUser.id, email: newUser.email, sid: sessionId });
   const userDto = formatUserForResponse(newUser);
