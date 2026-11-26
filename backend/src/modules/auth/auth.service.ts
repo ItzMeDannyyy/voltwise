@@ -138,13 +138,13 @@ export const registerUser = async (
     }
   }
 
-  // Create initial warning alert notifying user that the tariff needs to be set
+  // Create initial informational notice alert notifying user that the tariff needs to be set
   if (typeof prisma.alert?.create === "function") {
     try {
       await prisma.alert.create({
         data: {
           userId: newUser.id,
-          type: "WARNING" as any,
+          type: "INFO" as any,
           title: "Electricity tariff not set",
           description:
             "Your electricity tariff is currently set to ₱0.00/kWh. Please set your localized utility rate in Settings → Units & Tariff to calculate your power bill and appliance consumption costs.",

@@ -26,6 +26,10 @@ import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useThemedStyles } from "../../components/themed";
 import { DEFAULT_DEVICE_UID } from "../../lib/iot-prefs";
+import {
+  getRememberPreference,
+  setRememberPreference,
+} from "../../lib/credential-storage";
 import type { ThemeColors } from "../../constants/theme";
 
 // ---- Password policy ----
@@ -134,6 +138,7 @@ export default function RegisterScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [rememberCredentials, setRememberCredentials] = useState(true);
   const [focusedField, setFocusedField] = useState<FieldKey | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -167,6 +172,14 @@ export default function RegisterScreen() {
         useNativeDriver: true,
       }),
     ]).start();
+
+    let cancelled = false;
+    getRememberPreference().then((remember) => {
+      if (!cancelled) setRememberCredentials(remember);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [enterOpacity, enterTranslate]);
 
   function validate(): boolean {
@@ -228,7 +241,13 @@ export default function RegisterScreen() {
     setError(null);
 
     try {
-      await signUp(firstName.trim(), lastName.trim(), email.trim(), password);
+      await signUp(
+        firstName.trim(),
+        lastName.trim(),
+        email.trim(),
+        password,
+        rememberCredentials
+      );
       // Auth state change routes the user to tabs via the index gate.
     } catch (err: unknown) {
       const msg =
@@ -503,6 +522,34 @@ export default function RegisterScreen() {
                 )}
               </View>
 
+              {/* Save credentials toggle */}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.rememberRow,
+                  pressed && styles.linkPressed,
+                ]}
+                onPress={() => {
+                  const next = !rememberCredentials;
+                  setRememberCredentials(next);
+                  void setRememberPreference(next);
+                }}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: rememberCredentials }}
+                accessibilityLabel="Save credentials on this device"
+              >
+                <View
+                  style={[
+                    styles.checkbox,
+                    rememberCredentials && styles.checkboxChecked,
+                  ]}
+                >
+                  {rememberCredentials && (
+                    <Check size={12 * fontScale} color={colors.bg} strokeWidth={3} />
+                  )}
+                </View>
+                <Text style={styles.rememberLabel}>Save credentials on this device</Text>
+              </Pressable>
+
               {/* Submit: verb + object */}
               <Pressable
                 style={({ pressed }) => [
@@ -734,6 +781,32 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     },
     requirementText: {
       fontSize: 12 * fontScale,
+    },
+    rememberRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginBottom: 12,
+      paddingVertical: 4,
+    },
+    checkbox: {
+      width: 18,
+      height: 18,
+      borderRadius: 5,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      backgroundColor: colors.bg,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    checkboxChecked: {
+      backgroundColor: colors.accent,
+      borderColor: colors.accent,
+    },
+    rememberLabel: {
+      color: colors.sub,
+      fontSize: 13.5 * fontScale,
+      fontWeight: "500",
     },
     // Submit button
     submitBtn: {

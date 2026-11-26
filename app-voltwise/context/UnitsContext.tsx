@@ -67,14 +67,14 @@ interface UnitsContextValue {
   resetDisplayUnits: () => void;
 
   // Formatters bound to the current preferences.
-  formatPower: (watts: number) => string;
+  formatPower: (watts: number, decimals?: number) => string;
   formatEnergy: (kwh: number, decimals?: number) => string;
   formatCost: (amount: number) => string;
   /** Prices an energy figure at the current rate — see costOf in lib/unit-prefs.ts. */
   formatCostOf: (kwh: number) => string;
   costOf: (kwh: number) => number;
   formatRate: () => string;
-  powerParts: (watts: number) => ValueParts;
+  powerParts: (watts: number, decimals?: number) => ValueParts;
   energyParts: (kwh: number, decimals?: number) => ValueParts;
 }
 
@@ -206,13 +206,13 @@ export function UnitsProvider({ children }: { children: React.ReactNode }) {
       setCurrency,
       setRatePerKwh,
       resetDisplayUnits,
-      formatPower: (watts) => formatPowerRule(watts, prefs),
+      formatPower: (watts, decimals) => formatPowerRule(watts, prefs, decimals),
       formatEnergy: (kwh, decimals) => formatEnergyRule(kwh, prefs, decimals),
       formatCost: (amount) => formatCostRule(amount, prefs),
       formatCostOf: (kwh) => formatCostRule(costOfRule(kwh, prefs), prefs),
       costOf: (kwh) => costOfRule(kwh, prefs),
       formatRate: () => formatRateRule(prefs),
-      powerParts: (watts) => powerPartsRule(watts, prefs),
+      powerParts: (watts, decimals) => powerPartsRule(watts, prefs, decimals),
       energyParts: (kwh, decimals) => energyPartsRule(kwh, prefs, decimals),
     }),
     [

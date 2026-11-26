@@ -1,4 +1,4 @@
-import { useRef, useState, ReactNode } from "react";
+import { useState, ReactNode } from "react";
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
   Platform,
   UIManager,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { ChevronDown } from "./LucideIcons";
 import { useTheme } from "../context/ThemeContext";
 import { useThemedStyles } from "./themed";
 import type { ThemeColors } from "../constants/theme";
@@ -35,7 +35,7 @@ export default function Collapsible({
   const styles = useThemedStyles(createStyles);
   const [open, setOpen] = useState(defaultOpen);
   // Animated value drives the chevron rotation: 0 = closed, 1 = open.
-  const chevronAnim = useRef(new Animated.Value(defaultOpen ? 1 : 0)).current;
+  const [chevronAnim] = useState(() => new Animated.Value(defaultOpen ? 1 : 0));
 
   function toggle() {
     const next = !open;
@@ -73,7 +73,7 @@ export default function Collapsible({
           <View style={styles.headerContent}>{title}</View>
         )}
         <Animated.View style={{ transform: [{ rotate: chevronRotate }] }}>
-          <Ionicons name="chevron-down" size={16} color={colors.sub} />
+          <ChevronDown size={16} color={colors.sub} strokeWidth={2} />
         </Animated.View>
       </TouchableOpacity>
 

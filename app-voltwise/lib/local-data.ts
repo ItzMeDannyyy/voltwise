@@ -24,7 +24,14 @@ import * as SecureStore from "expo-secure-store";
  */
 
 export interface LocalDataEntry {
-  id: "appearance" | "units" | "notifications" | "pairing" | "applock" | "billing";
+  id:
+    | "appearance"
+    | "units"
+    | "notifications"
+    | "pairing"
+    | "applock"
+    | "billing"
+    | "credentials";
   label: string;
   hint: string;
   /** Every key this entry owns. Must match the owning lib/*-storage.ts module. */
@@ -67,6 +74,12 @@ export const LOCAL_DATA_ENTRIES: LocalDataEntry[] = [
     label: "Billing cycle",
     hint: "The billing window your usage is tracked against",
     keys: ["voltwise.billing-cycle"],
+  },
+  {
+    id: "credentials",
+    label: "Saved credentials",
+    hint: "Remembered sign-in accounts suggested on the login screen",
+    keys: ["voltwise.saved-credentials", "voltwise.remember-credentials"],
   },
 ];
 

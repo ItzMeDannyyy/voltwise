@@ -2064,7 +2064,7 @@ void updateOledDisplay()
   }
   else
   {
-    tft.printf("%-10s", (String(w, 1) + " W").c_str());
+    tft.printf("%-10s", (String(w, 2) + " W").c_str());
   }
 
   // Voltage Value

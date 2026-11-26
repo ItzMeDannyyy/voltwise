@@ -1,16 +1,23 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Dimensions,
   ScrollView,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { LineChart } from "react-native-chart-kit";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
+import {
+  Activity,
+  Eye,
+  EyeOff,
+  Minus,
+  Plus,
+  Search,
+} from "./LucideIcons";
 import { useTheme } from "../context/ThemeContext";
 import { useUnits } from "../context/UnitsContext";
 import { useThemedStyles } from "./themed";
@@ -64,67 +71,66 @@ export default function DeviceUsageChart({
 
   // Zoom state: 1.0 (unzoomed, fits screen) to 6.0 (max zoom, 10-minute intervals)
   const [zoom, setZoom] = useState<number>(1.0);
-  const baseZoomRef = useRef<number>(1.0);
+  const [pinchStartZoom, setPinchStartZoom] = useState<number>(1.0);
   const scrollViewRef = useRef<ScrollView>(null);
 
-  // Clear tooltip and reset zoom when labels or period change
-  useEffect(() => {
+  // Reset tooltip and zoom during render when period or label series changes
+  const resetKey = `${period}:${labels.join("|")}`;
+  const [prevResetKey, setPrevResetKey] = useState(resetKey);
+  if (prevResetKey !== resetKey) {
+    setPrevResetKey(resetKey);
     setChartPoint(null);
     setZoom(1.0);
-    baseZoomRef.current = 1.0;
-  }, [labels, period]);
+    setPinchStartZoom(1.0);
+  }
 
   const handlePinchStart = useCallback(() => {
-    baseZoomRef.current = zoom;
+    setPinchStartZoom(zoom);
     setChartPoint(null);
   }, [zoom]);
 
-  const handlePinchUpdate = useCallback((scale: number) => {
-    const next = Math.max(
-      1.0,
-      Math.min(6.0, Number((baseZoomRef.current * scale).toFixed(2)))
-    );
-    setZoom(next);
-  }, []);
+  const handlePinchUpdate = useCallback(
+    (scale: number) => {
+      const next = Math.max(
+        1.0,
+        Math.min(6.0, Number((pinchStartZoom * scale).toFixed(2)))
+      );
+      setZoom(next);
+    },
+    [pinchStartZoom]
+  );
 
   const handlePinchEnd = useCallback(() => {
-    baseZoomRef.current = zoom;
+    setPinchStartZoom(zoom);
   }, [zoom]);
 
-  const pinchGesture = useMemo(() => {
-    return Gesture.Pinch()
-      .onStart(() => {
-        runOnJS(handlePinchStart)();
-      })
-      .onUpdate((e) => {
-        runOnJS(handlePinchUpdate)(e.scale);
-      })
-      .onEnd(() => {
-        runOnJS(handlePinchEnd)();
-      });
-  }, [handlePinchStart, handlePinchUpdate, handlePinchEnd]);
+  const pinchGesture = useMemo(
+    () =>
+      Gesture.Pinch()
+        .onStart(() => {
+          runOnJS(handlePinchStart)();
+        })
+        .onUpdate((e) => {
+          runOnJS(handlePinchUpdate)(e.scale);
+        })
+        .onEnd(() => {
+          runOnJS(handlePinchEnd)();
+        }),
+    [handlePinchStart, handlePinchUpdate, handlePinchEnd]
+  );
 
   const handleZoomIn = useCallback(() => {
-    setZoom((prev) => {
-      const next = Math.min(6.0, Number((prev + 1.0).toFixed(1)));
-      baseZoomRef.current = next;
-      return next;
-    });
+    setZoom((prev) => Math.min(6.0, Number((prev + 1.0).toFixed(1))));
     setChartPoint(null);
   }, []);
 
   const handleZoomOut = useCallback(() => {
-    setZoom((prev) => {
-      const next = Math.max(1.0, Number((prev - 1.0).toFixed(1)));
-      baseZoomRef.current = next;
-      return next;
-    });
+    setZoom((prev) => Math.max(1.0, Number((prev - 1.0).toFixed(1))));
     setChartPoint(null);
   }, []);
 
   const handleResetZoom = useCallback(() => {
     setZoom(1.0);
-    baseZoomRef.current = 1.0;
     setChartPoint(null);
     scrollViewRef.current?.scrollTo({ x: 0, animated: true });
   }, []);
@@ -180,83 +186,93 @@ export default function DeviceUsageChart({
     <View style={styles.card}>
       {series.length === 0 ? (
         <View style={styles.chartEmpty}>
-          <Ionicons name="analytics-outline" size={32} color={colors.sub} />
+          <Activity size={28} color={colors.sub} strokeWidth={1.8} />
           <Text style={styles.chartEmptyText}>
-            No per-device usage recorded for {rangeLabelText.toLowerCase()}.
+            No per-device readings recorded for {rangeLabelText.toLowerCase()}.
           </Text>
         </View>
       ) : allHidden ? (
         <View style={styles.chartEmpty}>
-          <Ionicons name="eye-off-outline" size={32} color={colors.sub} />
-          <Text style={styles.chartEmptyTitle}>All Devices Hidden</Text>
+          <EyeOff size={28} color={colors.sub} strokeWidth={1.8} />
+          <Text style={styles.chartEmptyTitle}>All appliance lines hidden</Text>
           <Text style={styles.chartEmptyText}>
-            Tap any device toggle below or tap &quot;Show All&quot; to display its line on the graph.
+            Select an appliance below or reset visibility to plot its kWh curve.
           </Text>
-          <TouchableOpacity
-            style={styles.showAllEmptyBtn}
+          <Pressable
+            style={({ pressed }) => [
+              styles.showAllEmptyBtn,
+              pressed && styles.btnPressed,
+            ]}
             onPress={handleShowAll}
-            activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel="Show all devices on graph"
+            accessibilityLabel="Show all appliances on graph"
           >
-            <Ionicons name="eye-outline" size={16} color={colors.accent} />
-            <Text style={styles.showAllEmptyBtnText}>Show All Devices</Text>
-          </TouchableOpacity>
+            <Eye size={15} color={colors.accent} strokeWidth={2} />
+            <Text style={styles.showAllEmptyBtnText}>Show all appliances</Text>
+          </Pressable>
         </View>
       ) : (
         <View>
           {/* Zoom & Granularity Toolbar */}
           <View style={styles.zoomBar}>
             <View style={styles.zoomBadge}>
-              <Ionicons name="search-outline" size={13} color={colors.accent} />
+              <Search size={12} color={colors.accent} strokeWidth={2.1} />
               <Text style={styles.zoomBadgeText}>
-                {zoom.toFixed(1)}x • {zoomedData.intervalDescription}
+                {zoom.toFixed(1)}x · {zoomedData.intervalDescription}
               </Text>
             </View>
 
             <View style={styles.zoomControlsRow}>
               <Text style={styles.zoomHint}>
-                {zoom > 1.0 ? "Drag to scroll timeline" : "Pinch outward to zoom"}
+                {zoom > 1.0 ? "Drag to pan" : "Pinch to zoom"}
               </Text>
               {zoom > 1.0 && (
-                <TouchableOpacity
+                <Pressable
                   onPress={handleResetZoom}
-                  activeOpacity={0.7}
-                  style={styles.resetBtn}
+                  style={({ pressed }) => [
+                    styles.resetBtn,
+                    pressed && styles.btnPressed,
+                  ]}
                   accessibilityRole="button"
                   accessibilityLabel="Reset zoom to 1x"
                 >
                   <Text style={styles.resetBtnText}>Reset 1x</Text>
-                </TouchableOpacity>
+                </Pressable>
               )}
-              <TouchableOpacity
+              <Pressable
                 onPress={handleZoomOut}
                 disabled={zoom <= 1.0}
-                activeOpacity={0.7}
-                style={[styles.zoomBtn, zoom <= 1.0 && styles.zoomBtnDisabled]}
+                style={({ pressed }) => [
+                  styles.zoomBtn,
+                  zoom <= 1.0 && styles.zoomBtnDisabled,
+                  pressed && zoom > 1.0 && styles.btnPressed,
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Zoom out"
               >
-                <Ionicons
-                  name="remove"
-                  size={14}
+                <Minus
+                  size={13}
                   color={zoom <= 1.0 ? colors.inactive : colors.text}
+                  strokeWidth={2.2}
                 />
-              </TouchableOpacity>
-              <TouchableOpacity
+              </Pressable>
+              <Pressable
                 onPress={handleZoomIn}
                 disabled={zoom >= 6.0}
-                activeOpacity={0.7}
-                style={[styles.zoomBtn, zoom >= 6.0 && styles.zoomBtnDisabled]}
+                style={({ pressed }) => [
+                  styles.zoomBtn,
+                  zoom >= 6.0 && styles.zoomBtnDisabled,
+                  pressed && zoom < 6.0 && styles.btnPressed,
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Zoom in"
               >
-                <Ionicons
-                  name="add"
-                  size={14}
+                <Plus
+                  size={13}
                   color={zoom >= 6.0 ? colors.inactive : colors.text}
+                  strokeWidth={2.2}
                 />
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
 
@@ -307,7 +323,7 @@ export default function DeviceUsageChart({
                       decimalPlaces: 1,
                       color: () => colors.sub,
                       labelColor: () => colors.sub,
-                      style: { borderRadius: 16 },
+                      style: { borderRadius: 12 },
                       propsForDots: { r: dotRadius, strokeWidth: "1.5", stroke: colors.card },
                       propsForBackgroundLines: {
                         stroke: colors.border,
@@ -319,8 +335,7 @@ export default function DeviceUsageChart({
                   />
 
                   {chartPoint && tooltipSeries && (
-                    <TouchableOpacity
-                      activeOpacity={0.9}
+                    <Pressable
                       onPress={() => setChartPoint(null)}
                       style={[
                         styles.tooltip,
@@ -360,7 +375,7 @@ export default function DeviceUsageChart({
                           {formatCostOf(chartPoint.kwh)}
                         </Text>
                       </View>
-                    </TouchableOpacity>
+                    </Pressable>
                   )}
                 </View>
               </ScrollView>
@@ -374,35 +389,39 @@ export default function DeviceUsageChart({
         <View style={styles.legendContainer}>
           <View style={styles.legendHeader}>
             <View style={styles.legendHeaderLeft}>
-              <Text style={styles.legendHeaderTitle}>Device Visibility</Text>
+              <Text style={styles.legendHeaderTitle}>Appliance lines</Text>
               <Text style={styles.legendHeaderCount}>
-                ({visibleSeries.length}/{series.length} visible)
+                {visibleSeries.length} of {series.length} shown
               </Text>
             </View>
             <View style={styles.legendHeaderActions}>
               {!allVisible && (
-                <TouchableOpacity
+                <Pressable
                   onPress={handleShowAll}
-                  activeOpacity={0.7}
-                  style={styles.actionBtn}
+                  style={({ pressed }) => [
+                    styles.actionBtn,
+                    pressed && styles.btnPressed,
+                  ]}
                   hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   accessibilityRole="button"
-                  accessibilityLabel="Show all devices"
+                  accessibilityLabel="Show all appliances"
                 >
-                  <Text style={styles.actionBtnText}>Show All</Text>
-                </TouchableOpacity>
+                  <Text style={styles.actionBtnText}>Show all</Text>
+                </Pressable>
               )}
               {visibleSeries.length > 0 && (
-                <TouchableOpacity
+                <Pressable
                   onPress={handleHideAll}
-                  activeOpacity={0.7}
-                  style={styles.actionBtn}
+                  style={({ pressed }) => [
+                    styles.actionBtn,
+                    pressed && styles.btnPressed,
+                  ]}
                   hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   accessibilityRole="button"
-                  accessibilityLabel="Hide all devices"
+                  accessibilityLabel="Hide all appliances"
                 >
-                  <Text style={styles.actionBtnText}>Hide All</Text>
-                </TouchableOpacity>
+                  <Text style={styles.actionBtnText}>Hide all</Text>
+                </Pressable>
               )}
             </View>
           </View>
@@ -411,27 +430,22 @@ export default function DeviceUsageChart({
             {series.map((item) => {
               const isVisible = !hiddenDeviceIds.has(item.deviceId);
               return (
-                <TouchableOpacity
+                <Pressable
                   key={item.deviceId}
                   onPress={() => toggleDevice(item.deviceId)}
-                  activeOpacity={0.7}
-                  style={[
+                  style={({ pressed }) => [
                     styles.deviceChip,
                     isVisible
                       ? {
-                          borderColor: item.color + "66",
-                          backgroundColor: item.color + "14",
+                          borderColor: item.color + "55",
+                          backgroundColor: item.color + "12",
                         }
                       : styles.deviceChipInactive,
+                    pressed && styles.btnPressed,
                   ]}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: isVisible }}
                   accessibilityLabel={`${item.name}, ${isVisible ? "visible" : "hidden"}`}
-                  accessibilityHint={
-                    isVisible
-                      ? "Tap to hide this device from graph"
-                      : "Tap to show this device on graph"
-                  }
                 >
                   <View
                     style={[
@@ -452,13 +466,12 @@ export default function DeviceUsageChart({
                   >
                     {item.name}
                   </Text>
-                  <Ionicons
-                    name={isVisible ? "eye-outline" : "eye-off-outline"}
-                    size={13}
-                    color={isVisible ? item.color : colors.sub}
-                    style={{ marginLeft: 3 }}
-                  />
-                </TouchableOpacity>
+                  {isVisible ? (
+                    <Eye size={13} color={item.color} strokeWidth={2} />
+                  ) : (
+                    <EyeOff size={13} color={colors.sub} strokeWidth={2} />
+                  )}
+                </Pressable>
               );
             })}
           </View>
@@ -472,7 +485,9 @@ function createStyles(colors: ThemeColors, fontScale: number) {
   return StyleSheet.create({
     card: {
       backgroundColor: colors.card,
-      borderRadius: 16,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
       overflow: "hidden",
     },
     chartWrapper: {
@@ -482,8 +497,8 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      paddingHorizontal: 12,
-      paddingVertical: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
       backgroundColor: colors.card,
@@ -491,16 +506,18 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     zoomBadge: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 5,
-      backgroundColor: colors.accentSoft,
+      gap: 6,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
       paddingHorizontal: 8,
       paddingVertical: 4,
-      borderRadius: 12,
+      borderRadius: 6,
     },
     zoomBadgeText: {
-      color: colors.accent,
-      fontSize: 11 * fontScale,
-      fontWeight: "700",
+      color: colors.text,
+      fontSize: 11.5 * fontScale,
+      fontWeight: "600",
     },
     zoomControlsRow: {
       flexDirection: "row",
@@ -508,14 +525,14 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       gap: 6,
     },
     zoomHint: {
-      fontSize: 10 * fontScale,
+      fontSize: 11 * fontScale,
       color: colors.sub,
       marginRight: 4,
     },
     zoomBtn: {
-      width: 26,
-      height: 26,
-      borderRadius: 13,
+      width: 28,
+      height: 28,
+      borderRadius: 6,
       backgroundColor: colors.surface,
       alignItems: "center",
       justifyContent: "center",
@@ -528,35 +545,35 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     resetBtn: {
       paddingHorizontal: 8,
       paddingVertical: 4,
-      borderRadius: 12,
+      borderRadius: 6,
       backgroundColor: colors.surface,
       borderWidth: 1,
       borderColor: colors.border,
     },
     resetBtnText: {
-      fontSize: 11 * fontScale,
+      fontSize: 11.5 * fontScale,
       color: colors.text,
-      fontWeight: "700",
+      fontWeight: "600",
     },
     chart: {
-      borderRadius: 16,
+      borderRadius: 12,
     },
     chartEmpty: {
-      height: 200,
+      height: 196,
       alignItems: "center",
       justifyContent: "center",
-      gap: 10,
+      gap: 8,
       paddingHorizontal: 24,
     },
     chartEmptyTitle: {
       color: colors.text,
       fontSize: 15 * fontScale,
-      fontWeight: "700",
+      fontWeight: "600",
       marginTop: 2,
     },
     chartEmptyText: {
       color: colors.sub,
-      fontSize: 13 * fontScale,
+      fontSize: 13.5 * fontScale,
       textAlign: "center",
       lineHeight: 19 * fontScale,
     },
@@ -564,30 +581,32 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
-      backgroundColor: colors.accentSoft,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
       paddingHorizontal: 14,
       paddingVertical: 8,
-      borderRadius: 20,
+      borderRadius: 8,
       marginTop: 6,
     },
     showAllEmptyBtnText: {
       color: colors.accent,
       fontSize: 13 * fontScale,
-      fontWeight: "700",
+      fontWeight: "600",
     },
     tooltip: {
       position: "absolute",
       backgroundColor: colors.card,
-      borderRadius: 10,
-      borderWidth: 1.5,
+      borderRadius: 8,
+      borderWidth: 1,
       paddingHorizontal: 10,
       paddingVertical: 8,
       gap: 2,
       shadowColor: "#000",
-      shadowOpacity: 0.25,
-      shadowRadius: 8,
+      shadowOpacity: 0.2,
+      shadowRadius: 6,
       shadowOffset: { width: 0, height: 2 },
-      elevation: 6,
+      elevation: 5,
     },
     tooltipHeader: {
       flexDirection: "row",
@@ -597,19 +616,18 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     tooltipDot: {
       width: 7,
       height: 7,
-      borderRadius: 4,
+      borderRadius: 3.5,
     },
     tooltipName: {
       color: colors.text,
-      fontSize: 12 * fontScale,
-      fontWeight: "700",
+      fontSize: 12.5 * fontScale,
+      fontWeight: "600",
       flexShrink: 1,
     },
     tooltipPeriod: {
       color: colors.sub,
-      fontSize: 10 * fontScale,
-      fontWeight: "600",
-      letterSpacing: 0.4,
+      fontSize: 11 * fontScale,
+      fontWeight: "500",
     },
     tooltipRow: {
       flexDirection: "row",
@@ -621,16 +639,16 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     tooltipValue: {
       color: colors.text,
       fontSize: 14 * fontScale,
-      fontWeight: "700",
+      fontWeight: "600",
     },
     tooltipCost: {
       color: colors.accent,
       fontSize: 12 * fontScale,
-      fontWeight: "700",
+      fontWeight: "600",
     },
     legendContainer: {
-      paddingHorizontal: 12,
-      paddingTop: 8,
+      paddingHorizontal: 14,
+      paddingTop: 10,
       paddingBottom: 14,
       borderTopWidth: 1,
       borderTopColor: colors.border,
@@ -644,19 +662,16 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     legendHeaderLeft: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 6,
+      gap: 8,
     },
     legendHeaderTitle: {
-      color: colors.sub,
-      fontSize: 12 * fontScale,
-      fontWeight: "700",
-      textTransform: "uppercase",
-      letterSpacing: 0.6,
+      color: colors.text,
+      fontSize: 13 * fontScale,
+      fontWeight: "500",
     },
     legendHeaderCount: {
       color: colors.sub,
-      fontSize: 11 * fontScale,
-      fontWeight: "500",
+      fontSize: 12 * fontScale,
     },
     legendHeaderActions: {
       flexDirection: "row",
@@ -665,12 +680,12 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     },
     actionBtn: {
       paddingVertical: 2,
-      paddingHorizontal: 6,
+      paddingHorizontal: 4,
     },
     actionBtnText: {
       color: colors.accent,
-      fontSize: 12 * fontScale,
-      fontWeight: "700",
+      fontSize: 12.5 * fontScale,
+      fontWeight: "600",
     },
     chipsRow: {
       flexDirection: "row",
@@ -681,8 +696,8 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
-      borderRadius: 18,
-      borderWidth: 1.5,
+      borderRadius: 8,
+      borderWidth: 1,
       paddingHorizontal: 10,
       paddingVertical: 6,
     },
@@ -690,21 +705,24 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       backgroundColor: colors.bg,
       borderColor: colors.border,
       borderWidth: 1,
-      opacity: 0.6,
+      opacity: 0.65,
     },
     chipDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
+      width: 7,
+      height: 7,
+      borderRadius: 3.5,
     },
     chipLabel: {
-      fontSize: 12 * fontScale,
+      fontSize: 12.5 * fontScale,
       maxWidth: 130,
     },
     chipLabelInactive: {
       color: colors.sub,
       textDecorationLine: "line-through",
       fontWeight: "400",
+    },
+    btnPressed: {
+      opacity: 0.8,
     },
   });
 }

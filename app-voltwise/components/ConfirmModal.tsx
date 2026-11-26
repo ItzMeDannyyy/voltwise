@@ -1,11 +1,11 @@
+import React from "react";
 import {
   Modal,
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   ActivityIndicator,
-  Pressable,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
@@ -29,8 +29,10 @@ export interface ConfirmModalProps {
    * (e.g. "Master power is off"), where a second choice would be meaningless.
    */
   singleAction?: boolean;
-  /** Optional icon shown above the title. */
+  /** Optional legacy Ionicons glyph name shown in the header badge. */
   icon?: keyof typeof Ionicons.glyphMap;
+  /** Optional custom Lucide SVG element shown in the header badge. */
+  iconNode?: React.ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
   /**
@@ -42,19 +44,19 @@ export interface ConfirmModalProps {
 }
 
 /**
- * Reusable two-action confirmation dialog that follows the active theme. Used
- * for the profile "Save changes?" prompt and the "Sign out" prompt.
+ * Reusable two-action confirmation dialog that follows the active theme.
  */
 export default function ConfirmModal({
   visible,
   title,
   message,
-  confirmText = "Yes",
-  cancelText = "No",
+  confirmText = "Confirm",
+  cancelText = "Cancel",
   destructive = false,
   loading = false,
   singleAction = false,
   icon,
+  iconNode,
   onConfirm,
   onCancel,
   onDismiss,
@@ -74,41 +76,60 @@ export default function ConfirmModal({
       <Pressable style={styles.backdrop} onPress={dismiss}>
         {/* Inner press handler absorbs taps so they don't dismiss the modal. */}
         <Pressable style={styles.card} onPress={() => {}}>
-          {icon && (
-            <View
-              style={[
-                styles.iconWrap,
-                { backgroundColor: destructive ? colors.red + "1f" : colors.accentSoft },
-              ]}
-            >
-              <Ionicons name={icon} size={26} color={destructive ? colors.red : colors.accent} />
+          <View style={styles.topRow}>
+            {(iconNode || icon) && (
+              <View
+                style={[
+                  styles.iconWrap,
+                  {
+                    backgroundColor: destructive ? colors.red + "14" : colors.surface,
+                    borderColor: destructive ? colors.red + "40" : colors.border,
+                  },
+                ]}
+              >
+                {iconNode ? (
+                  iconNode
+                ) : icon ? (
+                  <Ionicons
+                    name={icon}
+                    size={20}
+                    color={destructive ? colors.red : colors.accent}
+                  />
+                ) : null}
+              </View>
+            )}
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.title}>{title}</Text>
+              {message && <Text style={styles.message}>{message}</Text>}
             </View>
-          )}
-
-          <Text style={styles.title}>{title}</Text>
-          {message && <Text style={styles.message}>{message}</Text>}
+          </View>
 
           <View style={styles.actions}>
             {!singleAction && (
-              <TouchableOpacity
-                style={[styles.btn, styles.cancelBtn]}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.btn,
+                  styles.cancelBtn,
+                  pressed && styles.btnPressed,
+                ]}
                 onPress={onCancel}
-                activeOpacity={0.8}
                 disabled={loading}
+                accessibilityRole="button"
               >
                 <Text style={styles.cancelText}>{cancelText}</Text>
-              </TouchableOpacity>
+              </Pressable>
             )}
 
-            <TouchableOpacity
-              style={[
+            <Pressable
+              style={({ pressed }) => [
                 styles.btn,
                 styles.confirmBtn,
                 destructive && styles.confirmBtnDestructive,
+                pressed && !loading && styles.btnPressed,
               ]}
               onPress={onConfirm}
-              activeOpacity={0.8}
               disabled={loading}
+              accessibilityRole="button"
             >
               {loading ? (
                 <ActivityIndicator
@@ -125,7 +146,7 @@ export default function ConfirmModal({
                   {confirmText}
                 </Text>
               )}
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </Pressable>
       </Pressable>
@@ -140,62 +161,72 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       backgroundColor: colors.overlay,
       alignItems: "center",
       justifyContent: "center",
-      paddingHorizontal: 32,
+      paddingHorizontal: 24,
     },
     card: {
       width: "100%",
-      maxWidth: 360,
+      maxWidth: 380,
       backgroundColor: colors.card,
-      borderRadius: 20,
+      borderRadius: 12,
       borderWidth: 1,
       borderColor: colors.border,
-      padding: 24,
-      alignItems: "center",
+      padding: 20,
+    },
+    topRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 14,
     },
     iconWrap: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
+      width: 40,
+      height: 40,
+      borderRadius: 8,
+      borderWidth: 1,
       alignItems: "center",
       justifyContent: "center",
-      marginBottom: 14,
+      marginTop: 2,
+    },
+    headerTextWrap: {
+      flex: 1,
     },
     title: {
       color: colors.text,
-      fontSize: 18 * fontScale,
-      fontWeight: "700",
-      textAlign: "center",
-      marginBottom: 6,
+      fontSize: 17 * fontScale,
+      fontWeight: "600",
+      letterSpacing: -0.2,
+      marginBottom: 4,
     },
     message: {
       color: colors.sub,
       fontSize: 14 * fontScale,
       lineHeight: 20 * fontScale,
-      textAlign: "center",
-      marginBottom: 4,
     },
     actions: {
       flexDirection: "row",
-      gap: 12,
+      gap: 10,
       marginTop: 20,
-      alignSelf: "stretch",
     },
     btn: {
       flex: 1,
-      height: 48,
-      borderRadius: 12,
+      height: 46,
+      borderRadius: 8,
       alignItems: "center",
       justifyContent: "center",
+      paddingHorizontal: 14,
+    },
+    btnPressed: {
+      opacity: 0.85,
+      transform: [{ scale: 0.99 }],
     },
     cancelBtn: {
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: "transparent",
+      backgroundColor: colors.bg,
     },
     cancelText: {
-      color: colors.sub,
-      fontSize: 15 * fontScale,
-      fontWeight: "700",
+      color: colors.text,
+      fontSize: 14.5 * fontScale,
+      fontWeight: "500",
     },
     confirmBtn: {
       backgroundColor: colors.accent,
@@ -205,8 +236,8 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     },
     confirmText: {
       color: colors.bg,
-      fontSize: 15 * fontScale,
-      fontWeight: "700",
+      fontSize: 14.5 * fontScale,
+      fontWeight: "600",
     },
     confirmTextDestructive: {
       color: colors.white,

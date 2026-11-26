@@ -6,24 +6,53 @@ import {
   Dimensions,
   Image,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
+  UIManager,
   View,
   DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
+import {
+  Camera,
+  ChevronDown,
+  ChevronUp,
+  CloudOff,
+  ImageIcon,
+  LayoutGrid,
+  List,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Wifi,
+  X,
+  Zap,
+} from "../../components/LucideIcons";
 import ConfirmModal from "../../components/ConfirmModal";
-import { api, ApiDevice, ApiDeviceReading, resolveAssetUrl, DEVICES_CHANGED_EVENT, emitDevicesChanged } from "../../lib/api";
-import { DEMO_DEVICES, DEMO_HIGH_LINE_IDS, demoDeviceReading, isDemoDevicePowered } from "../../lib/demo-data";
+import {
+  api,
+  ApiDevice,
+  ApiDeviceReading,
+  resolveAssetUrl,
+  DEVICES_CHANGED_EVENT,
+  emitDevicesChanged,
+} from "../../lib/api";
+import {
+  DEMO_DEVICES,
+  DEMO_HIGH_LINE_IDS,
+  demoDeviceReading,
+  isDemoDevicePowered,
+} from "../../lib/demo-data";
 import { PullToRefresh, PullToRefreshList } from "../../components/pull-to-refresh";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useTheme } from "../../context/ThemeContext";
@@ -39,6 +68,7 @@ import type { ThemeColors } from "../../constants/theme";
 
 type DeviceStatus = "ACTIVE" | "IDLE" | "OFF" | "UNPOWERED";
 type ViewMode = "banner" | "photo";
+type FormField = "name" | "room" | "watts" | "category" | null;
 
 interface Device {
   id: string;
@@ -58,43 +88,39 @@ function getStatusColors(colors: ThemeColors): Record<DeviceStatus, string> {
     ACTIVE: colors.accent,
     IDLE: colors.yellow,
     OFF: colors.red,
-    // Not the same fact as OFF: the feed is dead, so the appliance's own
-    // switch position is unobservable. Muted rather than alarming — nothing is
-    // wrong with the device itself.
     UNPOWERED: colors.sub,
   };
 }
 
 const STATUS_LABELS: Record<DeviceStatus, string> = {
-  ACTIVE: "ACTIVE",
-  IDLE: "IDLE",
-  OFF: "OFF",
-  UNPOWERED: "CIRCUIT OFF",
+  ACTIVE: "Active",
+  IDLE: "Standby",
+  OFF: "Off",
+  UNPOWERED: "Circuit off",
 };
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
+const MASTER_OFF_LABEL = "Master relay open";
 
-// Shown on every card and in the blocked-toggle dialog, so the two can never
-// drift apart.
-const MASTER_OFF_LABEL = "Master power is offline";
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function DevicesScreen() {
-  const { colors } = useTheme();
+  const { colors, fontScale } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { formatPower, formatEnergy, formatCostOf } = useUnits();
   const { demoData } = useDemoData();
   const STATUS_COLORS = getStatusColors(colors);
 
   const [devices, setDevices] = useState<Device[]>([]);
-  // Sample-data mode renders this list instead. Kept in its own state, not
-  // merged into `devices`, so a demo can be toggled and switched about without
-  // ever touching the real inventory the server sent.
   const [demoDevices, setDemoDevices] = useState<Device[]>(DEMO_DEVICES);
   const [loadingDevices, setLoadingDevices] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("banner");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [liveReadings, setLiveReadings] = useState<Partial<Record<string, ApiDeviceReading | null>>>({});
@@ -104,55 +130,62 @@ export default function DevicesScreen() {
   const [deviceToDelete, setDeviceToDelete] = useState<Device | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
+
   const [formName, setFormName] = useState("");
   const [formRoom, setFormRoom] = useState("");
   const [formWatts, setFormWatts] = useState("");
   const [formCategory, setFormCategory] = useState("");
   const [formPhotoUri, setFormPhotoUri] = useState<string | null>(null);
+  const [formNameError, setFormNameError] = useState<string | null>(null);
+  const [focusedField, setFocusedField] = useState<FormField>(null);
+
+  const [now, setNow] = useState(() => Date.now());
+  const [enterOpacity] = useState(() => new Animated.Value(0));
+  const [enterTranslate] = useState(() => new Animated.Value(8));
 
   const { relayState, connected, configured, deviceOnline, telemetryAt } = useMqtt();
   const { highOn, lowOn } = usePowerControl();
 
-  // Mirrors the backend rule in devices.controller.ts: power counts as
-  // available only on positive evidence — a live link AND a closed relay.
-  // linkHealth is the shared verdict the sensor screens already use, so this
-  // screen cannot form its own opinion about reachability and drift from them.
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(enterOpacity, {
+        toValue: 1,
+        duration: 380,
+        useNativeDriver: true,
+      }),
+      Animated.timing(enterTranslate, {
+        toValue: 0,
+        duration: 380,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    const tick = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(tick);
+  }, [enterOpacity, enterTranslate]);
+
   const powerAvailable =
     linkHealth({
       configured,
       appConnected: connected,
       deviceOnline,
       telemetryAt,
-      now: Date.now(),
+      now,
     }) === "live" && relayState?.on === true;
 
-  // The sample household is powered by definition — an offline bench relay
-  // would grey out every card and hide exactly what the demo is meant to show.
   const masterPowerOff = demoData ? false : !powerAvailable;
-
-  // The list the screen actually renders.
   const listDevices = demoData ? demoDevices : devices;
+  const nextTempIdRef = useRef(1);
 
-  const accordionHeightsRef = useRef<Partial<Record<string, number>>>({});
-  const accordionAnimsRef = useRef<Partial<Record<string, Animated.Value>>>({});
-
-  function getAnim(id: string): Animated.Value {
-    if (!accordionAnimsRef.current[id]) {
-      accordionAnimsRef.current[id] = new Animated.Value(0);
+  const [prevDemoData, setPrevDemoData] = useState(demoData);
+  if (demoData !== prevDemoData) {
+    setPrevDemoData(demoData);
+    if (demoData) {
+      setDemoDevices(DEMO_DEVICES);
     }
-    return accordionAnimsRef.current[id]!;
   }
 
-  // Every re-entry into sample mode starts from the authored household, so a
-  // demo never inherits toggles left over from the previous run.
-  useEffect(() => {
-    if (!demoData) return;
-    setDemoDevices(DEMO_DEVICES);
-  }, [demoData]);
-
   // ── Deep link: ?openAdd=1 auto-opens the add-device form ─────────────────
-  // Used by the "New load detected" prompt to jump straight into registering
-  // the appliance that just switched on.
 
   const { openAdd, initialName, initialWatts } = useLocalSearchParams<{
     openAdd?: string;
@@ -160,42 +193,54 @@ export default function DevicesScreen() {
     initialWatts?: string;
   }>();
   const router = useRouter();
-
-  useEffect(() => {
-    if (!openAdd) return;
+  const [handledOpenAdd, setHandledOpenAdd] = useState<string | undefined>(undefined);
+  if (openAdd && openAdd !== handledOpenAdd) {
+    setHandledOpenAdd(openAdd);
     setEditingDevice(null);
+    setFormNameError(null);
     if (initialName) setFormName(initialName);
     if (initialWatts) setFormWatts(initialWatts);
     setModalVisible(true);
-    // Clear the param so navigating back to this tab doesn't re-open the form.
+  }
+  if (!openAdd && handledOpenAdd !== undefined) {
+    setHandledOpenAdd(undefined);
+  }
+
+  useEffect(() => {
+    if (!openAdd) return;
     router.setParams({
       openAdd: undefined,
       initialName: undefined,
       initialWatts: undefined,
     });
-  }, [openAdd, initialName, initialWatts, router]);
+  }, [openAdd, router]);
 
   // ── Load devices ──────────────────────────────────────────────────────────
 
-  // Fetch the device list. Pull-to-refresh goes through the reconcile endpoint
-  // instead of a plain GET so the server re-derives each device's status from
-  // the master relay position before answering; the initial load stays a pure
-  // read.
   const fetchDevices = useCallback(async (reconcile = false) => {
     const data = reconcile
       ? await api.post<ApiDevice[]>("/devices/reconcile-power")
       : await api.get<ApiDevice[]>("/devices");
-    // An empty list is real data (fresh account) — render the empty state,
-    // don't fall back to anything.
-    const list = data ?? [];
-    setDevices(list);
+    setDevices(data ?? []);
   }, []);
 
   useEffect(() => {
-    fetchDevices()
-      .catch(() => setLoadError(true))
-      .finally(() => setLoadingDevices(false));
-  }, [fetchDevices]);
+    let cancelled = false;
+    api
+      .get<ApiDevice[]>("/devices")
+      .then((data) => {
+        if (!cancelled) setDevices(data ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDevices(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(DEVICES_CHANGED_EVENT, () => {
@@ -204,21 +249,18 @@ export default function DevicesScreen() {
     return () => sub.remove();
   }, [fetchDevices]);
 
-  // Stable identity so usePullToRefresh doesn't rebuild onRefresh every render.
   const refreshDevices = useCallback(() => fetchDevices(true), [fetchDevices]);
   const { refreshing, onRefresh } = usePullToRefresh(refreshDevices);
 
-  // ── Filtered list ─────────────────────────────────────────────────────────
+  // ── Filtered list & derived summary ───────────────────────────────────────
 
   const filtered = listDevices.filter(
     (d) =>
       d.name.toLowerCase().includes(search.toLowerCase()) ||
-      d.room.toLowerCase().includes(search.toLowerCase())
+      d.room.toLowerCase().includes(search.toLowerCase()) ||
+      (d.category ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
-  // While master power or a specific line is off, nothing downstream can be
-  // drawing current. This is *display only* — the flag itself is deliberately
-  // left untouched so every device returns to state once power returns.
   function effectiveStatus(device: Device): DeviceStatus {
     if (demoData) {
       if (!isDemoDevicePowered(device.id, { highOn, lowOn })) {
@@ -239,10 +281,12 @@ export default function DevicesScreen() {
     return masterPowerOff ? 0 : device.watts;
   }
 
+  const activeCount = listDevices.filter((d) => effectiveStatus(d) === "ACTIVE").length;
+  const totalDrawWatts = listDevices.reduce((sum, d) => sum + effectiveWatts(d), 0);
+
   // ── Live reading fetch ────────────────────────────────────────────────────
 
   async function fetchLiveReading(deviceId: string) {
-    // Sample readings are computed, not fetched — see readingFor() below.
     if (demoData) return;
     if (loadingReadings[deviceId] || liveReadings[deviceId] !== undefined) return;
     setLoadingReadings((prev) => ({ ...prev, [deviceId]: true }));
@@ -260,48 +304,18 @@ export default function DevicesScreen() {
 
   function handleAccordionToggle(deviceId: string) {
     const isExpanding = expandedId !== deviceId;
-
-    // Collapse any currently open card (different from tapped)
-    if (expandedId && expandedId !== deviceId) {
-      Animated.spring(getAnim(expandedId), {
-        toValue: 0,
-        useNativeDriver: false,
-        tension: 200,
-        friction: 25,
-      }).start();
-    }
-
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     if (isExpanding) {
       setExpandedId(deviceId);
       fetchLiveReading(deviceId);
-      const targetHeight = accordionHeightsRef.current[deviceId] ?? 130;
-      Animated.spring(getAnim(deviceId), {
-        toValue: targetHeight,
-        useNativeDriver: false,
-        tension: 200,
-        friction: 25,
-      }).start();
     } else {
       setExpandedId(null);
-      Animated.spring(getAnim(deviceId), {
-        toValue: 0,
-        useNativeDriver: false,
-        tension: 200,
-        friction: 25,
-      }).start();
     }
   }
 
-  // ── View mode switch ──────────────────────────────────────────────────────
-
   function switchViewMode(mode: ViewMode) {
     if (expandedId) {
-      Animated.spring(getAnim(expandedId), {
-        toValue: 0,
-        useNativeDriver: false,
-        tension: 200,
-        friction: 25,
-      }).start();
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setExpandedId(null);
     }
     setViewMode(mode);
@@ -315,12 +329,13 @@ export default function DevicesScreen() {
     setFormWatts("");
     setFormCategory("");
     setFormPhotoUri(null);
+    setFormNameError(null);
+    setFocusedField(null);
     setEditingDevice(null);
   }
 
   function openAddModal() {
     resetForm();
-    setEditingDevice(null);
     setModalVisible(true);
   }
 
@@ -331,6 +346,7 @@ export default function DevicesScreen() {
     setFormWatts(device.watts ? String(device.watts) : "");
     setFormCategory(device.category ?? "");
     setFormPhotoUri(device.imageUri ? resolveAssetUrl(device.imageUri) : null);
+    setFormNameError(null);
     setModalVisible(true);
   }
 
@@ -338,7 +354,7 @@ export default function DevicesScreen() {
     if (!editingDevice) return;
     const name = formName.trim();
     if (!name) {
-      Alert.alert("Name required", "Please enter a device name.");
+      setFormNameError("Write the appliance name (for example, Bedroom Aircon).");
       return;
     }
     const room = formRoom.trim() || "Unassigned";
@@ -389,7 +405,7 @@ export default function DevicesScreen() {
       setModalVisible(false);
       resetForm();
     } catch (err: any) {
-      Alert.alert("Error updating device", err?.message ?? "Failed to update device.");
+      Alert.alert("Could not save appliance", err?.message ?? "Try saving again.");
     } finally {
       setSaving(false);
     }
@@ -418,7 +434,7 @@ export default function DevicesScreen() {
       setModalVisible(false);
       setEditingDevice(null);
     } catch (err: any) {
-      Alert.alert("Error deleting device", err?.message ?? "Failed to delete device.");
+      Alert.alert("Could not remove appliance", err?.message ?? "Try again.");
     } finally {
       setDeleting(false);
     }
@@ -427,12 +443,13 @@ export default function DevicesScreen() {
   function handleAddDevice() {
     const name = formName.trim();
     if (!name) {
-      Alert.alert("Name required", "Please enter a device name.");
+      setFormNameError("Write the appliance name (for example, Bedroom Aircon).");
       return;
     }
     const watts = Math.max(0, parseInt(formWatts, 10) || 0);
     const status: DeviceStatus = watts > 0 ? "ACTIVE" : "IDLE";
-    const id = `${Date.now()}`;
+    nextTempIdRef.current += 1;
+    const id = `local-${nextTempIdRef.current}`;
     const room = formRoom.trim() || "Unassigned";
     const category = formCategory.trim() || null;
 
@@ -451,8 +468,6 @@ export default function DevicesScreen() {
     resetForm();
     setModalVisible(false);
 
-    // A device added during a demo joins the sample household and goes no
-    // further — nothing is posted, so the real inventory is unchanged.
     if (demoData) {
       setDemoDevices((prev) => [newDevice, ...prev]);
       return;
@@ -464,19 +479,16 @@ export default function DevicesScreen() {
       .post<ApiDevice>("/devices", { name, room, watts, enabled: true, category })
       .then(async (created) => {
         if (!created) return;
-
-        // The photo is a local file — send it as multipart so the backend can
-        // store it in its uploads bucket and hand back a served URL.
         let finalDevice = created;
         if (photoUri) {
           try {
             finalDevice = await uploadDevicePhoto(created.id, photoUri);
           } catch {
-            // Device exists either way; keep showing the local photo for now.
             finalDevice = { ...created, imageUri: photoUri };
           }
         }
         setDevices((prev) => prev.map((d) => (d.id === id ? finalDevice : d)));
+        emitDevicesChanged();
       })
       .catch(() => {});
   }
@@ -490,17 +502,14 @@ export default function DevicesScreen() {
       extension === "png" ? "image/png" : extension === "webp" ? "image/webp" : "image/jpeg";
 
     const form = new FormData();
-    // React Native's FormData takes a { uri, name, type } file descriptor.
     form.append("photo", { uri, name: filename, type: mimeType } as unknown as Blob);
     return api.upload<ApiDevice>(`/devices/${deviceId}/photo`, form);
   }
 
-  // ── Camera / gallery ──────────────────────────────────────────────────────
-
   async function handleTakePhoto() {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permission required", "Camera access is needed to take a photo.");
+      Alert.alert("Camera blocked", "Allow camera access in Settings to photograph an appliance.");
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -517,7 +526,7 @@ export default function DevicesScreen() {
   async function handlePickFromGallery() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permission required", "Photo library access is needed to pick an image.");
+      Alert.alert("Photo library blocked", "Allow photo access in Settings to choose an image.");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -537,11 +546,23 @@ export default function DevicesScreen() {
     const isExpanded = expandedId === device.id;
     const status = effectiveStatus(device);
     const watts = effectiveWatts(device);
-    const isUnpowered = masterPowerOff || (demoData && !isDemoDevicePowered(device.id, { highOn, lowOn }));
+    const statusColor = STATUS_COLORS[status];
+    const isUnpowered =
+      masterPowerOff || (demoData && !isDemoDevicePowered(device.id, { highOn, lowOn }));
     const reading = demoData
       ? demoDeviceReading(device.id, undefined, { highOn, lowOn })
       : liveReadings[device.id];
     const isLoading = demoData ? false : loadingReadings[device.id] ?? false;
+
+    const metaParts = [
+      device.room,
+      device.category || null,
+      demoData
+        ? DEMO_HIGH_LINE_IDS.has(device.id)
+          ? "High load line"
+          : "Low load line"
+        : null,
+    ].filter(Boolean);
 
     const elecMetrics =
       reading && typeof reading === "object"
@@ -549,78 +570,89 @@ export default function DevicesScreen() {
             { label: "Voltage", value: `${reading.voltage?.toFixed(1) ?? "—"} V` },
             { label: "Current", value: `${reading.current?.toFixed(2) ?? "—"} A` },
             { label: "Frequency", value: `${reading.frequency?.toFixed(1) ?? "—"} Hz` },
-            { label: "Power Factor", value: reading.powerFactor?.toFixed(2) ?? "—" },
-            { label: "Energy Today", value: formatEnergy(reading.todayKwh, 3) },
-            { label: "Power Live", value: formatPower(reading.watts) },
-            // Priced locally from kWh so the figure tracks the tariff the user
-            // set, not whichever rate the server had when it answered.
-            { label: "Cost Today", value: formatCostOf(reading.todayKwh) },
+            { label: "Power factor", value: reading.powerFactor?.toFixed(2) ?? "—" },
+            { label: "Energy today", value: formatEnergy(reading.todayKwh, 3) },
+            { label: "Cost today", value: formatCostOf(reading.todayKwh) },
           ]
         : [];
 
     return (
-      <TouchableOpacity
+      <Pressable
         key={device.id}
-        activeOpacity={0.85}
         onPress={() => handleAccordionToggle(device.id)}
         onLongPress={() => openEditModal(device)}
-        style={styles.bannerCard}
+        style={({ pressed }) => [
+          styles.bannerCard,
+          isExpanded && styles.bannerCardExpanded,
+          pressed && styles.cardPressed,
+        ]}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: isExpanded }}
+        accessibilityLabel={`${device.name}, ${STATUS_LABELS[status]}, ${formatPower(watts)}`}
       >
-        {/* Left status bar */}
-        <View style={[styles.statusBar, { backgroundColor: STATUS_COLORS[status] }]} />
+        <View style={[styles.statusBar, { backgroundColor: statusColor }]} />
 
         <View style={styles.bannerCardContent}>
-          {/* Top row: info + controls */}
           <View style={styles.bannerCardMain}>
             <View style={styles.bannerCardInfo}>
-              <Text style={styles.deviceName} numberOfLines={1}>
-                {device.name}
-              </Text>
-              <Text style={styles.deviceRoom}>{device.room}</Text>
-              <View style={[styles.statusPill, { backgroundColor: STATUS_COLORS[status] + "22" }]}>
-                <Text style={[styles.statusPillText, { color: STATUS_COLORS[status] }]}>
-                  {STATUS_LABELS[status]}
+              <View style={styles.deviceTitleRow}>
+                <Text style={styles.deviceName} numberOfLines={1}>
+                  {device.name}
                 </Text>
               </View>
+
+              <Text style={styles.deviceRoom} numberOfLines={1}>
+                {metaParts.join(" · ")}
+              </Text>
+
+              <View style={styles.statusRow}>
+                <View
+                  style={[
+                    styles.statusPill,
+                    {
+                      backgroundColor: statusColor + "14",
+                      borderColor: statusColor + "40",
+                    },
+                  ]}
+                >
+                  <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+                  <Text style={[styles.statusPillText, { color: statusColor }]}>
+                    {STATUS_LABELS[status]}
+                  </Text>
+                </View>
+
+                {isUnpowered && (
+                  <Text style={styles.masterOffInline} numberOfLines={1}>
+                    {masterPowerOff
+                      ? MASTER_OFF_LABEL
+                      : DEMO_HIGH_LINE_IDS.has(device.id)
+                        ? "High line open"
+                        : "Low line open"}
+                  </Text>
+                )}
+              </View>
             </View>
+
             <View style={styles.bannerCardRight}>
               <Text style={styles.watts}>{formatPower(watts)}</Text>
-              {isUnpowered && (
-                <Text style={styles.masterOffText} numberOfLines={2}>
-                  {masterPowerOff
-                    ? MASTER_OFF_LABEL
-                    : DEMO_HIGH_LINE_IDS.has(device.id)
-                      ? "High Line offline"
-                      : "Low Line offline"}
-                </Text>
-              )}
-              <Ionicons
-                name={isExpanded ? "chevron-up" : "chevron-down"}
-                size={18}
-                color={colors.sub}
-                style={{ marginTop: 2 }}
-              />
+              <View style={styles.chevronBadge}>
+                {isExpanded ? (
+                  <ChevronUp size={15 * fontScale} color={colors.sub} strokeWidth={2} />
+                ) : (
+                  <ChevronDown size={15 * fontScale} color={colors.sub} strokeWidth={2} />
+                )}
+              </View>
             </View>
           </View>
 
           {/* Accordion panel */}
-          <Animated.View style={[styles.accordionWrapper, { maxHeight: getAnim(device.id) }]}>
-            <View
-              style={styles.accordionContent}
-              onLayout={(e) => {
-                const h = e.nativeEvent.layout.height;
-                if (accordionHeightsRef.current[device.id] === h) return;
-                accordionHeightsRef.current[device.id] = h;
-                if (isExpanded) {
-                  getAnim(device.id).setValue(h);
-                }
-              }}
-            >
+          {isExpanded && (
+            <View style={styles.accordionContent}>
               <View style={styles.accordionDivider} />
               {isLoading ? (
                 <View style={styles.accordionLoadingRow}>
                   <ActivityIndicator size="small" color={colors.accent} />
-                  <Text style={styles.accordionLoadingText}>Loading live data…</Text>
+                  <Text style={styles.accordionLoadingText}>Reading latest meter snapshot…</Text>
                 </View>
               ) : reading && typeof reading === "object" ? (
                 <View style={styles.metricsGrid}>
@@ -632,31 +664,42 @@ export default function DevicesScreen() {
                   ))}
                 </View>
               ) : (
-                <Text style={styles.noDataText}>No live data available</Text>
+                <Text style={styles.noDataText}>
+                  No per-appliance telemetry recorded yet. Whole-home readings remain active on the Dashboard.
+                </Text>
               )}
-              <View style={styles.deviceActionsRow}>
-                <TouchableOpacity
-                  style={styles.editDeviceBtn}
-                  onPress={() => openEditModal(device)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="pencil-outline" size={15} color={colors.accent} />
-                  <Text style={styles.editDeviceBtnText}>Edit / Rename</Text>
-                </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.deleteDeviceBtn}
-                  onPress={() => setDeviceToDelete(device)}
-                  activeOpacity={0.8}
+              <View style={styles.deviceActionsRow}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.editDeviceBtn,
+                    pressed && styles.btnPressed,
+                  ]}
+                  onPress={() => openEditModal(device)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit ${device.name}`}
                 >
-                  <Ionicons name="trash-outline" size={15} color={colors.red} />
-                  <Text style={styles.deleteDeviceBtnText}>Delete</Text>
-                </TouchableOpacity>
+                  <Pencil size={14 * fontScale} color={colors.text} strokeWidth={2} />
+                  <Text style={styles.editDeviceBtnText}>Edit details</Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.deleteDeviceBtn,
+                    pressed && styles.btnPressed,
+                  ]}
+                  onPress={() => setDeviceToDelete(device)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${device.name}`}
+                >
+                  <Trash2 size={14 * fontScale} color={colors.red} strokeWidth={2} />
+                  <Text style={styles.deleteDeviceBtnText}>Remove</Text>
+                </Pressable>
               </View>
             </View>
-          </Animated.View>
+          )}
         </View>
-      </TouchableOpacity>
+      </Pressable>
     );
   }
 
@@ -664,64 +707,86 @@ export default function DevicesScreen() {
 
   function renderPhotoCard({ item: device }: { item: Device }) {
     const status = effectiveStatus(device);
+    const statusColor = STATUS_COLORS[status];
+
     return (
-      <TouchableOpacity
-        style={styles.photoCard}
-        activeOpacity={0.85}
+      <Pressable
+        style={({ pressed }) => [styles.photoCard, pressed && styles.cardPressed]}
         onPress={() => openEditModal(device)}
+        accessibilityRole="button"
+        accessibilityLabel={`Edit ${device.name}`}
       >
-        <TouchableOpacity
+        <Pressable
           style={styles.photoCardEditBtn}
           onPress={() => openEditModal(device)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel={`Edit ${device.name}`}
         >
-          <Ionicons name="pencil" size={13} color={colors.white} />
-        </TouchableOpacity>
+          <Pencil size={12 * fontScale} color={colors.white} strokeWidth={2.2} />
+        </Pressable>
+
         {device.imageUri ? (
-          <Image source={{ uri: resolveAssetUrl(device.imageUri)! }} style={styles.photoCardImage} />
+          <Image
+            source={{ uri: resolveAssetUrl(device.imageUri)! }}
+            style={styles.photoCardImage}
+            accessibilityLabel={device.name}
+          />
         ) : (
           <View style={styles.photoCardPlaceholder}>
-            <Ionicons name="flash-outline" size={36} color={colors.sub} />
+            <Zap size={28 * fontScale} color={colors.sub} strokeWidth={1.7} />
           </View>
         )}
+
         <View style={styles.photoCardBody}>
-          <Text style={styles.deviceName} numberOfLines={1}>
+          <Text style={styles.photoDeviceName} numberOfLines={1}>
             {device.name}
           </Text>
-          <Text style={styles.deviceRoom}>{device.room}</Text>
+          <Text style={styles.deviceRoom} numberOfLines={1}>
+            {device.room}
+          </Text>
           <View style={styles.photoCardMeta}>
-            <View style={[styles.statusPill, { backgroundColor: STATUS_COLORS[status] + "22" }]}>
-              <Text style={[styles.statusPillText, { color: STATUS_COLORS[status] }]}>
+            <View
+              style={[
+                styles.statusPill,
+                {
+                  backgroundColor: statusColor + "14",
+                  borderColor: statusColor + "40",
+                },
+              ]}
+            >
+              <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+              <Text style={[styles.statusPillText, { color: statusColor }]}>
                 {STATUS_LABELS[status]}
               </Text>
             </View>
-            <Text style={styles.watts}>{formatPower(effectiveWatts(device))}</Text>
+            <Text style={styles.photoWatts}>{formatPower(effectiveWatts(device))}</Text>
           </View>
         </View>
-      </TouchableOpacity>
+      </Pressable>
     );
   }
 
   // ── Render: loading / empty states ────────────────────────────────────────
 
   function renderListState() {
-    // The sample list is always present and always complete, so neither the
-    // loading spinner nor the offline notice applies to it.
     if (loadingDevices && !demoData) {
       return (
         <View style={styles.emptyState}>
           <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={styles.emptyStateText}>Loading devices…</Text>
+          <Text style={styles.emptyStateText}>Loading registered appliances…</Text>
         </View>
       );
     }
     if (loadError && !demoData) {
       return (
         <View style={styles.emptyState}>
-          <Ionicons name="cloud-offline-outline" size={40} color={colors.sub} />
-          <Text style={styles.emptyStateTitle}>{"Couldn't reach the server"}</Text>
+          <View style={styles.emptyIconTile}>
+            <CloudOff size={24 * fontScale} color={colors.sub} strokeWidth={1.8} />
+          </View>
+          <Text style={styles.emptyStateTitle}>Server unreachable</Text>
           <Text style={styles.emptyStateText}>
-            Check your connection, then come back to this tab to retry.
+            Check that your backend is online, then pull down to reload your appliance list.
           </Text>
         </View>
       );
@@ -729,17 +794,33 @@ export default function DevicesScreen() {
     if (listDevices.length === 0) {
       return (
         <View style={styles.emptyState}>
-          <Ionicons name="flash-outline" size={40} color={colors.sub} />
-          <Text style={styles.emptyStateTitle}>No devices yet</Text>
-          <Text style={styles.emptyStateText}>Tap + Add to register your first device.</Text>
+          <View style={styles.emptyIconTile}>
+            <Zap size={24 * fontScale} color={colors.accent} strokeWidth={1.8} />
+          </View>
+          <Text style={styles.emptyStateTitle}>No appliances registered</Text>
+          <Text style={styles.emptyStateText}>
+            Add the appliances on your household circuits to track rated wattage and room breakdowns.
+          </Text>
+          <Pressable
+            style={({ pressed }) => [styles.emptyCtaBtn, pressed && styles.btnPressed]}
+            onPress={openAddModal}
+            accessibilityRole="button"
+          >
+            <Plus size={16 * fontScale} color={colors.bg} strokeWidth={2.3} />
+            <Text style={styles.emptyCtaText}>Register first appliance</Text>
+          </Pressable>
         </View>
       );
     }
-    // Devices exist but the search matched nothing.
     return (
       <View style={styles.emptyState}>
-        <Ionicons name="search-outline" size={40} color={colors.sub} />
-        <Text style={styles.emptyStateText}>{`No devices match "${search}".`}</Text>
+        <View style={styles.emptyIconTile}>
+          <Search size={22 * fontScale} color={colors.sub} strokeWidth={1.8} />
+        </View>
+        <Text style={styles.emptyStateTitle}>No matching appliances</Text>
+        <Text style={styles.emptyStateText}>
+          {`Nothing in your inventory matched "${search}".`}
+        </Text>
       </View>
     );
   }
@@ -748,51 +829,116 @@ export default function DevicesScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
-      <View style={styles.inner}>
-        {/* Header */}
+      <Animated.View
+        style={[
+          styles.inner,
+          {
+            opacity: enterOpacity,
+            transform: [{ translateY: enterTranslate }],
+          },
+        ]}
+      >
+        {/* Header block */}
         <View style={styles.header}>
-          <Text style={styles.title}>Devices</Text>
+          <View style={styles.headerTextCol}>
+            <Text style={styles.eyebrow}>
+              {demoData ? "Sample household inventory" : "Household load inventory"}
+            </Text>
+            <Text style={styles.title}>Appliances</Text>
+            <Text style={styles.subtitle}>
+              {listDevices.length === 0
+                ? "0 registered loads"
+                : `${activeCount} active of ${listDevices.length} · ${formatPower(totalDrawWatts)} live`}
+            </Text>
+          </View>
+
           <View style={styles.headerActions}>
-            <TouchableOpacity
-              onPress={() => switchViewMode("banner")}
-              style={[styles.viewToggleBtn, viewMode === "banner" && styles.viewToggleActive]}
-            >
-              <Ionicons name="list-outline" size={20} color={viewMode === "banner" ? colors.accent : colors.sub} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => switchViewMode("photo")}
-              style={[styles.viewToggleBtn, viewMode === "photo" && styles.viewToggleActive]}
-            >
-              <Ionicons name="grid-outline" size={20} color={viewMode === "photo" ? colors.accent : colors.sub} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.viewToggleBtn, { backgroundColor: colors.accentSoft, borderColor: colors.accent + "40" }]}
+            <Pressable
+              style={({ pressed }) => [styles.provisionBtn, pressed && styles.btnPressed]}
               onPress={() => router.push("/iot-provision" as any)}
-              accessibilityLabel="Connect Sensor to Wi-Fi"
+              accessibilityRole="button"
+              accessibilityLabel="Provision ESP32 Wi-Fi"
             >
-              <Ionicons name="wifi" size={18} color={colors.accent} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.addBtn}
+              <Wifi size={16 * fontScale} color={colors.accent} strokeWidth={2} />
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.addBtn, pressed && styles.btnPressed]}
               onPress={openAddModal}
-              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Add appliance"
             >
-              <Text style={styles.addBtnText}>+ Add</Text>
-            </TouchableOpacity>
+              <Plus size={16 * fontScale} color={colors.bg} strokeWidth={2.4} />
+              <Text style={styles.addBtnText}>Add load</Text>
+            </Pressable>
           </View>
         </View>
 
-        {/* Search */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search-outline" size={18} color={colors.sub} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search devices..."
-            placeholderTextColor={colors.sub}
-            value={search}
-            onChangeText={setSearch}
-            clearButtonMode="while-editing"
-          />
+        {/* Search + View switcher toolbar */}
+        <View style={styles.toolbarRow}>
+          <View
+            style={[
+              styles.searchContainer,
+              searchFocused && styles.searchContainerFocused,
+            ]}
+          >
+            <Search size={16 * fontScale} color={colors.sub} strokeWidth={2} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Filter by name, room, or category"
+              placeholderTextColor={colors.inactive}
+              value={search}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              onChangeText={setSearch}
+              accessibilityLabel="Filter appliances"
+            />
+            {search.length > 0 && (
+              <Pressable
+                onPress={() => setSearch("")}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+              >
+                <X size={15 * fontScale} color={colors.sub} strokeWidth={2} />
+              </Pressable>
+            )}
+          </View>
+
+          <View style={styles.viewSegment}>
+            <Pressable
+              onPress={() => switchViewMode("banner")}
+              style={[
+                styles.viewToggleBtn,
+                viewMode === "banner" && styles.viewToggleActive,
+              ]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: viewMode === "banner" }}
+              accessibilityLabel="List view"
+            >
+              <List
+                size={17 * fontScale}
+                color={viewMode === "banner" ? colors.text : colors.sub}
+                strokeWidth={2}
+              />
+            </Pressable>
+            <Pressable
+              onPress={() => switchViewMode("photo")}
+              style={[
+                styles.viewToggleBtn,
+                viewMode === "photo" && styles.viewToggleActive,
+              ]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: viewMode === "photo" }}
+              accessibilityLabel="Grid view"
+            >
+              <LayoutGrid
+                size={16 * fontScale}
+                color={viewMode === "photo" ? colors.text : colors.sub}
+                strokeWidth={2}
+              />
+            </Pressable>
+          </View>
         </View>
 
         {/* Banner mode — vertical accordion list */}
@@ -807,7 +953,7 @@ export default function DevicesScreen() {
               indicatorColor={colors.accent}
             >
               {filtered.map((device) => renderBannerCard(device))}
-              <View style={{ height: 16 }} />
+              <View style={{ height: 24 }} />
             </PullToRefresh>
           ))}
 
@@ -827,17 +973,20 @@ export default function DevicesScreen() {
               contentContainerStyle={styles.list}
               showsVerticalScrollIndicator={false}
               renderItem={renderPhotoCard}
-              ListFooterComponent={<View style={{ height: 16 }} />}
+              ListFooterComponent={<View style={{ height: 24 }} />}
             />
           ))}
-      </View>
+      </Animated.View>
 
-      {/* Add / Edit Device Modal */}
+      {/* Add / Edit Appliance Modal */}
       <Modal
         visible={modalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => { resetForm(); setEditingDevice(null); setModalVisible(false); }}
+        onRequestClose={() => {
+          resetForm();
+          setModalVisible(false);
+        }}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -850,108 +999,179 @@ export default function DevicesScreen() {
               keyboardShouldPersistTaps="handled"
             >
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>
-                  {editingDevice ? "Edit Device" : "Add Device"}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => { resetForm(); setEditingDevice(null); setModalVisible(false); }}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalEyebrow}>
+                    {editingDevice ? "Update load record" : "New household load"}
+                  </Text>
+                  <Text style={styles.modalTitle}>
+                    {editingDevice ? "Edit appliance" : "Register appliance"}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => {
+                    resetForm();
+                    setModalVisible(false);
+                  }}
+                  style={styles.closeBtn}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close form"
                 >
-                  <Ionicons name="close" size={24} color={colors.sub} />
-                </TouchableOpacity>
+                  <X size={18 * fontScale} color={colors.sub} strokeWidth={2} />
+                </Pressable>
               </View>
 
-              <Text style={styles.fieldLabel}>Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Air Conditioner"
-                placeholderTextColor={colors.sub}
-                value={formName}
-                onChangeText={setFormName}
-              />
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Appliance name</Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    focusedField === "name" && styles.inputFocused,
+                    formNameError ? styles.inputError : null,
+                  ]}
+                  placeholder="Air Conditioner"
+                  placeholderTextColor={colors.inactive}
+                  value={formName}
+                  onFocus={() => setFocusedField("name")}
+                  onBlur={() => setFocusedField((f) => (f === "name" ? null : f))}
+                  onChangeText={(t) => {
+                    setFormName(t);
+                    if (formNameError) setFormNameError(null);
+                  }}
+                  accessibilityLabel="Appliance name"
+                />
+                {formNameError && <Text style={styles.fieldError}>{formNameError}</Text>}
+              </View>
 
-              <Text style={styles.fieldLabel}>Room</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Bedroom"
-                placeholderTextColor={colors.sub}
-                value={formRoom}
-                onChangeText={setFormRoom}
-              />
+              <View style={styles.twoColRow}>
+                <View style={[styles.fieldGroup, { flex: 1 }]}>
+                  <Text style={styles.fieldLabel}>Room</Text>
+                  <TextInput
+                    style={[styles.input, focusedField === "room" && styles.inputFocused]}
+                    placeholder="Bedroom"
+                    placeholderTextColor={colors.inactive}
+                    value={formRoom}
+                    onFocus={() => setFocusedField("room")}
+                    onBlur={() => setFocusedField((f) => (f === "room" ? null : f))}
+                    onChangeText={setFormRoom}
+                    accessibilityLabel="Room"
+                  />
+                </View>
 
-              <Text style={styles.fieldLabel}>Power (Watts)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. 1200"
-                placeholderTextColor={colors.sub}
-                value={formWatts}
-                onChangeText={(t) => setFormWatts(t.replace(/[^0-9]/g, ""))}
-                keyboardType="number-pad"
-              />
-
-              <Text style={styles.fieldLabel}>Category</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Appliance, Lighting"
-                placeholderTextColor={colors.sub}
-                value={formCategory}
-                onChangeText={setFormCategory}
-              />
-
-              <Text style={styles.fieldLabel}>Photo</Text>
-              <View style={styles.photoSection}>
-                {formPhotoUri ? (
-                  <View style={styles.photoThumbnailWrapper}>
-                    <Image source={{ uri: formPhotoUri }} style={styles.photoThumbnail} />
-                    <TouchableOpacity
-                      style={styles.photoRemoveBtn}
-                      onPress={() => setFormPhotoUri(null)}
-                      hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-                    >
-                      <Ionicons name="close-circle" size={22} color={colors.red} />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={styles.photoPlaceholder}>
-                    <Text style={styles.photoPlaceholderText}>No image</Text>
-                  </View>
-                )}
-                <View style={styles.photoBtnRow}>
-                  <TouchableOpacity style={styles.cameraBtn} onPress={handleTakePhoto} activeOpacity={0.8}>
-                    <Ionicons name="camera-outline" size={18} color={colors.accent} />
-                    <Text style={styles.cameraBtnText}>Camera</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.cameraBtn} onPress={handlePickFromGallery} activeOpacity={0.8}>
-                    <Ionicons name="images-outline" size={18} color={colors.accent} />
-                    <Text style={styles.cameraBtnText}>Gallery</Text>
-                  </TouchableOpacity>
+                <View style={[styles.fieldGroup, { flex: 1 }]}>
+                  <Text style={styles.fieldLabel}>Rated power (W)</Text>
+                  <TextInput
+                    style={[styles.input, focusedField === "watts" && styles.inputFocused]}
+                    placeholder="1200"
+                    placeholderTextColor={colors.inactive}
+                    value={formWatts}
+                    onFocus={() => setFocusedField("watts")}
+                    onBlur={() => setFocusedField((f) => (f === "watts" ? null : f))}
+                    onChangeText={(t) => setFormWatts(t.replace(/[^0-9]/g, ""))}
+                    keyboardType="number-pad"
+                    accessibilityLabel="Rated power in watts"
+                  />
                 </View>
               </View>
 
-              <TouchableOpacity
-                style={styles.submitBtn}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Category (optional)</Text>
+                <TextInput
+                  style={[styles.input, focusedField === "category" && styles.inputFocused]}
+                  placeholder="Cooling, Kitchen, Lighting"
+                  placeholderTextColor={colors.inactive}
+                  value={formCategory}
+                  onFocus={() => setFocusedField("category")}
+                  onBlur={() => setFocusedField((f) => (f === "category" ? null : f))}
+                  onChangeText={setFormCategory}
+                  accessibilityLabel="Category"
+                />
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Appliance photo (optional)</Text>
+                <View style={styles.photoSection}>
+                  {formPhotoUri ? (
+                    <View style={styles.photoThumbnailWrapper}>
+                      <Image
+                        source={{ uri: formPhotoUri }}
+                        style={styles.photoThumbnail}
+                        accessibilityLabel="Selected appliance photo"
+                      />
+                      <Pressable
+                        style={styles.photoRemoveBtn}
+                        onPress={() => setFormPhotoUri(null)}
+                        hitSlop={6}
+                        accessibilityRole="button"
+                        accessibilityLabel="Remove photo"
+                      >
+                        <X size={14 * fontScale} color={colors.white} strokeWidth={2.4} />
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <View style={styles.photoPlaceholder}>
+                      <ImageIcon size={20 * fontScale} color={colors.sub} strokeWidth={1.8} />
+                    </View>
+                  )}
+
+                  <View style={styles.photoBtnCol}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.cameraBtn,
+                        pressed && styles.btnPressed,
+                      ]}
+                      onPress={handleTakePhoto}
+                      accessibilityRole="button"
+                    >
+                      <Camera size={16 * fontScale} color={colors.text} strokeWidth={2} />
+                      <Text style={styles.cameraBtnText}>Take photo</Text>
+                    </Pressable>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.cameraBtn,
+                        pressed && styles.btnPressed,
+                      ]}
+                      onPress={handlePickFromGallery}
+                      accessibilityRole="button"
+                    >
+                      <ImageIcon size={16 * fontScale} color={colors.text} strokeWidth={2} />
+                      <Text style={styles.cameraBtnText}>Choose from library</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.submitBtn,
+                  pressed && !saving && styles.btnPressed,
+                  saving && styles.btnDisabled,
+                ]}
                 onPress={editingDevice ? handleSaveDevice : handleAddDevice}
-                activeOpacity={0.8}
                 disabled={saving}
+                accessibilityRole="button"
               >
                 {saving ? (
                   <ActivityIndicator size="small" color={colors.bg} />
                 ) : (
                   <Text style={styles.submitBtnText}>
-                    {editingDevice ? "Save Changes" : "Add Device"}
+                    {editingDevice ? "Save appliance changes" : "Save appliance"}
                   </Text>
                 )}
-              </TouchableOpacity>
+              </Pressable>
 
               {editingDevice && (
-                <TouchableOpacity
-                  style={styles.modalDeleteBtn}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.modalDeleteBtn,
+                    pressed && styles.btnPressed,
+                  ]}
                   onPress={() => setDeviceToDelete(editingDevice)}
-                  activeOpacity={0.8}
+                  accessibilityRole="button"
                 >
-                  <Ionicons name="trash-outline" size={18} color={colors.red} />
-                  <Text style={styles.modalDeleteBtnText}>Delete Device</Text>
-                </TouchableOpacity>
+                  <Trash2 size={16 * fontScale} color={colors.red} strokeWidth={2} />
+                  <Text style={styles.modalDeleteBtnText}>Remove appliance from inventory</Text>
+                </Pressable>
               )}
             </ScrollView>
           </View>
@@ -963,141 +1183,220 @@ export default function DevicesScreen() {
           visible={true}
           loading={deleting}
           destructive={true}
-          icon="trash-outline"
-          title="Delete Device?"
-          message={`Are you sure you want to delete "${deviceToDelete.name}"? This action cannot be undone.`}
-          confirmText="Delete"
-          cancelText="Cancel"
+          iconNode={<Trash2 size={19 * fontScale} color={colors.red} strokeWidth={2} />}
+          title={`Remove ${deviceToDelete.name}?`}
+          message="Deletes this appliance and its per-device history from your household inventory."
+          confirmText="Remove appliance"
+          cancelText="Keep it"
           onConfirm={() => handleDeleteDevice(deviceToDelete)}
           onCancel={() => setDeviceToDelete(null)}
         />
       )}
-
     </SafeAreaView>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const PHOTO_CARD_WIDTH = (SCREEN_WIDTH - 32 - 8) / 2;
+const PHOTO_CARD_WIDTH = (SCREEN_WIDTH - 40 - 10) / 2;
 
 function createStyles(colors: ThemeColors, fontScale: number) {
   return StyleSheet.create({
-    // Root
     root: {
       flex: 1,
       backgroundColor: colors.bg,
     },
     inner: {
       flex: 1,
-      paddingHorizontal: 16,
-      paddingTop: 8,
+      paddingHorizontal: 20,
+      paddingTop: 12,
     },
 
     // Header
     header: {
       flexDirection: "row",
-      alignItems: "center",
+      alignItems: "flex-start",
       justifyContent: "space-between",
       marginBottom: 16,
+      gap: 12,
+    },
+    headerTextCol: {
+      flex: 1,
+    },
+    eyebrow: {
+      color: colors.accent,
+      fontSize: 12.5 * fontScale,
+      fontWeight: "500",
+      marginBottom: 2,
     },
     title: {
       color: colors.text,
-      fontSize: 28 * fontScale,
-      fontWeight: "700",
+      fontSize: 26 * fontScale,
+      fontWeight: "600",
+      letterSpacing: -0.4,
+      lineHeight: 32 * fontScale,
+    },
+    subtitle: {
+      color: colors.sub,
+      fontSize: 13.5 * fontScale,
+      marginTop: 2,
     },
     headerActions: {
       flexDirection: "row",
       gap: 8,
       alignItems: "center",
+      marginTop: 4,
     },
-    viewToggleBtn: {
-      width: 36,
-      height: 36,
-      borderRadius: 10,
+    provisionBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 8,
       backgroundColor: colors.card,
-      alignItems: "center",
-      justifyContent: "center",
       borderWidth: 1,
       borderColor: colors.border,
-    },
-    viewToggleActive: {
-      borderColor: colors.accent,
-      backgroundColor: colors.accent + "18",
+      alignItems: "center",
+      justifyContent: "center",
     },
     addBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
       backgroundColor: colors.accent,
-      borderRadius: 20,
-      paddingHorizontal: 16,
-      paddingVertical: 8,
+      borderRadius: 8,
+      height: 40,
+      paddingHorizontal: 14,
     },
     addBtnText: {
       color: colors.bg,
       fontSize: 14 * fontScale,
-      fontWeight: "700",
+      fontWeight: "600",
     },
 
-    // Search
-    searchContainer: {
+    // Toolbar: Search + View toggle
+    toolbarRow: {
       flexDirection: "row",
       alignItems: "center",
+      gap: 8,
+      marginBottom: 14,
+    },
+    searchContainer: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
       backgroundColor: colors.card,
-      borderRadius: 12,
+      borderRadius: 8,
       borderWidth: 1,
       borderColor: colors.border,
       paddingHorizontal: 12,
-      marginBottom: 16,
-      height: 48,
+      height: 44,
     },
-    searchIcon: {
-      marginRight: 8,
+    searchContainerFocused: {
+      borderColor: colors.accent,
     },
     searchInput: {
       flex: 1,
       color: colors.text,
       fontSize: 15 * fontScale,
-      height: 48,
+      height: 44,
+    },
+    viewSegment: {
+      flexDirection: "row",
+      backgroundColor: colors.card,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 3,
+      height: 44,
+      alignItems: "center",
+      gap: 2,
+    },
+    viewToggleBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 6,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    viewToggleActive: {
+      backgroundColor: colors.surface,
     },
 
-    // Shared list container
+    // Shared list
     list: {
-      gap: 12,
+      gap: 10,
     },
 
-    // Loading / empty states
+    // Empty / loading states
     emptyState: {
       flex: 1,
       alignItems: "center",
       justifyContent: "center",
-      gap: 10,
-      paddingBottom: 64,
+      gap: 8,
+      paddingBottom: 56,
       paddingHorizontal: 24,
+    },
+    emptyIconTile: {
+      width: 48,
+      height: 48,
+      borderRadius: 10,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 4,
     },
     emptyStateTitle: {
       color: colors.text,
       fontSize: 17 * fontScale,
-      fontWeight: "700",
+      fontWeight: "600",
     },
     emptyStateText: {
       color: colors.sub,
       fontSize: 14 * fontScale,
+      lineHeight: 20 * fontScale,
       textAlign: "center",
+      maxWidth: 300,
+    },
+    emptyCtaBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      backgroundColor: colors.accent,
+      borderRadius: 8,
+      height: 44,
+      paddingHorizontal: 16,
+      marginTop: 8,
+    },
+    emptyCtaText: {
+      color: colors.bg,
+      fontSize: 14.5 * fontScale,
+      fontWeight: "600",
     },
 
     // Banner card
     bannerCard: {
       flexDirection: "row",
       backgroundColor: colors.card,
-      borderRadius: 16,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
       overflow: "hidden",
     },
+    bannerCardExpanded: {
+      borderColor: colors.accentBorder,
+    },
+    cardPressed: {
+      opacity: 0.92,
+    },
     statusBar: {
-      width: 4,
+      width: 3,
       alignSelf: "stretch",
     },
     bannerCardContent: {
       flex: 1,
-      padding: 16,
+      padding: 15,
     },
     bannerCardMain: {
       flexDirection: "row",
@@ -1106,47 +1405,68 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     },
     bannerCardInfo: {
       flex: 1,
-      gap: 4,
+      gap: 3,
+    },
+    deviceTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
     },
     deviceName: {
       color: colors.text,
       fontSize: 16 * fontScale,
-      fontWeight: "700",
+      fontWeight: "600",
+      letterSpacing: -0.2,
     },
     deviceRoom: {
       color: colors.sub,
       fontSize: 13 * fontScale,
     },
+    statusRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      marginTop: 5,
+      flexWrap: "wrap",
+    },
     statusPill: {
-      alignSelf: "flex-start",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
       borderRadius: 6,
+      borderWidth: 1,
       paddingHorizontal: 8,
       paddingVertical: 2,
-      marginTop: 4,
+    },
+    statusDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
     },
     statusPillText: {
-      fontSize: 11 * fontScale,
-      fontWeight: "700",
-      letterSpacing: 0.5,
+      fontSize: 11.5 * fontScale,
+      fontWeight: "600",
+    },
+    masterOffInline: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
     },
     bannerCardRight: {
       alignItems: "flex-end",
       gap: 8,
     },
-    // Sits under the (disabled) switch. Capped and right-aligned so the wrapped
-    // label never squeezes the device name column next to it.
-    masterOffText: {
-      color: colors.red,
-      fontSize: 10 * fontScale,
-      fontWeight: "600",
-      textAlign: "right",
-      maxWidth: 96,
-      marginTop: -2,
-    },
     watts: {
       color: colors.text,
       fontSize: 16 * fontScale,
-      fontWeight: "700",
+      fontWeight: "600",
+    },
+    chevronBadge: {
+      width: 26,
+      height: 26,
+      borderRadius: 6,
+      backgroundColor: colors.surface,
+      alignItems: "center",
+      justifyContent: "center",
     },
 
     // Accordion
@@ -1155,7 +1475,7 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     },
     accordionContent: {
       paddingTop: 4,
-      paddingBottom: 4,
+      paddingBottom: 2,
     },
     accordionDivider: {
       height: 1,
@@ -1175,183 +1495,39 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     noDataText: {
       color: colors.sub,
       fontSize: 13 * fontScale,
-      paddingBottom: 8,
+      lineHeight: 18 * fontScale,
+      paddingBottom: 4,
     },
     metricsGrid: {
       flexDirection: "row",
       flexWrap: "wrap",
       gap: 8,
-      paddingBottom: 4,
     },
     metricCell: {
-      width: "47%",
+      width: "48%",
       backgroundColor: colors.bg,
-      borderRadius: 10,
-      padding: 10,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
       gap: 2,
     },
     metricLabel: {
       color: colors.sub,
-      fontSize: 11 * fontScale,
-      fontWeight: "500",
+      fontSize: 11.5 * fontScale,
     },
     metricValue: {
       color: colors.text,
-      fontSize: 15 * fontScale,
-      fontWeight: "700",
-    },
-
-    // Photo mode
-    photoRow: {
-      gap: 8,
-    },
-    photoCard: {
-      flex: 1,
-      width: PHOTO_CARD_WIDTH,
-      backgroundColor: colors.card,
-      borderRadius: 16,
-      overflow: "hidden",
-    },
-    photoCardImage: {
-      width: "100%",
-      height: 140,
-      resizeMode: "cover",
-    },
-    photoCardPlaceholder: {
-      width: "100%",
-      height: 140,
-      backgroundColor: colors.border,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    photoCardBody: {
-      padding: 12,
-      gap: 2,
-    },
-    photoCardMeta: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginTop: 4,
-    },
-
-    // Modal
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: colors.overlay,
-      justifyContent: "flex-end",
-    },
-    modalCard: {
-      backgroundColor: colors.bg,
-      borderTopLeftRadius: 24,
-      borderTopRightRadius: 24,
-      maxHeight: "88%",
-    },
-    modalScroll: {
-      paddingHorizontal: 20,
-      paddingTop: 20,
-      paddingBottom: 32,
-    },
-    modalHeader: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      marginBottom: 16,
-    },
-    modalTitle: {
-      color: colors.text,
-      fontSize: 22 * fontScale,
-      fontWeight: "700",
-    },
-    fieldLabel: {
-      color: colors.sub,
-      fontSize: 13 * fontScale,
+      fontSize: 14.5 * fontScale,
       fontWeight: "600",
-      marginBottom: 6,
-      marginTop: 12,
-    },
-    input: {
-      backgroundColor: colors.card,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
-      paddingHorizontal: 14,
-      height: 48,
-      color: colors.text,
-      fontSize: 15 * fontScale,
-    },
-    photoSection: {
-      gap: 12,
-      alignItems: "flex-start",
-    },
-    photoThumbnailWrapper: {
-      position: "relative",
-    },
-    photoThumbnail: {
-      width: 120,
-      height: 120,
-      borderRadius: 8,
-    },
-    photoRemoveBtn: {
-      position: "absolute",
-      top: -8,
-      right: -8,
-      backgroundColor: colors.bg,
-      borderRadius: 12,
-    },
-    photoPlaceholder: {
-      width: 120,
-      height: 120,
-      borderRadius: 8,
-      borderWidth: 2,
-      borderColor: colors.border,
-      borderStyle: "dashed",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    photoPlaceholderText: {
-      color: colors.sub,
-      fontSize: 13 * fontScale,
-      fontWeight: "500",
-    },
-    photoBtnRow: {
-      flexDirection: "row",
-      gap: 8,
-    },
-    cameraBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      borderWidth: 1,
-      borderColor: colors.accent,
-      borderRadius: 10,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-    },
-    cameraBtnText: {
-      color: colors.accent,
-      fontSize: 14 * fontScale,
-      fontWeight: "600",
-    },
-    submitBtn: {
-      backgroundColor: colors.accent,
-      borderRadius: 14,
-      height: 52,
-      alignItems: "center",
-      justifyContent: "center",
-      marginTop: 24,
-    },
-    submitBtnText: {
-      color: colors.bg,
-      fontSize: 16 * fontScale,
-      fontWeight: "700",
     },
     deviceActionsRow: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "flex-end",
-      gap: 12,
-      marginTop: 14,
+      gap: 8,
+      marginTop: 12,
       paddingTop: 12,
       borderTopWidth: 1,
       borderTopColor: colors.border,
@@ -1363,12 +1539,14 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       paddingVertical: 8,
       paddingHorizontal: 12,
       borderRadius: 8,
-      backgroundColor: colors.accentSoft,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.bg,
     },
     editDeviceBtnText: {
-      color: colors.accent,
+      color: colors.text,
       fontSize: 13 * fontScale,
-      fontWeight: "600",
+      fontWeight: "500",
     },
     deleteDeviceBtn: {
       flexDirection: "row",
@@ -1377,12 +1555,27 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       paddingVertical: 8,
       paddingHorizontal: 12,
       borderRadius: 8,
-      backgroundColor: colors.red + "1A",
+      borderWidth: 1,
+      borderColor: colors.red + "40",
+      backgroundColor: colors.red + "12",
     },
     deleteDeviceBtnText: {
       color: colors.red,
       fontSize: 13 * fontScale,
       fontWeight: "600",
+    },
+
+    // Photo mode
+    photoRow: {
+      gap: 10,
+    },
+    photoCard: {
+      width: PHOTO_CARD_WIDTH,
+      backgroundColor: colors.card,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: "hidden",
     },
     photoCardEditBtn: {
       position: "absolute",
@@ -1390,28 +1583,221 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       right: 8,
       width: 28,
       height: 28,
-      borderRadius: 14,
+      borderRadius: 6,
       backgroundColor: colors.overlayStrong,
       alignItems: "center",
       justifyContent: "center",
       zIndex: 2,
+    },
+    photoCardImage: {
+      width: "100%",
+      height: 132,
+      resizeMode: "cover",
+    },
+    photoCardPlaceholder: {
+      width: "100%",
+      height: 132,
+      backgroundColor: colors.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    photoCardBody: {
+      padding: 12,
+      gap: 2,
+    },
+    photoDeviceName: {
+      color: colors.text,
+      fontSize: 14.5 * fontScale,
+      fontWeight: "600",
+    },
+    photoCardMeta: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginTop: 6,
+    },
+    photoWatts: {
+      color: colors.text,
+      fontSize: 13.5 * fontScale,
+      fontWeight: "600",
+    },
+
+    // Modal
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: "flex-end",
+    },
+    modalCard: {
+      backgroundColor: colors.card,
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
+      borderTopWidth: 1,
+      borderColor: colors.border,
+      maxHeight: "90%",
+    },
+    modalScroll: {
+      paddingHorizontal: 20,
+      paddingTop: 20,
+      paddingBottom: 32,
+    },
+    modalHeader: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      marginBottom: 18,
+      gap: 12,
+    },
+    modalEyebrow: {
+      color: colors.accent,
+      fontSize: 12.5 * fontScale,
+      fontWeight: "500",
+      marginBottom: 2,
+    },
+    modalTitle: {
+      color: colors.text,
+      fontSize: 21 * fontScale,
+      fontWeight: "600",
+      letterSpacing: -0.3,
+    },
+    closeBtn: {
+      width: 34,
+      height: 34,
+      borderRadius: 8,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    twoColRow: {
+      flexDirection: "row",
+      gap: 12,
+    },
+    fieldGroup: {
+      marginBottom: 14,
+    },
+    fieldLabel: {
+      color: colors.text,
+      fontSize: 13.5 * fontScale,
+      fontWeight: "500",
+      marginBottom: 6,
+    },
+    input: {
+      backgroundColor: colors.bg,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 14,
+      height: 48,
+      color: colors.text,
+      fontSize: 16 * fontScale,
+    },
+    inputFocused: {
+      borderColor: colors.accent,
+    },
+    inputError: {
+      borderColor: colors.red,
+    },
+    fieldError: {
+      color: colors.red,
+      fontSize: 12.5 * fontScale,
+      marginTop: 5,
+    },
+    photoSection: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 14,
+    },
+    photoThumbnailWrapper: {
+      position: "relative",
+    },
+    photoThumbnail: {
+      width: 88,
+      height: 88,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    photoRemoveBtn: {
+      position: "absolute",
+      top: -6,
+      right: -6,
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: colors.red,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    photoPlaceholder: {
+      width: 88,
+      height: 88,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.bg,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    photoBtnCol: {
+      flex: 1,
+      gap: 8,
+    },
+    cameraBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.bg,
+      borderRadius: 8,
+      height: 40,
+      paddingHorizontal: 12,
+    },
+    cameraBtnText: {
+      color: colors.text,
+      fontSize: 13.5 * fontScale,
+      fontWeight: "500",
+    },
+    submitBtn: {
+      backgroundColor: colors.accent,
+      borderRadius: 8,
+      height: 48,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 10,
+    },
+    submitBtnText: {
+      color: colors.bg,
+      fontSize: 15.5 * fontScale,
+      fontWeight: "600",
     },
     modalDeleteBtn: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
       gap: 8,
-      marginTop: 12,
-      paddingVertical: 14,
-      borderRadius: 12,
+      marginTop: 10,
+      height: 46,
+      borderRadius: 8,
       borderWidth: 1,
       borderColor: colors.red + "40",
-      backgroundColor: colors.red + "10",
+      backgroundColor: colors.red + "12",
     },
     modalDeleteBtnText: {
       color: colors.red,
-      fontSize: 15 * fontScale,
-      fontWeight: "700",
+      fontSize: 14.5 * fontScale,
+      fontWeight: "600",
+    },
+    btnPressed: {
+      opacity: 0.85,
+      transform: [{ scale: 0.99 }],
+    },
+    btnDisabled: {
+      opacity: 0.55,
     },
   });
 }

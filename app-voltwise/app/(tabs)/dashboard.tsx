@@ -68,7 +68,7 @@ const METRIC_DEFS: {
 }[] = [
   { key: "voltage",     label: "Voltage",      unit: "V",   decimals: 1 },
   { key: "current",     label: "Current",      unit: "A",   decimals: 2 },
-  { key: "activePower", label: "Active Power", unit: "W",   decimals: 1 },
+  { key: "activePower", label: "Active Power", unit: "W",   decimals: 2 },
   { key: "energy",      label: "Energy",       unit: "kWh", decimals: 2 },
   { key: "frequency",   label: "Frequency",    unit: "Hz",  decimals: 2 },
   { key: "powerFactor", label: "Power Factor", unit: "PF",  decimals: 2 },
@@ -121,8 +121,6 @@ export default function DashboardScreen() {
   const router = useRouter();
   const { formatEnergy, formatCostOf, powerParts, energyParts, prefs } = useUnits();
   const { demoData } = useDemoData();
-  // null until the backend or the sensor supplies a real figure.
-  const [currentKw, setCurrentKw]         = useState<number | null>(null);
   // Which slice of time the chart is showing. Always opens on today — see
   // defaultRangeState — and the saved billing cycle is folded in once it loads.
   const [range, setRange]                 = useState<RangeState>(() => defaultRangeState("Day"));
@@ -232,7 +230,6 @@ export default function DashboardScreen() {
     });
 
     setDashboard({ ...data, devices: enrichedDevices });
-    setCurrentKw(data.currentKw);
     setIotOnline(data.iotOnline ?? false);
   }, [rangeKey]);
 
@@ -278,13 +275,12 @@ export default function DashboardScreen() {
   }, []);
 
   // Apply real MQTT telemetry the moment it arrives: the six PZEM metrics and
-  // the hero kW value come straight from the sensor. This is the only place
-  // liveMetrics is ever populated.
+  // the hero Current Usage figure share `liveMetrics.activePower` directly from
+  // the sensor so they always match down to 2 decimal places.
   useEffect(() => {
     if (!telemetry || telemetryAt === null) return;
     telemetryAtRef.current = telemetryAt;
     setLiveSource("mqtt");
-    setCurrentKw(Math.round((telemetry.watts / 1000) * 100) / 100);
     setLiveMetrics((prev) => ({
       voltage:     telemetry.voltage     ?? prev?.voltage     ?? 0,
       current:     telemetry.current     ?? prev?.current     ?? 0,
@@ -376,9 +372,13 @@ export default function DashboardScreen() {
   const iotReachable = iotState === "live";
   // Whether the Current Usage card gets to claim a live feed.
   const liveFeedOn = demoData || liveSource !== "off";
-  // The six PZEM metrics and the hero figure, from the sample set or the sensor.
+  // The six PZEM metrics and the Current Usage hero read from the exact same
+  // live telemetry reading (`displayMetrics.activePower`), formatted to 2 decimal places.
   const displayMetrics = demoReading ?? liveMetrics;
-  const displayKw = demoData ? demoDash?.currentKw ?? null : currentKw;
+  const heroPowerParts =
+    displayMetrics !== null && displayMetrics !== undefined
+      ? powerParts(displayMetrics.activePower, 2)
+      : null;
 
   // Master relay display state driven by unified PowerControlContext
   const relayOn = masterOn;
@@ -557,13 +557,18 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.kwRow}>
-            {/* currentKw is kW; the formatter works in watts. Null until a real
-                figure arrives — the hero never shows a placeholder number. */}
-            <Text style={styles.kwValue}>
-              {displayKw === null ? "—" : powerParts(displayKw * 1000).value}
+            {/* Driven directly from live telemetry `displayMetrics.activePower` (2 decimals)
+                so Current Usage and Active Power always match the hardware display. */}
+            <Text
+              style={styles.kwValue}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              {heroPowerParts === null ? "—" : heroPowerParts.value}
             </Text>
             <Text style={styles.kwUnit}>
-              {displayKw === null ? "" : powerParts(displayKw * 1000).unit}
+              {heroPowerParts === null ? "" : heroPowerParts.unit}
             </Text>
           </View>
           <Text style={styles.totalToday}>
@@ -596,13 +601,18 @@ export default function DashboardScreen() {
                   raw === undefined
                     ? { value: "—", unit: def.unit }
                     : def.key === "activePower"
-                      ? powerParts(raw)
+                      ? powerParts(raw, def.decimals)
                       : def.key === "energy"
                         ? energyParts(raw, def.decimals)
                         : { value: raw.toFixed(def.decimals), unit: def.unit };
                 return (
                   <View key={def.key} style={styles.metricCell}>
-                    <Text style={styles.metricValue}>
+                    <Text
+                      style={styles.metricValue}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.75}
+                    >
                       {parts.value}
                       <Text style={styles.metricUnit}> {parts.unit}</Text>
                     </Text>

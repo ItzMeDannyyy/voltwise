@@ -1,17 +1,28 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  Animated,
   View,
   Text,
-  ScrollView,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   DeviceEventEmitter,
   Platform,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import {
+  AlertCircle,
+  AlertTriangle,
+  BellOff,
+  CheckCheck,
+  Info,
+  Power,
+  Receipt,
+  X,
+  Zap,
+} from "../../components/LucideIcons";
 import {
   api,
   ApiAlert,
@@ -20,23 +31,21 @@ import {
   emitDevicesChanged,
   requestMasterShutdown,
 } from "../../lib/api";
-import { AnomalyModal } from "../../components/AnomalyModal";
 import ConfirmModal from "../../components/ConfirmModal";
+import { PullToRefresh } from "../../components/pull-to-refresh";
+import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useTheme } from "../../context/ThemeContext";
 import { useThemedStyles } from "../../components/themed";
 import type { ThemeColors } from "../../constants/theme";
 
-function getApplianceIcon(name?: string): keyof typeof Ionicons.glyphMap {
-  if (!name) return "flash-outline";
-  const n = name.toLowerCase();
-  if (n.includes("kettle") || n.includes("boiler") || n.includes("heat")) return "cafe-outline";
-  if (n.includes("light") || n.includes("bulb") || n.includes("lamp")) return "bulb-outline";
-  if (n.includes("air") || n.includes("condition") || n.includes("cool") || n.includes("ac")) return "snow-outline";
-  if (n.includes("fridge") || n.includes("refrigerat")) return "cube-outline";
-  if (n.includes("phone") || n.includes("cell") || n.includes("charg")) return "phone-portrait-outline";
-  if (n.includes("tv") || n.includes("entertain")) return "tv-outline";
-  if (n.includes("wash") || n.includes("laundry")) return "water-outline";
-  return "flash-outline";
+function isTariffAlert(alert: AlertItem): boolean {
+  const combined = `${alert.title} ${alert.description} ${alert.recommendation || ""}`.toLowerCase();
+  return (
+    combined.includes("tariff") ||
+    combined.includes("kwh rate") ||
+    combined.includes("rate not set") ||
+    combined.includes("electricity tariff")
+  );
 }
 
 function getApplianceCategory(name?: string): string {
@@ -117,17 +126,17 @@ const INITIAL_ALERTS: AlertItem[] = [
     id: "1",
     type: "critical",
     title: "Aircon exceeded 3 kW threshold",
-    description: "Abnormal consumption recorded. Thermostat set point might be too low.",
+    description: "Sustained draw above the 3,000 W circuit limit. Check thermostat setpoint or compressor load.",
     time: "14:32",
     section: "TODAY",
     read: false,
-    recommendation: "Check AC thermostat settings or filter blockage.",
+    recommendation: "Inspect AC filter blockage or raise thermostat setpoint.",
   },
   {
     id: "2",
     type: "warning",
-    title: "Circuit B voltage drop: 198V",
-    description: "Voltage dropped below 200V limit.",
+    title: "Circuit B voltage drop: 198 V",
+    description: "Supply sagged below the 200 V operating floor (220 V nominal).",
     time: "11:05",
     section: "TODAY",
     read: false,
@@ -135,8 +144,8 @@ const INITIAL_ALERTS: AlertItem[] = [
   {
     id: "3",
     type: "info",
-    title: "Daily energy report ready",
-    description: "You used 12.4 kWh yesterday.",
+    title: "Daily meter summary recorded",
+    description: "Household consumed 12.4 kWh across yesterday's 24-hour window.",
     time: "09:15",
     section: "TODAY",
     read: true,
@@ -144,8 +153,8 @@ const INITIAL_ALERTS: AlertItem[] = [
   {
     id: "4",
     type: "critical",
-    title: "Fridge power spike: 420W",
-    description: "Compressor drew abnormal power during startup phase.",
+    title: "Fridge inrush spike: 420 W",
+    description: "Compressor drew above expected startup envelope.",
     time: "22:41",
     section: "YESTERDAY",
     read: false,
@@ -153,8 +162,8 @@ const INITIAL_ALERTS: AlertItem[] = [
   {
     id: "5",
     type: "warning",
-    title: "High consumption detected",
-    description: "Total usage exceeded 8 kW for 15 minutes.",
+    title: "Sustained load above 8 kW",
+    description: "Whole-home demand stayed above 8 kW for 15 minutes.",
     time: "16:20",
     section: "YESTERDAY",
     read: true,
@@ -172,65 +181,84 @@ function severityColor(type: AlertType, colors: ThemeColors): string {
   }
 }
 
-function severityIcon(type: AlertType): keyof typeof Ionicons.glyphMap {
+function severityLabel(type: AlertType): string {
   switch (type) {
     case "critical":
-      return "alert-circle";
+      return "Critical";
     case "warning":
-      return "warning";
+      return "Warning";
     case "info":
-      return "information-circle";
+      return "Info";
   }
 }
 
+function SeverityIcon({
+  type,
+  color,
+  size,
+}: {
+  type: AlertType;
+  color: string;
+  size: number;
+}) {
+  if (type === "critical") return <AlertCircle size={size} color={color} strokeWidth={2} />;
+  if (type === "warning") return <AlertTriangle size={size} color={color} strokeWidth={2} />;
+  return <Info size={size} color={color} strokeWidth={2} />;
+}
+
 export default function AlertsScreen() {
+  const { colors, fontScale } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
+
   const [alerts, setAlerts] = useState<AlertItem[]>(INITIAL_ALERTS);
   const [activeTab, setActiveTab] = useState<FilterTab>("All");
-  const [modalAlert, setModalAlert] = useState<AlertItem | null>(null);
+  const [detailAlert, setDetailAlert] = useState<AlertItem | null>(null);
   const [registerAlert, setRegisterAlert] = useState<AlertItem | null>(null);
+  const [shutdownConfirmAlert, setShutdownConfirmAlert] = useState<AlertItem | null>(null);
   const [registering, setRegistering] = useState(false);
-  const [countdown, setCountdown] = useState(3);
-  const [powerOff, setPowerOff] = useState(false);
 
-  // Load the alert feed from the backend.
-  const loadAlerts = useCallback(() => {
-    api
-      .get<ApiAlert[]>("/alerts")
-      .then((data) => {
-        if (data?.length) setAlerts(data);
-      })
-      .catch(() => {
-        // Offline-first: keep the seeded INITIAL_ALERTS fallback.
-      });
+  const [enterOpacity] = useState(() => new Animated.Value(0));
+  const [enterTranslate] = useState(() => new Animated.Value(8));
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(enterOpacity, {
+        toValue: 1,
+        duration: 380,
+        useNativeDriver: true,
+      }),
+      Animated.timing(enterTranslate, {
+        toValue: 0,
+        duration: 380,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [enterOpacity, enterTranslate]);
+
+  const fetchAlerts = useCallback(async () => {
+    try {
+      const data = await api.get<ApiAlert[]>("/alerts");
+      if (data?.length) setAlerts(data);
+    } catch {
+      // Offline-first: keep seeded INITIAL_ALERTS fallback.
+    }
   }, []);
 
-  // Refetch every time the Alerts tab gains focus.
+  const { refreshing, onRefresh } = usePullToRefresh(fetchAlerts);
+
   useFocusEffect(
     useCallback(() => {
-      loadAlerts();
-    }, [loadAlerts])
+      void fetchAlerts();
+    }, [fetchAlerts])
   );
 
-  // Refresh in place when a demo alert is triggered while already on this tab.
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener(ALERTS_CHANGED_EVENT, loadAlerts);
+    const sub = DeviceEventEmitter.addListener(ALERTS_CHANGED_EVENT, () => {
+      void fetchAlerts();
+    });
     return () => sub.remove();
-  }, [loadAlerts]);
-
-  // Countdown timer for critical/warning modal. Reaching zero performs the
-  // same real relay shutdown as pressing TURN OFF NOW.
-  useEffect(() => {
-    if (!modalAlert || modalAlert.type === "info" || powerOff) return;
-    if (countdown <= 0) {
-      setPowerOff(true);
-      void requestMasterShutdown();
-      return;
-    }
-    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [modalAlert, countdown, powerOff]);
+  }, [fetchAlerts]);
 
   const filteredAlerts = alerts.filter((a) => {
     if (activeTab === "Unread") return !a.read;
@@ -241,18 +269,20 @@ export default function AlertsScreen() {
   const todayAlerts = filteredAlerts.filter((a) => a.section === "TODAY");
   const yesterdayAlerts = filteredAlerts.filter((a) => a.section === "YESTERDAY");
 
-  // Unread counters used for the filter-tab badges.
   const unreadCount = alerts.filter((a) => !a.read).length;
+  const criticalCount = alerts.filter((a) => a.type === "critical").length;
   const unreadCriticalCount = alerts.filter(
     (a) => !a.read && a.type === "critical"
   ).length;
 
   function tabBadgeCount(tab: FilterTab): number {
-    if (tab === "Critical") return unreadCriticalCount;
-    return unreadCount;
+    if (tab === "All") return alerts.length;
+    if (tab === "Unread") return unreadCount;
+    return unreadCriticalCount > 0 ? unreadCriticalCount : criticalCount;
   }
 
   function markAllRead() {
+    if (unreadCount === 0) return;
     setAlerts((prev) => prev.map((a) => ({ ...a, read: true })));
     api.post("/alerts/read-all").catch(() => {});
     emitAlertsChanged();
@@ -266,172 +296,268 @@ export default function AlertsScreen() {
     emitAlertsChanged();
   }
 
-  function openModal(alert: AlertItem) {
+  function handleAlertPress(alert: AlertItem) {
+    markRead(alert.id);
+
+    // If unregistered load detection, prompt device registration
     if (isLoadDetectionAlert(alert)) {
       setRegisterAlert(alert);
       return;
     }
-    setModalAlert(alert);
-    setCountdown(3);
-    setPowerOff(false);
-  }
 
-  function closeModal(doMarkRead = true) {
-    if (doMarkRead && modalAlert) markRead(modalAlert.id);
-    setModalAlert(null);
-  }
-
-  function handlePowerOff() {
-    setPowerOff(true);
-    // Real shutdown: the backend publishes relay/set { on: false } and the
-    // firmware latches power off (dashboard Master Power turns it back on).
-    void requestMasterShutdown();
-    setTimeout(() => closeModal(true), 1500);
+    // Open detail modal for inspection (System notice / Electrical warning / Critical fault)
+    setDetailAlert(alert);
   }
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
-      <View style={styles.inner}>
+      <Animated.View
+        style={[
+          styles.inner,
+          {
+            opacity: enterOpacity,
+            transform: [{ translateY: enterTranslate }],
+          },
+        ]}
+      >
+        {/* Header block */}
         <View style={styles.header}>
-          <Text style={styles.title}>Alerts</Text>
-          <TouchableOpacity onPress={markAllRead} style={styles.markAllBtn}>
-            <Text style={styles.markAllText}>Mark all{"\n"}read</Text>
-          </TouchableOpacity>
+          <View style={styles.headerTextCol}>
+            <Text style={styles.eyebrow}>Threshold & load event log</Text>
+            <Text style={styles.title}>Alerts</Text>
+            <Text style={styles.subtitle}>
+              {unreadCount === 0
+                ? `${alerts.length} recorded events · All read`
+                : `${unreadCount} unread${unreadCriticalCount > 0 ? ` · ${unreadCriticalCount} critical` : ""}`}
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={markAllRead}
+            disabled={unreadCount === 0}
+            style={({ pressed }) => [
+              styles.markAllBtn,
+              unreadCount === 0 && styles.markAllBtnDisabled,
+              pressed && unreadCount > 0 && styles.btnPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Mark all alerts read"
+            accessibilityState={{ disabled: unreadCount === 0 }}
+          >
+            <CheckCheck
+              size={15 * fontScale}
+              color={unreadCount === 0 ? colors.inactive : colors.accent}
+              strokeWidth={2.1}
+            />
+            <Text
+              style={[
+                styles.markAllText,
+                unreadCount === 0 && { color: colors.inactive },
+              ]}
+            >
+              Mark all read
+            </Text>
+          </Pressable>
         </View>
 
-        <View style={styles.tabRow}>
+        {/* Segmented filter control */}
+        <View style={styles.filterSegment}>
           {(["All", "Unread", "Critical"] as FilterTab[]).map((tab) => {
+            const active = activeTab === tab;
             const count = tabBadgeCount(tab);
+            const isCritBadge = tab === "Critical" && unreadCriticalCount > 0;
+
             return (
-              <TouchableOpacity
+              <Pressable
                 key={tab}
-                style={styles.tab}
+                style={[styles.filterTab, active && styles.filterTabActive]}
                 onPress={() => setActiveTab(tab)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
               >
-                <View style={styles.tabLabelRow}>
-                  <Text
+                <Text style={[styles.filterLabel, active && styles.filterLabelActive]}>
+                  {tab}
+                </Text>
+                {count > 0 && (
+                  <View
                     style={[
-                      styles.tabLabel,
-                      activeTab === tab && styles.tabLabelActive,
+                      styles.filterCountBadge,
+                      active && styles.filterCountBadgeActive,
+                      isCritBadge && !active && styles.filterCountBadgeCritical,
                     ]}
                   >
-                    {tab}
-                  </Text>
-                  {count > 0 && (
-                    <View
+                    <Text
                       style={[
-                        styles.tabCountBadge,
-                        tab === "Critical" && styles.tabCountBadgeCritical,
+                        styles.filterCountText,
+                        active && styles.filterCountTextActive,
+                        isCritBadge && !active && { color: colors.red },
                       ]}
                     >
-                      <Text style={styles.tabCountText}>{count}</Text>
-                    </View>
-                  )}
-                </View>
-                {activeTab === tab && <View style={styles.tabIndicator} />}
-              </TouchableOpacity>
+                      {count}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
             );
           })}
         </View>
-        <View style={styles.tabSeparator} />
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scroll}
-        >
-          {todayAlerts.length > 0 && (
-            <View>
-              <Text style={styles.sectionLabel}>• TODAY</Text>
-              {todayAlerts.map((alert) => (
-                <AlertCard
-                  key={alert.id}
-                  alert={alert}
-                  onPress={() => openModal(alert)}
-                />
-              ))}
+        {/* Feed */}
+        {filteredAlerts.length === 0 ? (
+          <View style={styles.emptyState}>
+            <View style={styles.emptyIconTile}>
+              <BellOff size={22 * fontScale} color={colors.sub} strokeWidth={1.8} />
             </View>
-          )}
+            <Text style={styles.emptyTitle}>
+              {activeTab === "Unread"
+                ? "No unread alerts"
+                : activeTab === "Critical"
+                  ? "No critical faults recorded"
+                  : "No alerts recorded"}
+            </Text>
+            <Text style={styles.emptySub}>
+              {activeTab === "Unread"
+                ? "Every threshold and load notice in your feed has been reviewed."
+                : "Voltage drops, over-wattage events, and new load detections appear here."}
+            </Text>
+          </View>
+        ) : (
+          <PullToRefresh
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            contentContainerStyle={styles.scroll}
+            indicatorColor={colors.accent}
+          >
+            {todayAlerts.length > 0 && (
+              <View style={styles.sectionBlock}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionLabel}>Today</Text>
+                  <Text style={styles.sectionCount}>{todayAlerts.length}</Text>
+                </View>
+                {todayAlerts.map((alert) => (
+                  <AlertCard
+                    key={alert.id}
+                    alert={alert}
+                    onPress={() => handleAlertPress(alert)}
+                  />
+                ))}
+              </View>
+            )}
 
-          {yesterdayAlerts.length > 0 && (
-            <View>
-              <Text style={styles.sectionLabel}>• YESTERDAY</Text>
-              {yesterdayAlerts.map((alert) => (
-                <AlertCard
-                  key={alert.id}
-                  alert={alert}
-                  onPress={() => openModal(alert)}
-                />
-              ))}
-            </View>
-          )}
+            {yesterdayAlerts.length > 0 && (
+              <View style={styles.sectionBlock}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionLabel}>Earlier</Text>
+                  <Text style={styles.sectionCount}>{yesterdayAlerts.length}</Text>
+                </View>
+                {yesterdayAlerts.map((alert) => (
+                  <AlertCard
+                    key={alert.id}
+                    alert={alert}
+                    onPress={() => handleAlertPress(alert)}
+                  />
+                ))}
+              </View>
+            )}
 
-          <View style={{ height: 16 }} />
-        </ScrollView>
-      </View>
+            <View style={{ height: 24 }} />
+          </PullToRefresh>
+        )}
+      </Animated.View>
 
-      <AnomalyModal
-        alert={modalAlert}
-        countdown={countdown}
-        powerOff={powerOff}
-        onPowerOff={handlePowerOff}
-        onSkip={() => closeModal(true)}
+      <AlertDetailModal
+        alert={detailAlert}
+        onClose={() => setDetailAlert(null)}
+        onRequestCutoff={(critAlert) => {
+          setDetailAlert(null);
+          setShutdownConfirmAlert(critAlert);
+        }}
+        onOpenTariff={() => {
+          setDetailAlert(null);
+          router.push("/units-settings");
+        }}
       />
 
-      {registerAlert && (() => {
-        const { appName, watts } = parseAlertAppliance(registerAlert);
-        const icon = getApplianceIcon(appName);
-        const wattsSuffix = watts ? ` (~${watts} W)` : "";
+      <ConfirmModal
+        visible={!!shutdownConfirmAlert}
+        destructive
+        iconNode={<Power size={20 * fontScale} color={colors.red} strokeWidth={2.2} />}
+        title="Disconnect master power?"
+        message="This sends an emergency disconnect command to physical relays on all circuits."
+        confirmText="Disconnect now"
+        cancelText="Keep circuits on"
+        onConfirm={async () => {
+          try {
+            await requestMasterShutdown();
+            if (Platform.OS === "ios" || Platform.OS === "android") {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+            }
+          } catch (err) {
+            console.error("Master shutdown failed:", err);
+          } finally {
+            setShutdownConfirmAlert(null);
+          }
+        }}
+        onCancel={() => setShutdownConfirmAlert(null)}
+      />
 
-        return (
-          <ConfirmModal
-            visible={true}
-            icon={icon}
-            loading={registering}
-            title={`${appName} Detected`}
-            message={`VoltWise ML detected a ${appName}${wattsSuffix}. Do you want to register this device?`}
-            confirmText="Yes"
-            cancelText="Dismiss"
-            onConfirm={async () => {
-              try {
-                setRegistering(true);
-                await api.post("/devices", {
-                  name: appName,
-                  category: getApplianceCategory(appName),
-                  room: "Living Room",
-                  watts: watts,
-                  enabled: true,
-                });
-                markRead(registerAlert.id);
-                if (Platform.OS === "ios" || Platform.OS === "android") {
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      {registerAlert &&
+        (() => {
+          const { appName, watts } = parseAlertAppliance(registerAlert);
+          const wattsSuffix = watts ? ` (~${watts} W)` : "";
+
+          return (
+            <ConfirmModal
+              visible={true}
+              iconNode={<Zap size={19 * fontScale} color={colors.accent} strokeWidth={2} />}
+              loading={registering}
+              title={`Register ${appName}?`}
+              message={`Detected an unregistered load matching ${appName}${wattsSuffix}. Add it to your household appliance inventory?`}
+              confirmText="Register appliance"
+              cancelText="Dismiss"
+              onConfirm={async () => {
+                try {
+                  setRegistering(true);
+                  await api.post("/devices", {
+                    name: appName,
+                    category: getApplianceCategory(appName),
+                    room: "Living Room",
+                    watts,
+                    enabled: true,
+                  });
+                  markRead(registerAlert.id);
+                  if (Platform.OS === "ios" || Platform.OS === "android") {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+                      () => {}
+                    );
+                  }
+                  emitAlertsChanged();
+                  emitDevicesChanged();
+                  setRegisterAlert(null);
+                  router.push("/(tabs)/devices");
+                } catch (err) {
+                  console.error("Failed to register device from alert:", err);
+                  markRead(registerAlert.id);
+                  setRegisterAlert(null);
+                  router.push({
+                    pathname: "/(tabs)/devices",
+                    params: {
+                      openAdd: "1",
+                      initialName: appName,
+                      initialWatts: String(watts),
+                    },
+                  });
+                } finally {
+                  setRegistering(false);
                 }
-                emitAlertsChanged();
-                emitDevicesChanged();
-                setRegisterAlert(null);
-                router.push("/(tabs)/devices");
-              } catch (err) {
-                console.error("Failed to register device from alert:", err);
+              }}
+              onCancel={() => {
                 markRead(registerAlert.id);
                 setRegisterAlert(null);
-                router.push({
-                  pathname: "/(tabs)/devices",
-                  params: {
-                    openAdd: "1",
-                    initialName: appName,
-                    initialWatts: String(watts),
-                  },
-                });
-              } finally {
-                setRegistering(false);
-              }
-            }}
-            onCancel={() => {
-              markRead(registerAlert.id);
-              setRegisterAlert(null);
-            }}
-          />
-        );
-      })()}
+              }}
+            />
+          );
+        })()}
     </SafeAreaView>
   );
 }
@@ -443,50 +569,188 @@ function AlertCard({
   alert: AlertItem;
   onPress: () => void;
 }) {
-  const { colors } = useTheme();
+  const { colors, fontScale } = useTheme();
   const styles = useThemedStyles(createStyles);
   const color = severityColor(alert.type, colors);
-  const icon = severityIcon(alert.type);
 
   return (
-    <TouchableOpacity
-      style={styles.card}
+    <Pressable
+      style={({ pressed }) => [
+        styles.card,
+        !alert.read && styles.cardUnread,
+        pressed && styles.cardPressed,
+      ]}
       onPress={onPress}
-      activeOpacity={0.75}
+      accessibilityRole="button"
+      accessibilityLabel={`${severityLabel(alert.type)}: ${alert.title}, ${alert.time}${!alert.read ? ", unread" : ""}`}
     >
       <View style={[styles.cardStripe, { backgroundColor: color }]} />
       <View style={styles.cardContent}>
-        <View style={[styles.iconCircle, { backgroundColor: color + "26" }]}>
-          <Ionicons name={icon} size={16} color={color} />
+        <View
+          style={[
+            styles.iconTile,
+            {
+              backgroundColor: color + "14",
+              borderColor: color + "38",
+            },
+          ]}
+        >
+          <SeverityIcon type={alert.type} color={color} size={16 * fontScale} />
         </View>
+
         <View style={styles.cardBody}>
-          <View style={styles.titleRow}>
-            <Text style={styles.alertTitle} numberOfLines={2}>
-              {alert.title}
+          <View style={styles.metaTopRow}>
+            <Text style={[styles.severityTag, { color }]}>
+              {severityLabel(alert.type)}
             </Text>
-            <Text style={styles.alertTime}>{alert.time}</Text>
+            <View style={styles.timeCluster}>
+              <Text style={styles.alertTime}>{alert.time}</Text>
+              {!alert.read && <View style={[styles.unreadDot, { backgroundColor: color }]} />}
+            </View>
           </View>
+
+          <Text style={styles.alertTitle} numberOfLines={2}>
+            {alert.title}
+          </Text>
           <Text style={styles.alertDescription}>{alert.description}</Text>
+
           {alert.recommendation && (
-            <View style={styles.recommendationRow}>
-              <Ionicons
-                name="information-circle"
-                size={14}
-                color={colors.accent}
-                style={styles.recommendationIcon}
-              />
-              <Text style={styles.recommendationText}>
-                {alert.recommendation}
-              </Text>
+            <View style={styles.recommendationBox}>
+              <Info size={13 * fontScale} color={colors.accent} strokeWidth={2} />
+              <Text style={styles.recommendationText}>{alert.recommendation}</Text>
             </View>
           )}
         </View>
       </View>
-      {!alert.read && <View style={styles.unreadDot} />}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
+function AlertDetailModal({
+  alert,
+  onClose,
+  onRequestCutoff,
+  onOpenTariff,
+}: {
+  alert: AlertItem | null;
+  onClose: () => void;
+  onRequestCutoff: (alert: AlertItem) => void;
+  onOpenTariff: () => void;
+}) {
+  const { colors, fontScale } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  if (!alert) return null;
+
+  const color = severityColor(alert.type, colors);
+  const isCritical = alert.type === "critical";
+
+  return (
+    <Modal
+      transparent
+      animationType="fade"
+      visible={!!alert}
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.detailCard}>
+          {/* Header row */}
+          <View style={styles.detailHeaderRow}>
+            <View
+              style={[
+                styles.detailIconTile,
+                { backgroundColor: color + "14", borderColor: color + "38" },
+              ]}
+            >
+              <SeverityIcon type={alert.type} color={color} size={18 * fontScale} />
+            </View>
+
+            <View style={styles.detailHeaderMeta}>
+              <Text style={[styles.detailTypeLabel, { color }]}>
+                {alert.type === "critical"
+                  ? "Critical fault"
+                  : alert.type === "warning"
+                    ? "Electrical warning"
+                    : "System notice"}
+              </Text>
+              <Text style={styles.detailTime}>
+                {alert.section === "TODAY" ? "Today" : "Earlier"} · {alert.time}
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={onClose}
+              style={({ pressed }) => [styles.detailCloseBtn, pressed && styles.btnPressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Close alert details"
+            >
+              <X size={18 * fontScale} color={colors.sub} strokeWidth={2} />
+            </Pressable>
+          </View>
+
+          {/* Title & Description */}
+          <Text style={styles.detailTitle}>{alert.title}</Text>
+          <Text style={styles.detailDesc}>{alert.description}</Text>
+
+          {/* Recommendation / Diagnostic Box */}
+          {alert.recommendation ? (
+            <View style={styles.detailRecBox}>
+              <View style={styles.detailRecHeader}>
+                <Info size={13 * fontScale} color={colors.accent} strokeWidth={2} />
+                <Text style={styles.detailRecLabel}>Recommended action</Text>
+              </View>
+              <Text style={styles.detailRecText}>{alert.recommendation}</Text>
+            </View>
+          ) : null}
+
+          {/* Actions */}
+          <View style={styles.detailActionsCol}>
+            {isTariffAlert(alert) && (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.detailActionBtn,
+                  pressed && styles.btnPressed,
+                ]}
+                onPress={onOpenTariff}
+                accessibilityRole="button"
+                accessibilityLabel="Configure electricity tariff rate"
+              >
+                <Receipt size={16 * fontScale} color={colors.white} strokeWidth={2.2} />
+                <Text style={styles.detailActionBtnText}>Set electricity tariff rate</Text>
+              </Pressable>
+            )}
+
+            {isCritical && (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.detailDangerBtn,
+                  pressed && styles.btnPressed,
+                ]}
+                onPress={() => onRequestCutoff(alert)}
+                accessibilityRole="button"
+                accessibilityLabel="Cut master power now"
+              >
+                <Power size={16 * fontScale} color={colors.red} strokeWidth={2.2} />
+                <Text style={styles.detailDangerBtnText}>Cut master power now</Text>
+              </Pressable>
+            )}
+
+            <Pressable
+              style={({ pressed }) => [styles.detailDoneBtn, pressed && styles.btnPressed]}
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss alert details"
+            >
+              <Text style={styles.detailDoneBtnText}>
+                {alert.type === "info" ? "Close notice" : "Done"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 function createStyles(colors: ThemeColors, fontScale: number) {
   return StyleSheet.create({
@@ -496,103 +760,192 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     },
     inner: {
       flex: 1,
-      paddingHorizontal: 16,
-      paddingTop: 8,
+      paddingHorizontal: 20,
+      paddingTop: 12,
     },
+
+    // Header
     header: {
       flexDirection: "row",
       alignItems: "flex-start",
       justifyContent: "space-between",
       marginBottom: 16,
+      gap: 12,
+    },
+    headerTextCol: {
+      flex: 1,
+    },
+    eyebrow: {
+      color: colors.accent,
+      fontSize: 12.5 * fontScale,
+      fontWeight: "500",
+      marginBottom: 2,
     },
     title: {
       color: colors.text,
-      fontSize: 28 * fontScale,
-      fontWeight: "700",
+      fontSize: 26 * fontScale,
+      fontWeight: "600",
+      letterSpacing: -0.4,
+      lineHeight: 32 * fontScale,
+    },
+    subtitle: {
+      color: colors.sub,
+      fontSize: 13.5 * fontScale,
+      marginTop: 2,
     },
     markAllBtn: {
-      paddingTop: 4,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      height: 38,
+      paddingHorizontal: 12,
+      marginTop: 4,
+    },
+    markAllBtnDisabled: {
+      opacity: 0.55,
     },
     markAllText: {
       color: colors.accent,
       fontSize: 13 * fontScale,
-      textAlign: "right",
-      lineHeight: 18 * fontScale,
-    },
-    tabRow: {
-      flexDirection: "row",
-      gap: 24,
-    },
-    tab: {
-      paddingBottom: 8,
-      position: "relative",
-    },
-    tabLabelRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-    },
-    tabLabel: {
-      color: colors.sub,
-      fontSize: 15 * fontScale,
-      fontWeight: "500",
-    },
-    tabLabelActive: {
-      color: colors.text,
       fontWeight: "600",
     },
-    tabCountBadge: {
-      backgroundColor: colors.sub,
-      borderRadius: 9,
-      minWidth: 18,
-      height: 18,
+
+    // Segmented Filter Control
+    filterSegment: {
+      flexDirection: "row",
+      backgroundColor: colors.card,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 3,
+      gap: 3,
+      marginBottom: 16,
+    },
+    filterTab: {
+      flex: 1,
+      flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
-      paddingHorizontal: 5,
+      gap: 6,
+      paddingVertical: 8,
+      borderRadius: 7,
     },
-    tabCountBadgeCritical: {
-      backgroundColor: colors.red,
-    },
-    tabCountText: {
-      color: colors.bg,
-      fontSize: 11 * fontScale,
-      fontWeight: "700",
-    },
-    tabIndicator: {
-      position: "absolute",
-      bottom: 0,
-      left: 0,
-      right: 0,
-      height: 2,
+    filterTabActive: {
       backgroundColor: colors.accent,
-      borderRadius: 1,
     },
-    tabSeparator: {
-      height: 1,
-      backgroundColor: colors.border,
-      marginBottom: 20,
+    filterLabel: {
+      color: colors.sub,
+      fontSize: 13 * fontScale,
+      fontWeight: "600",
     },
+    filterLabelActive: {
+      color: colors.bg,
+      fontWeight: "600",
+    },
+    filterCountBadge: {
+      backgroundColor: colors.surface,
+      borderRadius: 5,
+      paddingHorizontal: 6,
+      paddingVertical: 1,
+      minWidth: 20,
+      alignItems: "center",
+    },
+    filterCountBadgeActive: {
+      backgroundColor: colors.bg + "28",
+    },
+    filterCountBadgeCritical: {
+      backgroundColor: colors.red + "18",
+    },
+    filterCountText: {
+      color: colors.sub,
+      fontSize: 11 * fontScale,
+      fontWeight: "600",
+    },
+    filterCountTextActive: {
+      color: colors.bg,
+    },
+
+    // Empty state
+    emptyState: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      paddingBottom: 56,
+      paddingHorizontal: 24,
+    },
+    emptyIconTile: {
+      width: 48,
+      height: 48,
+      borderRadius: 10,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 4,
+    },
+    emptyTitle: {
+      color: colors.text,
+      fontSize: 17 * fontScale,
+      fontWeight: "600",
+    },
+    emptySub: {
+      color: colors.sub,
+      fontSize: 14 * fontScale,
+      lineHeight: 20 * fontScale,
+      textAlign: "center",
+      maxWidth: 300,
+    },
+
+    // Feed sections
     scroll: {
-      paddingBottom: 8,
+      paddingBottom: 12,
+    },
+    sectionBlock: {
+      marginBottom: 14,
+    },
+    sectionHeaderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 8,
+      paddingHorizontal: 2,
     },
     sectionLabel: {
       color: colors.sub,
-      fontSize: 12 * fontScale,
-      fontWeight: "600",
-      letterSpacing: 1,
-      marginBottom: 10,
-      marginTop: 4,
+      fontSize: 13 * fontScale,
+      fontWeight: "500",
     },
+    sectionCount: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      fontWeight: "500",
+    },
+
+    // Alert card
     card: {
       backgroundColor: colors.card,
       borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
       marginBottom: 10,
       flexDirection: "row",
       overflow: "hidden",
     },
+    cardUnread: {
+      borderColor: colors.accentBorder,
+    },
+    cardPressed: {
+      opacity: 0.9,
+    },
     cardStripe: {
-      width: 4,
-      borderRadius: 2,
+      width: 3,
+      alignSelf: "stretch",
     },
     cardContent: {
       flex: 1,
@@ -600,65 +953,214 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       padding: 14,
       gap: 12,
     },
-    iconCircle: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
+    iconTile: {
+      width: 34,
+      height: 34,
+      borderRadius: 8,
+      borderWidth: 1,
       alignItems: "center",
       justifyContent: "center",
+      marginTop: 1,
       flexShrink: 0,
     },
     cardBody: {
       flex: 1,
     },
-    titleRow: {
+    metaTopRow: {
       flexDirection: "row",
-      alignItems: "flex-start",
-      gap: 8,
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 3,
     },
-    alertTitle: {
-      flex: 1,
-      color: colors.text,
-      fontSize: 14 * fontScale,
-      fontWeight: "700",
-      lineHeight: 20 * fontScale,
+    severityTag: {
+      fontSize: 12 * fontScale,
+      fontWeight: "600",
+    },
+    timeCluster: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
     },
     alertTime: {
       color: colors.sub,
       fontSize: 12 * fontScale,
-      flexShrink: 0,
-      marginTop: 2,
+    },
+    unreadDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 3.5,
+    },
+    alertTitle: {
+      color: colors.text,
+      fontSize: 15 * fontScale,
+      fontWeight: "600",
+      letterSpacing: -0.15,
+      lineHeight: 20 * fontScale,
     },
     alertDescription: {
       color: colors.sub,
-      fontSize: 13 * fontScale,
+      fontSize: 13.5 * fontScale,
       marginTop: 4,
-      lineHeight: 18 * fontScale,
+      lineHeight: 19 * fontScale,
     },
-    recommendationRow: {
+    recommendationBox: {
       flexDirection: "row",
       alignItems: "flex-start",
-      marginTop: 6,
-      gap: 4,
-    },
-    recommendationIcon: {
-      marginTop: 1,
-      flexShrink: 0,
+      gap: 6,
+      marginTop: 8,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
     },
     recommendationText: {
+      color: colors.text,
+      fontSize: 12.5 * fontScale,
+      flex: 1,
+      lineHeight: 17.5 * fontScale,
+    },
+
+    // Detail Modal
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlayStrong,
+      justifyContent: "center",
+      alignItems: "center",
+      padding: 20,
+    },
+    detailCard: {
+      backgroundColor: colors.card,
+      borderRadius: 12,
+      padding: 20,
+      width: "100%",
+      maxWidth: 420,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    detailHeaderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      marginBottom: 14,
+    },
+    detailIconTile: {
+      width: 38,
+      height: 38,
+      borderRadius: 8,
+      borderWidth: 1,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    detailHeaderMeta: {
+      flex: 1,
+    },
+    detailTypeLabel: {
+      fontSize: 12 * fontScale,
+      fontWeight: "600",
+      textTransform: "uppercase",
+      letterSpacing: 0.3,
+    },
+    detailTime: {
+      color: colors.sub,
+      fontSize: 12 * fontScale,
+      marginTop: 2,
+    },
+    detailCloseBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: 6,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surface,
+    },
+    detailTitle: {
+      color: colors.text,
+      fontSize: 18 * fontScale,
+      fontWeight: "600",
+      letterSpacing: -0.2,
+      lineHeight: 24 * fontScale,
+      marginBottom: 8,
+    },
+    detailDesc: {
+      color: colors.sub,
+      fontSize: 14 * fontScale,
+      lineHeight: 20 * fontScale,
+      marginBottom: 16,
+    },
+    detailRecBox: {
+      backgroundColor: colors.surface,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 12,
+      marginBottom: 18,
+    },
+    detailRecHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginBottom: 4,
+    },
+    detailRecLabel: {
       color: colors.accent,
       fontSize: 12 * fontScale,
-      flex: 1,
-      lineHeight: 17 * fontScale,
+      fontWeight: "600",
     },
-    unreadDot: {
-      position: "absolute",
-      top: 10,
-      right: 10,
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      backgroundColor: colors.red,
+    detailRecText: {
+      color: colors.text,
+      fontSize: 13 * fontScale,
+      lineHeight: 18 * fontScale,
+    },
+    detailActionsCol: {
+      gap: 10,
+    },
+    detailActionBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      height: 44,
+      borderRadius: 8,
+      backgroundColor: colors.accent,
+    },
+    detailActionBtnText: {
+      color: colors.white,
+      fontSize: 14 * fontScale,
+      fontWeight: "600",
+    },
+    detailDangerBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      height: 44,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.red + "40",
+      backgroundColor: colors.red + "12",
+    },
+    detailDangerBtnText: {
+      color: colors.red,
+      fontSize: 14 * fontScale,
+      fontWeight: "600",
+    },
+    detailDoneBtn: {
+      alignItems: "center",
+      justifyContent: "center",
+      height: 44,
+      borderRadius: 8,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    detailDoneBtnText: {
+      color: colors.text,
+      fontSize: 14 * fontScale,
+      fontWeight: "600",
+    },
+
+    btnPressed: {
+      opacity: 0.82,
+      transform: [{ scale: 0.99 }],
     },
   });
 }

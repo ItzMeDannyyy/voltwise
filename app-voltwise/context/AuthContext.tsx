@@ -16,6 +16,12 @@ import {
   AuthResponse,
 } from "../lib/api";
 import { saveToken, getToken, deleteToken } from "../lib/auth-storage";
+import {
+  removeSavedCredential,
+  setRememberPreference,
+  updateSavedCredentialPassword,
+  upsertSavedCredential,
+} from "../lib/credential-storage";
 
 // ---- Types ----
 
@@ -32,8 +38,14 @@ interface AuthContextValue {
   token: string | null;
   isBootstrapping: boolean;
   isAuthenticated: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
-  signUp: (firstName: string, lastName: string, email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string, rememberCredentials?: boolean) => Promise<void>;
+  signUp: (
+    firstName: string,
+    lastName: string,
+    email: string,
+    password: string,
+    rememberCredentials?: boolean
+  ) => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (dto: UpdateProfileDto) => Promise<void>;
 }
@@ -118,7 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // ---- Auth actions ----
 
   const signIn = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string, rememberCredentials = true) => {
       // `client` names this device in the account's session list — see
       // Settings → Privacy & Security.
       const { token: t, user: u } = await api.post<AuthResponse>("/auth/login", {
@@ -127,6 +139,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         client: clientDescriptor(),
       });
       await saveToken(t);
+      await setRememberPreference(rememberCredentials);
+      if (rememberCredentials) {
+        await upsertSavedCredential({
+          email: u.email || email,
+          password,
+          name: u.name,
+        });
+      } else {
+        await removeSavedCredential(email);
+      }
       applyToken(t);
       setUser(u);
     },
@@ -134,7 +156,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signUp = useCallback(
-    async (firstName: string, lastName: string, email: string, password: string) => {
+    async (
+      firstName: string,
+      lastName: string,
+      email: string,
+      password: string,
+      rememberCredentials = true
+    ) => {
       const { token: t, user: u } = await api.post<AuthResponse>("/auth/register", {
         firstName,
         lastName,
@@ -143,6 +171,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         client: clientDescriptor(),
       });
       await saveToken(t);
+      await setRememberPreference(rememberCredentials);
+      if (rememberCredentials) {
+        await upsertSavedCredential({
+          email: u.email || email,
+          password,
+          name: u.name,
+        });
+      }
       applyToken(t);
       setUser(u);
     },
@@ -159,6 +195,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const updateProfile = useCallback(
     async (dto: UpdateProfileDto) => {
       const updated = await api.patch<AuthUser>("/auth/me", dto);
+      if (dto.newPassword) {
+        await updateSavedCredentialPassword(updated.email, dto.newPassword);
+      }
       setUser(updated);
     },
     []

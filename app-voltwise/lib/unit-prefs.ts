@@ -168,15 +168,15 @@ export function resolvePowerUnit(referenceWatts: number, prefs: UnitPrefs): "W" 
   return Math.abs(Number.isFinite(referenceWatts) ? referenceWatts : 0) >= 1000 ? "kW" : "W";
 }
 
-/** Renders watts in an already-resolved unit. */
-export function powerIn(watts: number, unit: "W" | "kW"): string {
+/** Renders watts in an already-resolved unit (2 decimal places by default to match live PZEM telemetry). */
+export function powerIn(watts: number, unit: "W" | "kW", decimals = 2): string {
   const safe = Number.isFinite(watts) ? watts : 0;
-  return unit === "kW" ? (safe / 1000).toFixed(2) : safe.toFixed(0);
+  return unit === "kW" ? (safe / 1000).toFixed(decimals) : safe.toFixed(decimals);
 }
 
-export function powerParts(watts: number, prefs: UnitPrefs): ValueParts {
+export function powerParts(watts: number, prefs: UnitPrefs, decimals = 2): ValueParts {
   const unit = resolvePowerUnit(watts, prefs);
-  return { value: powerIn(watts, unit), unit };
+  return { value: powerIn(watts, unit, decimals), unit };
 }
 
 /**
@@ -194,8 +194,8 @@ export function energyParts(kwh: number, prefs: UnitPrefs, decimals = 2): ValueP
   return { value: energyIn(kwh, prefs.energyUnit, decimals), unit: prefs.energyUnit };
 }
 
-export function formatPower(watts: number, prefs: UnitPrefs): string {
-  const { value, unit } = powerParts(watts, prefs);
+export function formatPower(watts: number, prefs: UnitPrefs, decimals = 2): string {
+  const { value, unit } = powerParts(watts, prefs, decimals);
   return `${value} ${unit}`;
 }
 

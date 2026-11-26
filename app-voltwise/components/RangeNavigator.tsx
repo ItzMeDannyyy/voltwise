@@ -1,6 +1,12 @@
 import { useState } from "react";
-import { Modal, View, Text, TouchableOpacity, StyleSheet, Pressable } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Modal, View, Text, Pressable, StyleSheet } from "react-native";
+import {
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  Receipt,
+  RotateCcw,
+} from "./LucideIcons";
 import { useTheme } from "../context/ThemeContext";
 import { useThemedStyles } from "./themed";
 import type { ThemeColors } from "../constants/theme";
@@ -97,7 +103,7 @@ export default function RangeNavigator({
         {PERIODS.map((period) => {
           const active = state.period === period.key;
           return (
-            <TouchableOpacity
+            <Pressable
               key={period.key}
               style={[styles.periodBtn, active && styles.periodBtnActive]}
               onPress={() => onChange({ ...state, period: period.key })}
@@ -107,27 +113,26 @@ export default function RangeNavigator({
               <Text style={[styles.periodLabel, active && styles.periodLabelActive]}>
                 {period.label}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
       </View>
 
       {/* Timeline: back, the window itself, forward */}
       <View style={styles.timeline}>
-        <TouchableOpacity
-          style={styles.arrow}
+        <Pressable
+          style={({ pressed }) => [styles.arrow, pressed && styles.btnPressed]}
           onPress={() => onChange(stepRange(state, -1))}
           accessibilityRole="button"
           accessibilityLabel="Previous period"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="chevron-back" size={18} color={colors.text} />
-        </TouchableOpacity>
+          <ChevronLeft size={17} color={colors.text} strokeWidth={2} />
+        </Pressable>
 
-        <TouchableOpacity
-          style={styles.centre}
+        <Pressable
+          style={({ pressed }) => [styles.centre, pressed && styles.btnPressed]}
           onPress={openCentre}
-          activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel={
             state.period === "Cycle"
@@ -136,20 +141,24 @@ export default function RangeNavigator({
           }
         >
           <View style={styles.centreRow}>
-            <Ionicons
-              name={state.period === "Cycle" ? "receipt-outline" : "calendar-outline"}
-              size={14}
-              color={colors.accent}
-            />
+            {state.period === "Cycle" ? (
+              <Receipt size={14} color={colors.accent} strokeWidth={2} />
+            ) : (
+              <Calendar size={14} color={colors.accent} strokeWidth={2} />
+            )}
             <Text style={styles.centreLabel} numberOfLines={1}>
               {label}
             </Text>
           </View>
           {subLabel && <Text style={styles.centreSub}>{subLabel}</Text>}
-        </TouchableOpacity>
+        </Pressable>
 
-        <TouchableOpacity
-          style={[styles.arrow, !forwardEnabled && styles.arrowDisabled]}
+        <Pressable
+          style={({ pressed }) => [
+            styles.arrow,
+            !forwardEnabled && styles.arrowDisabled,
+            pressed && forwardEnabled && styles.btnPressed,
+          ]}
           onPress={() => onChange(stepRange(state, 1))}
           disabled={!forwardEnabled}
           accessibilityRole="button"
@@ -157,25 +166,24 @@ export default function RangeNavigator({
           accessibilityState={{ disabled: !forwardEnabled }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons
-            name="chevron-forward"
-            size={18}
+          <ChevronRight
+            size={17}
             color={forwardEnabled ? colors.text : colors.inactive}
+            strokeWidth={2}
           />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       {/* One tap back to the present, from however far back the user wandered. */}
       {!atNow && state.period !== "Cycle" && (
-        <TouchableOpacity
-          style={styles.jumpBtn}
+        <Pressable
+          style={({ pressed }) => [styles.jumpBtn, pressed && styles.btnPressed]}
           onPress={() => onChange(resetToNow(state, new Date()))}
-          activeOpacity={0.8}
           accessibilityRole="button"
         >
-          <Ionicons name="refresh" size={12} color={colors.accent} />
-          <Text style={styles.jumpText}>Back to now</Text>
-        </TouchableOpacity>
+          <RotateCcw size={12} color={colors.accent} strokeWidth={2.2} />
+          <Text style={styles.jumpText}>Jump to current period</Text>
+        </Pressable>
       )}
 
       <DatePickerModal
@@ -258,22 +266,23 @@ function CycleEditor({ visible, cycle, onSave, onDismiss }: CycleEditorProps) {
             />
           ) : (
             <View style={styles.editorCard}>
-              <View style={styles.editorIconWrap}>
-                <Ionicons name="receipt-outline" size={24} color={colors.accent} />
+              <View style={styles.editorHeaderRow}>
+                <View style={styles.editorIconWrap}>
+                  <Receipt size={20} color={colors.accent} strokeWidth={2} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.editorTitle}>Billing cycle window</Text>
+                  <Text style={styles.editorMessage}>
+                    Match the start and end dates on your utility statement.
+                  </Text>
+                </View>
               </View>
 
-              <Text style={styles.editorTitle}>Billing cycle</Text>
-              <Text style={styles.editorMessage}>
-                Enter the dates printed on your electricity bill. The arrows then
-                step through earlier cycles of the same length.
-              </Text>
-
-              <TouchableOpacity
-                style={styles.dateRow}
+              <Pressable
+                style={({ pressed }) => [styles.dateRow, pressed && styles.btnPressed]}
                 onPress={() => setPicking("from")}
-                activeOpacity={0.7}
               >
-                <Text style={styles.dateRowLabel}>Starts</Text>
+                <Text style={styles.dateRowLabel}>Cycle starts</Text>
                 <View style={styles.dateRowValueWrap}>
                   <Text style={styles.dateRowValue}>
                     {fromIso(draft.from).toLocaleDateString("en-US", {
@@ -282,16 +291,15 @@ function CycleEditor({ visible, cycle, onSave, onDismiss }: CycleEditorProps) {
                       year: "numeric",
                     })}
                   </Text>
-                  <Ionicons name="chevron-forward" size={16} color={colors.sub} />
+                  <ChevronRight size={16} color={colors.sub} strokeWidth={2} />
                 </View>
-              </TouchableOpacity>
+              </Pressable>
 
-              <TouchableOpacity
-                style={styles.dateRow}
+              <Pressable
+                style={({ pressed }) => [styles.dateRow, pressed && styles.btnPressed]}
                 onPress={() => setPicking("to")}
-                activeOpacity={0.7}
               >
-                <Text style={styles.dateRowLabel}>Ends</Text>
+                <Text style={styles.dateRowLabel}>Cycle ends</Text>
                 <View style={styles.dateRowValueWrap}>
                   <Text style={styles.dateRowValue}>
                     {fromIso(draft.to).toLocaleDateString("en-US", {
@@ -300,9 +308,9 @@ function CycleEditor({ visible, cycle, onSave, onDismiss }: CycleEditorProps) {
                       year: "numeric",
                     })}
                   </Text>
-                  <Ionicons name="chevron-forward" size={16} color={colors.sub} />
+                  <ChevronRight size={16} color={colors.sub} strokeWidth={2} />
                 </View>
-              </TouchableOpacity>
+              </Pressable>
 
               {error ? (
                 <Text style={styles.editorError}>{error}</Text>
@@ -313,25 +321,28 @@ function CycleEditor({ visible, cycle, onSave, onDismiss }: CycleEditorProps) {
               )}
 
               <View style={styles.editorActions}>
-                <TouchableOpacity
-                  style={[styles.editorBtn, styles.editorBtnCancel]}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.editorBtn,
+                    styles.editorBtnCancel,
+                    pressed && styles.btnPressed,
+                  ]}
                   onPress={onDismiss}
-                  activeOpacity={0.8}
                 >
                   <Text style={styles.editorBtnCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [
                     styles.editorBtn,
                     styles.editorBtnSave,
                     error !== null && styles.editorBtnDisabled,
+                    pressed && error === null && styles.btnPressed,
                   ]}
                   onPress={() => onSave(draft)}
                   disabled={error !== null}
-                  activeOpacity={0.8}
                 >
-                  <Text style={styles.editorBtnSaveText}>Save</Text>
-                </TouchableOpacity>
+                  <Text style={styles.editorBtnSaveText}>Save cycle dates</Text>
+                </Pressable>
               </View>
             </View>
           )}
@@ -350,13 +361,15 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       flexDirection: "row",
       backgroundColor: colors.card,
       borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
       padding: 3,
-      gap: 2,
+      gap: 3,
     },
     periodBtn: {
       flex: 1,
-      paddingVertical: 7,
-      borderRadius: 8,
+      paddingVertical: 8,
+      borderRadius: 7,
       alignItems: "center",
     },
     periodBtnActive: {
@@ -364,11 +377,12 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     },
     periodLabel: {
       color: colors.sub,
-      fontSize: 12 * fontScale,
-      fontWeight: "700",
+      fontSize: 13 * fontScale,
+      fontWeight: "600",
     },
     periodLabelActive: {
       color: colors.bg,
+      fontWeight: "600",
     },
     timeline: {
       flexDirection: "row",
@@ -377,25 +391,25 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       borderRadius: 10,
       borderWidth: 1,
       borderColor: colors.border,
-      paddingHorizontal: 4,
-      paddingVertical: 4,
+      paddingHorizontal: 6,
+      paddingVertical: 5,
     },
     arrow: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
+      width: 36,
+      height: 36,
+      borderRadius: 8,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: colors.surface,
     },
     arrowDisabled: {
-      opacity: 0.4,
+      opacity: 0.35,
     },
     centre: {
       flex: 1,
       alignItems: "center",
       justifyContent: "center",
-      paddingHorizontal: 6,
+      paddingHorizontal: 8,
     },
     centreRow: {
       flexDirection: "row",
@@ -404,31 +418,34 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     },
     centreLabel: {
       color: colors.text,
-      fontSize: 13 * fontScale,
-      fontWeight: "700",
+      fontSize: 13.5 * fontScale,
+      fontWeight: "600",
       flexShrink: 1,
     },
     centreSub: {
       color: colors.sub,
-      fontSize: 11 * fontScale,
+      fontSize: 11.5 * fontScale,
       marginTop: 1,
     },
     jumpBtn: {
-      alignSelf: "center",
+      alignSelf: "flex-start",
       flexDirection: "row",
       alignItems: "center",
-      gap: 5,
-      backgroundColor: colors.accentSoft,
+      gap: 6,
+      backgroundColor: colors.card,
       borderWidth: 1,
-      borderColor: colors.accentBorder,
-      borderRadius: 12,
+      borderColor: colors.border,
+      borderRadius: 8,
       paddingHorizontal: 10,
-      paddingVertical: 4,
+      paddingVertical: 6,
     },
     jumpText: {
       color: colors.accent,
-      fontSize: 11 * fontScale,
-      fontWeight: "700",
+      fontSize: 12 * fontScale,
+      fontWeight: "600",
+    },
+    btnPressed: {
+      opacity: 0.8,
     },
 
     // ── Cycle editor ──
@@ -437,103 +454,111 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       backgroundColor: colors.overlay,
       alignItems: "center",
       justifyContent: "center",
-      paddingHorizontal: 28,
+      paddingHorizontal: 24,
     },
     editorWrap: {
       width: "100%",
-      maxWidth: 360,
+      maxWidth: 380,
     },
     editorCard: {
       width: "100%",
       backgroundColor: colors.card,
-      borderRadius: 20,
+      borderRadius: 12,
       borderWidth: 1,
       borderColor: colors.border,
-      padding: 22,
-      alignItems: "center",
+      padding: 20,
+    },
+    editorHeaderRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 12,
+      marginBottom: 16,
     },
     editorIconWrap: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
-      backgroundColor: colors.accentSoft,
+      width: 40,
+      height: 40,
+      borderRadius: 8,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
       alignItems: "center",
       justifyContent: "center",
-      marginBottom: 12,
+      marginTop: 2,
     },
     editorTitle: {
       color: colors.text,
-      fontSize: 18 * fontScale,
-      fontWeight: "700",
-      marginBottom: 6,
+      fontSize: 17 * fontScale,
+      fontWeight: "600",
+      letterSpacing: -0.2,
+      marginBottom: 3,
     },
     editorMessage: {
       color: colors.sub,
-      fontSize: 13 * fontScale,
+      fontSize: 13.5 * fontScale,
       lineHeight: 19 * fontScale,
-      textAlign: "center",
-      marginBottom: 16,
     },
     dateRow: {
       alignSelf: "stretch",
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      backgroundColor: colors.surface,
-      borderRadius: 12,
+      backgroundColor: colors.bg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
       paddingHorizontal: 14,
-      paddingVertical: 12,
+      height: 48,
       marginBottom: 8,
     },
     dateRowLabel: {
       color: colors.sub,
-      fontSize: 13 * fontScale,
-      fontWeight: "600",
+      fontSize: 13.5 * fontScale,
+      fontWeight: "500",
     },
     dateRowValueWrap: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 4,
+      gap: 6,
     },
     dateRowValue: {
       color: colors.text,
-      fontSize: 14 * fontScale,
-      fontWeight: "700",
+      fontSize: 14.5 * fontScale,
+      fontWeight: "600",
     },
     editorPreview: {
       color: colors.accent,
-      fontSize: 12 * fontScale,
-      fontWeight: "700",
+      fontSize: 12.5 * fontScale,
+      fontWeight: "600",
       marginTop: 4,
     },
     editorError: {
       color: colors.red,
-      fontSize: 12 * fontScale,
-      fontWeight: "600",
-      textAlign: "center",
+      fontSize: 12.5 * fontScale,
+      fontWeight: "500",
       marginTop: 4,
     },
     editorActions: {
       flexDirection: "row",
-      gap: 12,
+      gap: 10,
       marginTop: 18,
       alignSelf: "stretch",
     },
     editorBtn: {
       flex: 1,
       height: 46,
-      borderRadius: 12,
+      borderRadius: 8,
       alignItems: "center",
       justifyContent: "center",
     },
     editorBtnCancel: {
       borderWidth: 1,
       borderColor: colors.border,
+      backgroundColor: colors.bg,
     },
     editorBtnCancelText: {
-      color: colors.sub,
-      fontSize: 15 * fontScale,
-      fontWeight: "700",
+      color: colors.text,
+      fontSize: 14.5 * fontScale,
+      fontWeight: "500",
     },
     editorBtnSave: {
       backgroundColor: colors.accent,
@@ -543,8 +568,8 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     },
     editorBtnSaveText: {
       color: colors.bg,
-      fontSize: 15 * fontScale,
-      fontWeight: "700",
+      fontSize: 14.5 * fontScale,
+      fontWeight: "600",
     },
   });
 }

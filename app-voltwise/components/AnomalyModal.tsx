@@ -1,8 +1,13 @@
 import { useEffect, useRef } from "react";
-import { Modal, View, Text, TouchableOpacity, StyleSheet } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Modal, View, Text, Pressable, StyleSheet } from "react-native";
 import { createAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
+import {
+  AlertCircle,
+  AlertTriangle,
+  Info,
+  Power,
+} from "./LucideIcons";
 import { useNotifications } from "../context/NotificationContext";
 import { useTheme } from "../context/ThemeContext";
 import { useThemedStyles } from "./themed";
@@ -22,20 +27,26 @@ function severityColor(type: ModalAlertData["type"], colors: ThemeColors): strin
   }
 }
 
-function severityIcon(type: ModalAlertData["type"]): keyof typeof Ionicons.glyphMap {
+function typeLabel(type: ModalAlertData["type"]): string {
   switch (type) {
-    case "critical": return "alert-circle";
-    case "warning":  return "warning";
-    case "info":     return "information-circle";
+    case "critical": return "Critical fault · Auto relay trip";
+    case "warning":  return "Electrical warning";
+    case "info":     return "System notice";
   }
 }
 
-function typeLabel(type: ModalAlertData["type"]): string {
-  switch (type) {
-    case "critical": return "ANOMALY DETECTED";
-    case "warning":  return "WARNING DETECTED";
-    case "info":     return "ALERT";
-  }
+function SeverityGlyph({
+  type,
+  color,
+  size,
+}: {
+  type: ModalAlertData["type"];
+  color: string;
+  size: number;
+}) {
+  if (type === "critical") return <AlertCircle size={size} color={color} strokeWidth={2.1} />;
+  if (type === "warning") return <AlertTriangle size={size} color={color} strokeWidth={2.1} />;
+  return <Info size={size} color={color} strokeWidth={2.1} />;
 }
 
 async function playSound(src: "beep" | "poweroff") {
@@ -64,7 +75,7 @@ export function AnomalyModal({
   onPowerOff: () => void;
   onSkip: () => void;
 }) {
-  const { colors } = useTheme();
+  const { colors, fontScale } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { prefs } = useNotifications();
   const prevTitle     = useRef<string | null>(null);
@@ -103,47 +114,76 @@ export function AnomalyModal({
 
   if (!alert) return null;
   const color = severityColor(alert.type, colors);
-  const icon  = severityIcon(alert.type);
-  const showCountdown = alert.type !== "info" && !powerOff;
+  const showCountdown = alert.type === "critical" && countdown > 0 && !powerOff;
+  const isCritical = alert.type === "critical";
 
   return (
     <Modal transparent animationType="fade" visible statusBarTranslucent>
       <View style={styles.overlay}>
         <View style={styles.card}>
-          <View style={[styles.iconCircle, { backgroundColor: color + "26" }]}>
-            <Ionicons name={icon} size={36} color={color} />
+          {/* Top badge row */}
+          <View style={styles.headerRow}>
+            <View
+              style={[
+                styles.iconTile,
+                {
+                  backgroundColor: color + "14",
+                  borderColor: color + "40",
+                },
+              ]}
+            >
+              <SeverityGlyph type={alert.type} color={color} size={22 * fontScale} />
+            </View>
+            <View style={styles.headerMeta}>
+              <Text style={[styles.typeLabel, { color }]}>{typeLabel(alert.type)}</Text>
+              <Text style={styles.title}>{alert.title}</Text>
+            </View>
           </View>
 
-          <Text style={[styles.typeLabel, { color }]}>{typeLabel(alert.type)}</Text>
-
-          <Text style={styles.title}>{alert.title}</Text>
           <Text style={styles.desc}>{alert.description}</Text>
 
           {showCountdown && (
-            <View style={styles.countdownRow}>
-              <Text style={styles.countdownLabel}>Power shutting down in</Text>
-              <Text style={styles.countdownNum}>{countdown}</Text>
-              <Text style={styles.countdownLabel}>seconds</Text>
+            <View style={styles.countdownPanel}>
+              <Text style={styles.countdownLabel}>Master relay trips in</Text>
+              <Text style={styles.countdownNum}>{countdown}s</Text>
             </View>
           )}
 
           {powerOff && (
-            <Text style={styles.shuttingDown}>Shutting down…</Text>
+            <View style={styles.countdownPanel}>
+              <Text style={styles.shuttingDown}>Sending master relay cutoff…</Text>
+            </View>
           )}
 
-          <TouchableOpacity
-            style={[styles.powerBtn, powerOff && styles.powerBtnDimmed]}
-            onPress={onPowerOff}
-            activeOpacity={0.8}
-            disabled={powerOff}
-          >
-            <Ionicons name="power" size={28} color={colors.white} />
-            <Text style={styles.powerBtnText}>TURN OFF NOW</Text>
-          </TouchableOpacity>
+          {isCritical && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.powerBtn,
+                pressed && !powerOff && styles.btnPressed,
+                powerOff && styles.powerBtnDimmed,
+              ]}
+              onPress={onPowerOff}
+              disabled={powerOff}
+              accessibilityRole="button"
+              accessibilityLabel="Cut master power now"
+            >
+              <Power size={18 * fontScale} color={colors.white} strokeWidth={2.2} />
+              <Text style={styles.powerBtnText}>Cut master power now</Text>
+            </Pressable>
+          )}
 
-          <TouchableOpacity style={styles.skipBtn} onPress={onSkip}>
-            <Text style={styles.skipText}>{showCountdown ? "Keep Power On" : "Dismiss"}</Text>
-          </TouchableOpacity>
+          <Pressable
+            style={({ pressed }) => [
+              styles.skipBtn,
+              pressed && styles.btnPressed,
+            ]}
+            onPress={onSkip}
+            accessibilityRole="button"
+          >
+            <Text style={styles.skipText}>
+              {showCountdown ? "Keep circuits energized" : "Close notice"}
+            </Text>
+          </Pressable>
         </View>
       </View>
     </Modal>
@@ -161,99 +201,111 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     },
     card: {
       backgroundColor: colors.card,
-      borderRadius: 20,
-      padding: 28,
+      borderRadius: 12,
+      padding: 20,
       width: "100%",
-      alignItems: "center",
+      maxWidth: 400,
       borderWidth: 1,
       borderColor: colors.border,
     },
-    iconCircle: {
-      width: 72,
-      height: 72,
-      borderRadius: 36,
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 14,
+      marginBottom: 12,
+    },
+    iconTile: {
+      width: 44,
+      height: 44,
+      borderRadius: 10,
+      borderWidth: 1,
       alignItems: "center",
       justifyContent: "center",
-      marginBottom: 14,
+    },
+    headerMeta: {
+      flex: 1,
     },
     typeLabel: {
-      fontSize: 13 * fontScale,
-      fontWeight: "800",
-      letterSpacing: 1.5,
-      marginBottom: 10,
+      fontSize: 12.5 * fontScale,
+      fontWeight: "600",
+      marginBottom: 3,
     },
     title: {
       color: colors.text,
-      fontSize: 16 * fontScale,
-      fontWeight: "700",
-      textAlign: "center",
-      marginBottom: 6,
-      lineHeight: 22 * fontScale,
+      fontSize: 17 * fontScale,
+      fontWeight: "600",
+      letterSpacing: -0.2,
+      lineHeight: 23 * fontScale,
     },
     desc: {
       color: colors.sub,
-      fontSize: 13 * fontScale,
-      textAlign: "center",
-      lineHeight: 19 * fontScale,
-      marginBottom: 20,
+      fontSize: 14 * fontScale,
+      lineHeight: 20 * fontScale,
+      marginBottom: 16,
     },
-    countdownRow: {
+    countdownPanel: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 8,
-      marginBottom: 20,
+      justifyContent: "space-between",
+      backgroundColor: colors.red + "12",
+      borderWidth: 1,
+      borderColor: colors.red + "38",
+      borderRadius: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginBottom: 16,
     },
     countdownLabel: {
-      color: colors.sub,
-      fontSize: 13 * fontScale,
+      color: colors.text,
+      fontSize: 13.5 * fontScale,
+      fontWeight: "500",
     },
     countdownNum: {
       color: colors.red,
-      fontSize: 36 * fontScale,
-      fontWeight: "800",
-      lineHeight: 40 * fontScale,
-      minWidth: 36,
-      textAlign: "center",
+      fontSize: 22 * fontScale,
+      fontWeight: "600",
     },
     shuttingDown: {
       color: colors.red,
-      fontSize: 15 * fontScale,
-      fontWeight: "700",
-      marginBottom: 20,
-      letterSpacing: 0.5,
+      fontSize: 14 * fontScale,
+      fontWeight: "600",
     },
     powerBtn: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
-      gap: 10,
+      gap: 8,
       backgroundColor: colors.red,
-      borderRadius: 14,
-      paddingVertical: 18,
+      borderRadius: 8,
+      height: 48,
       width: "100%",
-      marginBottom: 14,
-      shadowColor: colors.red,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.45,
-      shadowRadius: 8,
-      elevation: 6,
+      marginBottom: 10,
     },
     powerBtnDimmed: {
       opacity: 0.45,
     },
     powerBtnText: {
       color: colors.white,
-      fontSize: 17 * fontScale,
-      fontWeight: "800",
-      letterSpacing: 1,
+      fontSize: 15.5 * fontScale,
+      fontWeight: "600",
     },
     skipBtn: {
-      paddingVertical: 10,
+      height: 44,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.bg,
+      alignItems: "center",
+      justifyContent: "center",
     },
     skipText: {
-      color: colors.sub,
-      fontSize: 14 * fontScale,
+      color: colors.text,
+      fontSize: 14.5 * fontScale,
       fontWeight: "500",
+    },
+    btnPressed: {
+      opacity: 0.85,
+      transform: [{ scale: 0.99 }],
     },
   });
 }

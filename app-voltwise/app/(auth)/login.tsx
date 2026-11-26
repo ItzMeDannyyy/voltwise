@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   Pressable,
   StyleSheet,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   ActivityIndicator,
   ScrollView,
@@ -17,14 +18,24 @@ import { Link, useRouter } from "expo-router";
 import {
   AlertCircle,
   ArrowRight,
+  Check,
   Eye,
   EyeOff,
+  KeyRound,
   Server,
+  X,
 } from "../../components/LucideIcons";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useThemedStyles } from "../../components/themed";
 import { API_BASE_URL, checkHealth } from "../../lib/api";
+import {
+  getRememberPreference,
+  getSavedCredentials,
+  removeSavedCredential,
+  setRememberPreference,
+  type SavedCredential,
+} from "../../lib/credential-storage";
 import type { ThemeColors } from "../../constants/theme";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -43,6 +54,10 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberCredentials, setRememberCredentials] = useState(true);
+  const [savedCredentials, setSavedCredentials] = useState<SavedCredential[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [hasTypedSinceFocus, setHasTypedSinceFocus] = useState(false);
   const [focusedField, setFocusedField] = useState<"email" | "password" | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +68,7 @@ export default function LoginScreen() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
   const passwordRef = useRef<TextInput>(null);
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [enterOpacity] = useState(() => new Animated.Value(0));
   const [enterTranslate] = useState(() => new Animated.Value(10));
 
@@ -74,10 +90,72 @@ export default function LoginScreen() {
     checkHealth().then((ok) => {
       if (!cancelled) setServerReachable(ok);
     });
+    Promise.all([getSavedCredentials(), getRememberPreference()]).then(
+      ([creds, remember]) => {
+        if (cancelled) return;
+        setSavedCredentials(creds);
+        setRememberCredentials(remember);
+      }
+    );
+
     return () => {
       cancelled = true;
+      if (blurTimerRef.current) {
+        clearTimeout(blurTimerRef.current);
+      }
     };
   }, [enterOpacity, enterTranslate]);
+
+  const matchingCredentials = useMemo(() => {
+    if (savedCredentials.length === 0) return [];
+    const query = email.trim().toLowerCase();
+    // Show every saved account right when the user clicks the email input so
+    // switching or re-selecting an account takes one tap; filter once typing starts.
+    if (!hasTypedSinceFocus || !query) {
+      return savedCredentials;
+    }
+    return savedCredentials.filter(
+      (item) =>
+        item.email.toLowerCase().includes(query) ||
+        (item.name ? item.name.toLowerCase().includes(query) : false)
+    );
+  }, [savedCredentials, email, hasTypedSinceFocus]);
+
+  const showSuggestions = suggestionsOpen && matchingCredentials.length > 0;
+
+  function handleSelectCredential(cred: SavedCredential) {
+    if (blurTimerRef.current) {
+      clearTimeout(blurTimerRef.current);
+      blurTimerRef.current = null;
+    }
+    setEmail(cred.email);
+    setPassword(cred.password);
+    setRememberCredentials(true);
+    setEmailError(null);
+    setPasswordError(null);
+    setError(null);
+    setSuggestionsOpen(false);
+    setFocusedField(null);
+    Keyboard.dismiss();
+  }
+
+  async function handleRemoveCredential(targetEmail: string) {
+    if (blurTimerRef.current) {
+      clearTimeout(blurTimerRef.current);
+      blurTimerRef.current = null;
+    }
+    const updated = await removeSavedCredential(targetEmail);
+    setSavedCredentials(updated);
+    if (updated.length === 0) {
+      setSuggestionsOpen(false);
+    }
+  }
+
+  function handleToggleRemember() {
+    const next = !rememberCredentials;
+    setRememberCredentials(next);
+    void setRememberPreference(next);
+  }
 
   function validate(): boolean {
     let valid = true;
@@ -108,16 +186,21 @@ export default function LoginScreen() {
   async function handleLogin() {
     if (!validate()) return;
 
+    setSuggestionsOpen(false);
     setLoading(true);
     setError(null);
 
     try {
-      await signIn(email.trim(), password);
+      await signIn(email.trim(), password, rememberCredentials);
       // Navigation is driven by the auth gate in app/index.tsx.
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "Could not sign in. Try again.";
-      if (msg.includes("401") || msg.toLowerCase().includes("unauthorized") || msg.toLowerCase().includes("invalid credentials")) {
+      if (
+        msg.includes("401") ||
+        msg.toLowerCase().includes("unauthorized") ||
+        msg.toLowerCase().includes("invalid credentials")
+      ) {
         setError("Email or password did not match an account on this server.");
       } else {
         setError(msg);
@@ -200,7 +283,7 @@ export default function LoginScreen() {
                 </View>
               )}
 
-              {/* Email */}
+              {/* Email + Saved Credential Suggestions */}
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Email address</Text>
                 <TextInput
@@ -212,23 +295,122 @@ export default function LoginScreen() {
                   placeholder="name@domain.com"
                   placeholderTextColor={colors.inactive}
                   value={email}
-                  onFocus={() => setFocusedField("email")}
-                  onBlur={() => setFocusedField((prev) => (prev === "email" ? null : prev))}
+                  onFocus={() => {
+                    if (blurTimerRef.current) {
+                      clearTimeout(blurTimerRef.current);
+                      blurTimerRef.current = null;
+                    }
+                    setFocusedField("email");
+                    setHasTypedSinceFocus(false);
+                    setSuggestionsOpen(true);
+                  }}
+                  onBlur={() => {
+                    setFocusedField((prev) => (prev === "email" ? null : prev));
+                    blurTimerRef.current = setTimeout(() => {
+                      setSuggestionsOpen(false);
+                    }, 180);
+                  }}
+                  onPressIn={() => {
+                    if (savedCredentials.length > 0) {
+                      setSuggestionsOpen(true);
+                    }
+                  }}
                   onChangeText={(t) => {
                     setEmail(t);
+                    setHasTypedSinceFocus(true);
+                    setSuggestionsOpen(true);
                     if (emailError) setEmailError(null);
                     if (error) setError(null);
                   }}
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="email-address"
-                  textContentType="emailAddress"
+                  textContentType="username"
                   autoComplete="email"
+                  importantForAutofill="yes"
                   returnKeyType="next"
-                  onSubmitEditing={() => passwordRef.current?.focus()}
+                  onSubmitEditing={() => {
+                    setSuggestionsOpen(false);
+                    passwordRef.current?.focus();
+                  }}
                   accessibilityLabel="Email address"
                 />
                 {emailError && <Text style={styles.fieldError}>{emailError}</Text>}
+
+                {showSuggestions && (
+                  <View
+                    style={styles.suggestionsCard}
+                    accessibilityLabel="Saved credentials"
+                  >
+                    <View style={styles.suggestionsHeader}>
+                      <KeyRound size={12 * fontScale} color={colors.accent} strokeWidth={2} />
+                      <Text style={styles.suggestionsHeaderText}>
+                        Saved credentials
+                      </Text>
+                    </View>
+
+                    {matchingCredentials.map((cred, index) => {
+                      const isSelected =
+                        email.trim().toLowerCase() === cred.email.toLowerCase() &&
+                        password === cred.password;
+                      return (
+                        <View
+                          key={cred.email}
+                          style={[
+                            styles.suggestionItemWrap,
+                            index > 0 && styles.suggestionDivider,
+                          ]}
+                        >
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.suggestionItem,
+                              pressed && styles.suggestionItemPressed,
+                            ]}
+                            onPress={() => handleSelectCredential(cred)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Fill saved credentials for ${cred.email}`}
+                          >
+                            <View
+                              style={[
+                                styles.suggestionBadge,
+                                isSelected && styles.suggestionBadgeActive,
+                              ]}
+                            >
+                              <KeyRound
+                                size={15 * fontScale}
+                                color={isSelected ? colors.bg : colors.accent}
+                                strokeWidth={2}
+                              />
+                            </View>
+                            <View style={styles.suggestionTextCol}>
+                              <Text style={styles.suggestionEmail} numberOfLines={1}>
+                                {cred.email}
+                              </Text>
+                              <Text style={styles.suggestionMeta} numberOfLines={1}>
+                                {cred.name && cred.name.trim().length > 0
+                                  ? `${cred.name} · ••••••••`
+                                  : "Saved password · ••••••••"}
+                              </Text>
+                            </View>
+                          </Pressable>
+
+                          <Pressable
+                            onPress={() => void handleRemoveCredential(cred.email)}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            style={({ pressed }) => [
+                              styles.suggestionRemoveBtn,
+                              pressed && styles.linkPressed,
+                            ]}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Remove saved credentials for ${cred.email}`}
+                          >
+                            <X size={14 * fontScale} color={colors.sub} strokeWidth={2} />
+                          </Pressable>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
               </View>
 
               {/* Password */}
@@ -259,7 +441,10 @@ export default function LoginScreen() {
                     placeholder="Enter your password"
                     placeholderTextColor={colors.inactive}
                     value={password}
-                    onFocus={() => setFocusedField("password")}
+                    onFocus={() => {
+                      setSuggestionsOpen(false);
+                      setFocusedField("password");
+                    }}
                     onBlur={() => setFocusedField((prev) => (prev === "password" ? null : prev))}
                     onChangeText={(t) => {
                       setPassword(t);
@@ -269,6 +454,7 @@ export default function LoginScreen() {
                     secureTextEntry={!showPassword}
                     textContentType="password"
                     autoComplete="password"
+                    importantForAutofill="yes"
                     returnKeyType="done"
                     onSubmitEditing={handleLogin}
                     accessibilityLabel="Password"
@@ -289,6 +475,30 @@ export default function LoginScreen() {
                 </View>
                 {passwordError && <Text style={styles.fieldError}>{passwordError}</Text>}
               </View>
+
+              {/* Save credentials toggle */}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.rememberRow,
+                  pressed && styles.linkPressed,
+                ]}
+                onPress={handleToggleRemember}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: rememberCredentials }}
+                accessibilityLabel="Save credentials on this device"
+              >
+                <View
+                  style={[
+                    styles.checkbox,
+                    rememberCredentials && styles.checkboxChecked,
+                  ]}
+                >
+                  {rememberCredentials && (
+                    <Check size={12 * fontScale} color={colors.bg} strokeWidth={3} />
+                  )}
+                </View>
+                <Text style={styles.rememberLabel}>Save credentials on this device</Text>
+              </Pressable>
 
               {/* Primary action: verb + object */}
               <Pressable
@@ -510,6 +720,105 @@ function createStyles(colors: ThemeColors, fontScale: number) {
       lineHeight: 17 * fontScale,
       marginTop: 6,
     },
+    suggestionsCard: {
+      marginTop: 8,
+      backgroundColor: colors.bg,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.accent + "66",
+      overflow: "hidden",
+    },
+    suggestionsHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      backgroundColor: colors.accent + "12",
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    suggestionsHeaderText: {
+      color: colors.accent,
+      fontSize: 11.5 * fontScale,
+      fontWeight: "600",
+      letterSpacing: 0.2,
+    },
+    suggestionItemWrap: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    suggestionDivider: {
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    suggestionItem: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    suggestionItemPressed: {
+      backgroundColor: colors.accent + "14",
+    },
+    suggestionBadge: {
+      width: 30,
+      height: 30,
+      borderRadius: 8,
+      backgroundColor: colors.accent + "18",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    suggestionBadgeActive: {
+      backgroundColor: colors.accent,
+    },
+    suggestionTextCol: {
+      flex: 1,
+    },
+    suggestionEmail: {
+      color: colors.text,
+      fontSize: 14 * fontScale,
+      fontWeight: "600",
+    },
+    suggestionMeta: {
+      color: colors.sub,
+      fontSize: 11.5 * fontScale,
+      marginTop: 1,
+    },
+    suggestionRemoveBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    rememberRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginBottom: 12,
+      paddingVertical: 4,
+    },
+    checkbox: {
+      width: 18,
+      height: 18,
+      borderRadius: 5,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      backgroundColor: colors.bg,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    checkboxChecked: {
+      backgroundColor: colors.accent,
+      borderColor: colors.accent,
+    },
+    rememberLabel: {
+      color: colors.sub,
+      fontSize: 13.5 * fontScale,
+      fontWeight: "500",
+    },
     submitBtn: {
       backgroundColor: colors.accent,
       borderRadius: 8,
@@ -580,4 +889,3 @@ function createStyles(colors: ThemeColors, fontScale: number) {
     },
   });
 }
-

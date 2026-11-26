@@ -44,28 +44,26 @@ import {
   type RangeState,
 } from "./range-prefs";
 
-// Mirrors DEVICE_SERIES_COLORS in backend/src/modules/dashboard/dashboard.service.ts
-// so a demo chart is coloured exactly like the real one.
+// Palette without violet/lavender (#8b5cf6 removed): teal, blue, amber, sky, rose, red, emerald, slate.
 const SERIES_COLORS = [
   "#00d4aa",
-  "#3b82f6",
-  "#f59e0b",
-  "#8b5cf6",
-  "#ec4899",
-  "#ef4444",
-  "#14b8a6",
-  "#a3a3a3",
+  "#2563eb",
+  "#d97706",
+  "#0284c7",
+  "#e11d48",
+  "#dc2626",
+  "#059669",
+  "#64748b",
 ];
 
-// Mirrors CONSUMER_COLORS / SEGMENT_COLORS on the backend — the last entry is
-// the grey reserved for the collapsed "Others" slice.
+// Mirrors CONSUMER_COLORS / SEGMENT_COLORS — the last entry is the slate reserved for "Others".
 const SEGMENT_COLORS = [
   "#00d4aa",
-  "#3b82f6",
-  "#f59e0b",
-  "#8b5cf6",
-  "#ec4899",
-  "#4b5563",
+  "#2563eb",
+  "#d97706",
+  "#0284c7",
+  "#e11d48",
+  "#64748b",
 ];
 
 /**

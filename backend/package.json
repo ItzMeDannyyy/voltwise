@@ -21,6 +21,9 @@
     "start": "ts-node src/index.ts",
     "dev": "node --import ts-node/esm --watch src/index.ts",
     "seed": "node --import ts-node/esm prisma/seed.ts",
+    "seed:user": "node --import ts-node/esm prisma/seed-user.ts",
+    "seed:alerts": "node --import ts-node/esm prisma/seed-test-alerts.ts",
+    "clear:alerts": "node --import ts-node/esm prisma/clear-test-alerts.ts",
     "fresh:db": "prisma migrate reset --force --skip-seed",
     "setup:ts": "npm install -D typescript ts-node-dev @types/node @types/express prisma"
   },
