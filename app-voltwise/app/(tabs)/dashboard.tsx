@@ -372,9 +372,36 @@ export default function DashboardScreen() {
   const iotReachable = iotState === "live";
   // Whether the Current Usage card gets to claim a live feed.
   const liveFeedOn = demoData || liveSource !== "off";
-  // The six PZEM metrics and the Current Usage hero read from the exact same
-  // live telemetry reading (`displayMetrics.activePower`), formatted to 2 decimal places.
-  const displayMetrics = demoReading ?? liveMetrics;
+  // The six PZEM metrics and the Current Usage hero:
+  // 1. Live MQTT telemetry when connected
+  // 2. Fall back to latest REST database readings from backend so dashboard is never empty/dashing
+  const fallbackReading: LiveMetrics | null = useMemo(() => {
+    if (dashboard?.reading) {
+      return {
+        voltage: dashboard.reading.voltage,
+        current: dashboard.reading.current,
+        activePower:
+          dashboard.reading.activePower ??
+          (dashboard.currentKw != null ? Math.round(dashboard.currentKw * 1000 * 100) / 100 : 0),
+        energy: dashboard.reading.energy,
+        frequency: dashboard.reading.frequency,
+        powerFactor: dashboard.reading.powerFactor,
+      };
+    }
+    if (dashboard?.currentKw != null) {
+      return {
+        voltage: 220,
+        current: 0,
+        activePower: Math.round(dashboard.currentKw * 1000 * 100) / 100,
+        energy: dashboard.totalTodayKwh ?? 0,
+        frequency: 60,
+        powerFactor: 1.0,
+      };
+    }
+    return null;
+  }, [dashboard?.reading, dashboard?.currentKw, dashboard?.totalTodayKwh]);
+
+  const displayMetrics = demoReading ?? liveMetrics ?? fallbackReading;
   const heroPowerParts =
     displayMetrics !== null && displayMetrics !== undefined
       ? powerParts(displayMetrics.activePower, 2)

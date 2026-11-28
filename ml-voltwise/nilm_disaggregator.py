@@ -101,8 +101,8 @@ def extract_nilm_centroids(
 
     for app_name, dfs in appliance_data.items():
         combined = pd.concat(dfs, ignore_index=True)
-        # Filter out the OFF state (< 3.0 W)
-        active = combined[combined["power"] >= 3.0].copy()
+        # Filter out the OFF state (< 5.0 W)
+        active = combined[combined["power"] >= 5.0].copy()
         if active.empty:
             continue
 
@@ -190,7 +190,7 @@ class NILMEventDisaggregator:
         self,
         centroids: Optional[List[Dict[str, Any]]] = None,
         centroids_file: Path = DEFAULT_CENTROIDS_FILE,
-        noise_deadband_watts: float = 3.0,
+        noise_deadband_watts: float = 5.0,
     ):
         self.noise_deadband = noise_deadband_watts
         self.centroids_file = Path(centroids_file)

@@ -256,8 +256,8 @@ export const matchOrTagDevice = async (
   watts: number,
   forceAlert: boolean = false
 ): Promise<ApplianceMatchResult | null> => {
-  // 1. If load is negligible (standby / idle / < 3W), keep as whole-home baseline
-  if (watts < 3.0 && !prediction.is_anomaly) {
+  // 1. If load is negligible (standby / idle / < 5W), keep as whole-home baseline
+  if (watts < 5.0 && !prediction.is_anomaly) {
     return null;
   }
 

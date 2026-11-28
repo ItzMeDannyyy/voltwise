@@ -35,6 +35,11 @@ dump.txt
 
 *.exe
 
+# Documents & Presentations
+*.pptx
+~$*
+site/
+
 VoltWise_Research_Proposal.docx
 VoltWise_Research_Proposal33.pdf
 VoltWise-Development-Server_key.pem

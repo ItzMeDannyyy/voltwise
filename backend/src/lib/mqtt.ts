@@ -295,9 +295,9 @@ export const handleMessage = async (
           state.lastApplianceDetected = prediction.dominant_appliance;
 
           if (currentUserId !== null) {
-            // Check if appliance newly switched ON or changed dominant state
+            // Check if appliance newly switched ON or changed dominant state (idle cutoff: 5.0W)
             const isNewActive =
-              prediction.dominant_appliance !== lastActiveAppliance && watts >= 3.0;
+              prediction.dominant_appliance !== lastActiveAppliance && watts >= 5.0;
 
             const matchResult = await matchOrTagDevice(
               currentUserId,
@@ -337,7 +337,7 @@ export const handleMessage = async (
                   });
                 }
               }
-            } else if (watts < 3.0) {
+            } else if (watts < 5.0) {
               if (lastActiveAppliance !== null) {
                 lastActiveAppliance = null;
                 try {
@@ -382,7 +382,7 @@ export const handleMessage = async (
               at: now.toISOString(),
             });
           }
-        } else if (watts < 3.0) {
+        } else if (watts < 5.0) {
           if (lastActiveAppliance !== null) {
             lastActiveAppliance = null;
             if (currentUserId !== null) {

@@ -348,6 +348,11 @@ void setup()
 
   Serial.begin(115200);
 
+  // CRITICAL: Explicitly initialize HardwareSerial 2 for PZEM-004T at 9600 baud.
+  // Global constructors execute before the Arduino ESP32 core clock & GPIO matrix setup,
+  // which can leave Serial2 uninitialized or mapped to default pins.
+  Serial2.begin(9600, SERIAL_8N1, PZEM_RX_PIN, PZEM_TX_PIN);
+
   // Initialize NVS storage
   ConfigManager::begin();
 
@@ -718,15 +723,7 @@ void checkSmartHybridBootPower()
     return;
   }
 
-  // State 2: If no Wi-Fi credentials are stored, device is in Provisioning mode.
-  // Keep relays safely OFF while the user sets up Wi-Fi in the portal.
-  String ssid = ConfigManager::getWifiSsid();
-  if (ssid.length() == 0)
-  {
-    return;
-  }
-
-  // State 1 - Case A: Wi-Fi connected successfully within the 3 attempts!
+  // State 1 - Case A: Wi-Fi connected successfully!
   if (WiFi.status() == WL_CONNECTED)
   {
     bootPowerEnergized = true;
@@ -738,7 +735,8 @@ void checkSmartHybridBootPower()
     return;
   }
 
-  // State 1 - Case B: 15s Timeout / 3 failed attempts reached -> "poof offline mode fallback"
+  // State 1 - Case B / State 2: 15s Timeout / failed attempts reached -> "poof offline mode fallback"
+  // Ensures appliances/house and sensing circuits are energized even if Wi-Fi credentials are not yet entered.
   if (offlineModeActive || (millis() - bootStartTime >= (unsigned long)(NETWORK_CONNECT_TIMEOUT_SEC * 1000UL)))
   {
     bootPowerEnergized = true;
@@ -747,7 +745,7 @@ void checkSmartHybridBootPower()
     WiFi.disconnect(true); // Halt all STA station channel-hopping sweeps immediately
     Serial.println();
     Serial.println("==================================================");
-    Serial.println(" [BOOT] 3 Attempts (15s total) Elapsed without Wi-Fi.");
+    Serial.println(" [BOOT] 15s Elapsed without Wi-Fi.");
     Serial.println(" Poof! Entering Autonomous Offline Mode (Staggered Power-Up).");
     Serial.println(" Starting Provisioning Hotspot so you can access the portal...");
     Serial.println("==================================================");
@@ -764,13 +762,56 @@ void checkSmartHybridBootPower()
 // PZEM Sensor Functions
 // =========================
 
+// Parasitic Load Tare & Deadband Configuration:
+// The ESP32 (Wi-Fi + MCU dual core + ST7789 LCD + relay coils) consumes ~3.7W from the mains supply.
+// If the CT is clamped before the ESP32 power tap, zero-clamp idle draws and subtract the parasitic baseline.
+const float IOT_PARASITIC_OFFSET_WATTS = 3.7f;
+const float IDLE_CUTOFF_WATTS          = 4.5f;
+
 PowerReadings readPowerSensor()
 {
   PowerReadings readings;
 
   readings.voltage = pzem.voltage();
-  readings.current = pzem.current();
-  readings.power = pzem.power();
+
+  // If voltage is NaN, the PZEM is not replying or has no AC input.
+  // Return immediately to avoid 5 additional blocking 100ms timeouts on current, power, etc.
+  if (isnan(readings.voltage))
+  {
+    readings.current = NAN;
+    readings.power = NAN;
+    readings.energy = NAN;
+    readings.frequency = NAN;
+    readings.powerFactor = NAN;
+    return readings;
+  }
+
+  float rawCurrent = pzem.current();
+  float rawPower = pzem.power();
+
+  if (!isnan(rawPower))
+  {
+    if (rawPower <= IDLE_CUTOFF_WATTS)
+    {
+      // Clamp idle noise and IoT self-consumption to 0
+      readings.power = 0.0f;
+      readings.current = 0.0f;
+    }
+    else
+    {
+      // Subtract parasitic baseline so actual appliance wattage is accurate
+      readings.power = rawPower - IOT_PARASITIC_OFFSET_WATTS;
+      float v = (readings.voltage > 0.0f) ? readings.voltage : 230.0f;
+      float currentOffset = IOT_PARASITIC_OFFSET_WATTS / v;
+      readings.current = max(0.0f, rawCurrent - currentOffset);
+    }
+  }
+  else
+  {
+    readings.power = NAN;
+    readings.current = NAN;
+  }
+
   readings.energy = pzem.energy();
   readings.frequency = pzem.frequency();
   readings.powerFactor = pzem.pf();

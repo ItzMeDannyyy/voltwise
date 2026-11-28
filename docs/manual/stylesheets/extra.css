@@ -1,0 +1,61 @@
+:root {
+  --md-primary-fg-color: #0d7ee1;
+  --md-primary-fg-color--light: #38bdf8;
+  --md-primary-fg-color--dark: #085abb;
+  --md-accent-fg-color: #0284c7;
+  --md-accent-fg-color--transparent: rgba(13, 126, 225, 0.1);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #0d7ee1;
+  --md-primary-fg-color--light: #38bdf8;
+  --md-primary-fg-color--dark: #085abb;
+  --md-accent-fg-color: #38bdf8;
+  --md-default-bg-color: #0b1120;
+  --md-default-bg-color--light: #111c33;
+  --md-default-bg-color--lighter: #172545;
+}
+
+/* Minimalist Anti-Slop Navigation Header */
+.md-header {
+  background-color: #0b1329 !important;
+  border-bottom: 1px solid rgba(13, 126, 225, 0.2);
+}
+
+.md-header__title {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* Polished Callout & Admonition Blocks */
+.md-typeset .admonition,
+.md-typeset details {
+  border-left-width: 3px !important;
+  border-left-color: #0d7ee1 !important;
+  border-radius: 6px;
+  box-shadow: none !important;
+  border: 1px solid rgba(13, 126, 225, 0.15);
+}
+
+/* Clean Image Figures */
+.md-typeset img {
+  border-radius: 8px;
+  border: 1px solid rgba(13, 126, 225, 0.18);
+  box-shadow: 0 4px 16px rgba(11, 19, 41, 0.08);
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Clean Step Emphases */
+.md-typeset strong {
+  color: #0369a1;
+}
+
+[data-md-color-scheme="slate"] .md-typeset strong {
+  color: #38bdf8;
+}
+
+/* Code Copy & Typography */
+.md-typeset code {
+  border-radius: 4px;
+}

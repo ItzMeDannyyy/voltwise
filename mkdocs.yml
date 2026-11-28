@@ -1,0 +1,57 @@
+site_name: VoltWise User Manual
+site_description: Official End-User and Homeowner Guide for the VoltWise Smart Energy Monitoring & Protection System
+site_author: VoltWise Team
+docs_dir: docs/manual
+site_dir: site
+
+theme:
+  name: material
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  palette:
+    - scheme: default
+      primary: custom
+      accent: light blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: custom
+      accent: light blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - toc.integrate
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+  - md_in_html
+
+nav:
+  - Overview: index.md
+  - 1. App Installation & QR Code: app-installation.md
+  - 2. Account Registration & Sign In: account-auth.md
+  - 3. Real-Time Energy Monitoring: dashboard-monitoring.md
+  - 4. Emergency Power & Breaker Control: power-breaker-control.md
+  - 5. Connected Appliances: appliance-management.md
+  - 6. IoT Hardware Provisioning: iot-provisioning.md
+  - 7. Analytics & Bill Estimation: analytics-billing.md
+  - 8. Safety Alerts & Interventions: safety-alerts.md
+  - 9. Settings & Preferences: settings-preferences.md
